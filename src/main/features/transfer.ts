@@ -1,6 +1,7 @@
 import { dialog, type BaseWindow } from 'electron';
 import fs from 'node:fs';
 import { loadConfig, saveConfig } from '@main/platform/config';
+import { migrateConfig } from '@core/config/migrate';
 import type { Config } from '@shared/types';
 
 /**
@@ -79,8 +80,26 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   });
   if (response !== 0) return;
 
+  // Through the SAME normalisation loadConfig uses. This previously did
+  // `saveConfig({ ...parsed })` with no defaults, no migration and no version handling, so
+  // importing a v3-era export wrote a structurally invalid config straight to disk: missing
+  // `preferences` threw in sessionFor, workspaces without `items` threw in flattenServiceIds, and
+  // missing `accounts` threw in partitionFor on every service open *and* inside the 60-second
+  // persistAll loop, killing it. All under a floating `void importConfig(...)`.
+  let normalised: Config;
+  try {
+    normalised = migrateConfig(parsed);
+  } catch (err) {
+    await dialog.showMessageBox(window as never, {
+      type: 'error',
+      message: "That configuration can't be imported.",
+      detail: String(err instanceof Error ? err.message : err),
+    });
+    return;
+  }
+
   // Keep the current window bounds: they describe this machine's display, not the config.
-  saveConfig({ ...(parsed as Config), window: loadConfig().window });
+  saveConfig({ ...normalised, window: loadConfig().window });
   onLoaded();
   console.log(`[transfer] imported from ${file}`);
 }

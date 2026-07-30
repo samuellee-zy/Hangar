@@ -4,7 +4,7 @@ import path from 'node:path';
 import { catalog, catalogById } from '@shared/catalog';
 import { createAccount, migrateV1, resolveAccount } from '@core/services/accounts';
 import { findQuarantined, pathsFor, readWithRecovery, writeAtomic } from '@core/config/store';
-import { migrateWorkspaceV3 } from '@core/workspace/folders';
+import { migrateConfig } from '@core/config/migrate';
 import { withDefaults } from '@core/config/preferences';
 import type { Config, RailItem, ServiceInstance } from '@shared/types';
 
@@ -147,38 +147,8 @@ export function loadConfig(): Config {
   }
 
   try {
-    // Typed loosely on purpose: this is untrusted input from disk and may be any prior version.
-    const parsed = raw as Omit<Partial<Config>, 'version' | 'workspaces'> & {
-      version?: number;
-      services?: Array<ServiceInstance & { sessionGroup?: string }>;
-      workspaces?: Array<{ id: string; name: string; serviceIds?: string[]; items?: RailItem[] }>;
-    };
-
-    // v1 had no accounts and keyed partitions off `sessionGroup`. The migration rebuilds accounts
-    // while preserving the original partition names, so an upgrade never signs you out.
-    const migrated =
-      (parsed.version ?? 0) >= 2 && parsed.accounts
-        ? { accounts: parsed.accounts, services: parsed.services as ServiceInstance[] }
-        : migrateV1(parsed);
-
-    cached = {
-      version: 4,
-      // v2 → v3 added preferences (additive). v3 → v4 turns each workspace's flat serviceIds
-      // array into an ordered RailItem tree; migrateWorkspaceV3 is a no-op if it's already v4.
-      preferences: withDefaults(parsed.preferences),
-      accounts: migrated.accounts,
-      // Drop URLs copied from the catalog by older builds so those services pick up catalog fixes.
-      // Safe only while there's no UI for editing a service URL — when Settings gains one this
-      // must become a versioned migration that preserves genuine overrides.
-      services: migrated.services.map((svc) =>
-        catalogById(svc.catalogId) ? { ...svc, url: undefined } : svc
-      ),
-      workspaces: (parsed.workspaces ?? []).map(migrateWorkspaceV3),
-      activeWorkspaceId: parsed.activeWorkspaceId ?? parsed.workspaces?.[0]?.id ?? null,
-      layouts: parsed.layouts ?? {},
-      window: parsed.window,
-    };
-    if (parsed.version !== 4) saveConfig(cached);
+    cached = migrateConfig(raw);
+    if ((raw as { version?: number }).version !== 4) saveConfig(cached);
   } catch (err) {
     // Migration failed on structurally-valid JSON. The file itself is intact and already
     // quarantine-free, so start from defaults but leave the original alone for inspection.

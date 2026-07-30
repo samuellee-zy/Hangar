@@ -711,3 +711,31 @@ synthetic one exercises everything downstream of decryption, which is precisely 
 The lesson is about where a verification boundary gets drawn. "Needs external setup" was true of the
 transport and false of the logic, and treating them as one thing is what let a non-functioning
 feature ship as done.
+
+## 58. Import must go through the same normalisation as load
+
+`importConfig` did `saveConfig({ ...(parsed as Config) })` — no `withDefaults`, no migration, no
+version handling. The only validation was that `services` and `workspaces` were arrays.
+
+Importing a v3-era export therefore wrote a structurally invalid config straight to disk: missing
+`preferences` threw in `sessionFor`, workspaces without `items` threw in `flattenServiceIds`, and
+missing `accounts` threw in `partitionFor` on every service open *and* inside the 60-second
+`persistAll` loop, killing session durability. All under a floating `void importConfig(...)`, so it
+surfaced as an unhandled rejection with the window half-rebuilt and the bad file already saved.
+
+`migrateConfig` is now a single pure function both paths call. It also backfills `zoom`,
+`hibernate` and `notifications`, which are typed required but were never filled in for older
+configs — `hibernate: undefined` is falsy so the service silently never slept, and
+`zoom: undefined` reached `setZoomFactor` and threw out of the `AppWindow` constructor, so the app
+failed to render at all on the first launch after upgrading.
+
+## 59. Refusing to migrate is sometimes the safe answer
+
+The old branch was `(parsed.version ?? 0) >= 2 && parsed.accounts ? … : migrateV1(parsed)`. A v4
+config that had *lost* its accounts array fell through to `migrateV1`, which regenerates partitions
+from `sessionGroup ?? catalogId`. For a v4 config neither field is what that code expects, so the
+generated names don't match the directories on disk and **every service loses its cookie jar**.
+
+`migrateConfig` now throws on that input. The caller keeps the original file and starts from
+defaults, so the user can be signed out *recoverably* rather than silently and permanently. A
+migration that can't be sure is better off refusing than guessing at cookie-jar identity.
