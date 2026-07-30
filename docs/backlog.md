@@ -4,8 +4,8 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after **Phase 4** (audit, modularity, tests). 253 automated tests, enforced module
-boundaries, a packaged DMG, and every shipped control does something.
+Last updated after **Phase 4** (audit, modularity, tests). 262 automated tests, enforced module
+boundaries, a packaged DMG verified end to end, and every shipped control does something.
 
 Phase 4 closed everything in the old §1.4 and most of §2 — including a P0 that destroyed the config
 when you removed your last service, and the discovery that **Web Push had never worked for the case
@@ -129,7 +129,7 @@ probably a day, and it's the thing most likely to be embarrassing if anyone else
 
 ## 5. Testing gaps
 
-253 tests under Vitest, plus `dependency-cruiser` on every run. The pure-module architecture is
+262 tests under Vitest, plus `dependency-cruiser` on every run. The pure-module architecture is
 what makes that possible, and `shell-state.ts` and `migrate.ts` were extracted from `app-window.ts`
 and `config.ts` specifically so their logic could be reached.
 
@@ -154,7 +154,32 @@ code, so "the UI does nothing" gets caught by CI rather than by noticing.
 
 ---
 
-## 6. Known behaviours worth writing down
+## 6. Enhancements not yet built
+
+**Catalog expansion.** 9 entries against Rambox's ~700 and Shift's ~1,500. Each is ~8 lines plus a
+vendored icon; the real cost is curating `allowedHosts`, and getting one wrong sends the service's
+own URL to the system browser. `catalog.test.ts` now asserts every entry allows its own URL, so the
+expansion has a safety net. Target ~60.
+
+**Ad and tracker blocking.** `@ghostery/adblocker-electron` — uBlock Origin/EasyList compatible,
+serialises its engine to disk, applies per-session, which matches the existing architecture. A
+Rambox Pro feature, and it measurably cuts memory across many loaded services.
+
+**Config sync across machines.** Export already exists; this is a sync target plus conflict
+handling. **Must exclude** `pushRegistrations` and anything partition-scoped — syncing those breaks
+both machines.
+
+**Per-service injected JS for unread.** Title patterns now cover Gmail, Slack, Teams and Linear
+([decisions #64](decisions.md)). Rambox's primary mechanism is injected per-service JavaScript
+querying known DOM nodes, which reaches services that don't put a count in the title at all. The
+`customJs` seam already exists to hang it on.
+
+**Startup performance.** V8 snapshots cut Atom's startup ~50%. Worth measuring now that the module
+boundaries make the main bundle's dependency graph legible.
+
+---
+
+## 7. Known behaviours worth writing down
 
 Not bugs; things that will look like bugs later.
 
@@ -174,7 +199,7 @@ Not bugs; things that will look like bugs later.
 
 ---
 
-## 7. Suggested order
+## 8. Suggested order
 
 If picking this up fresh:
 
@@ -190,7 +215,7 @@ If picking this up fresh:
 
 ---
 
-## 8. What Phase 4 fixed
+## 9. What Phase 4 fixed
 
 Kept for context on where the remaining gaps sit. Full reasoning in
 [decisions.md](decisions.md) #47–63.
