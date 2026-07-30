@@ -647,3 +647,35 @@ a silent no-op.
 
 `tsConfig` must also be passed in options, or every `@core/*` alias misresolves and the rules cruise
 a graph that isn't the real one.
+
+## 54. `dispose()` hooks `closed`, not `close`
+
+⌘W on the last pane destroys the window, and the dock icon builds a whole new `AppWindow` — while
+nothing disposed the old one. Everything system-level kept a closure over the dead window:
+
+- the global shortcut threw `Object has been destroyed` from then on, permanently
+- `ensureTray` and `openSettingsWindow` both early-return on their existing instance, so both kept
+  dispatching into the old window; Settings rendered a frozen snapshot
+- the old `PushManager` kept its sockets, so a second set opened alongside — every notification
+  twice, each click calling `showWindow()` on a destroyed window
+- service views detached with `removeChildView` aren't children of the window, so they aren't
+  destroyed with it. ~100 MB each, still resident, still running reload timers
+
+`applySystemPreferences()` was called once at boot and never on `activate`, which is why none of it
+recovered.
+
+**`closed`, not `close`** — the close handler calls `preventDefault()` when `closeToTray` is on, so
+`close` also fires for a window the user merely hid. Disposing there would destroy a window the
+tray icon still points at.
+
+Verified: after close, `shell` is null and the views are destroyed; after `activate`, `show-window`
+and `open-settings` both succeed where they previously threw.
+
+## 55. Cookie promotion must finish before anything is disposed
+
+`persistAll()` on quit promotes session cookies to persistent ones — the entire reason a restart
+doesn't sign you out. Tearing down sessions or views before it resolves loses that, which is the
+exact failure Phase 1 was built to prevent, reintroduced by the fix for #54.
+
+So the quit path awaits it, and now logs a failure instead of dropping it into an unhandled
+rejection.

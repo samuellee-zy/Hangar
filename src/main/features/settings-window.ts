@@ -47,3 +47,15 @@ export function openSettingsWindow(register: (wc: Electron.WebContents) => void)
   register(win.webContents);
 }
 
+
+/**
+ * Closes Settings if it's open. Called from `AppWindow.dispose()`.
+ *
+ * Without this, `openSettingsWindow` early-returns on the still-open window from the *previous*
+ * AppWindow — so it never registers against the new one and renders a frozen snapshot of state
+ * that stopped updating when the old window died.
+ */
+export function closeSettingsWindow(): void {
+  if (win && !win.isDestroyed()) win.close();
+  win = null;
+}

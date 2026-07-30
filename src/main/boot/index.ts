@@ -26,7 +26,16 @@ app.setName('Hangar');
 
 let shell: AppWindow | null = null;
 
-const trackWindow = (w: AppWindow) => w.win.on('closed', () => (shell = null));
+/**
+ * `closed`, not `close`: the close handler prevents default when `closeToTray` is on, so the window
+ * may be merely hidden. Only a real destruction should tear everything down.
+ */
+const trackWindow = (w: AppWindow) => {
+  w.win.on('closed', () => {
+    w.dispose();
+    shell = null;
+  });
+};
 
 // A second copy fighting over the same partitions would corrupt cookie jars, so hand off to the
 // running instance instead.
@@ -115,6 +124,9 @@ app.whenReady().then(() => {
     if (!shell) {
       shell = new AppWindow();
       trackWindow(shell);
+      // Re-apply, or the rebuilt window has no global shortcut, no tray and no proxy. This was
+      // called once at boot and never again, so everything system-level died with the first ⌘W.
+      shell.applySystemPreferences();
     } else {
       shell.win.focus();
     }
@@ -203,6 +215,43 @@ async function probeOverlay(): Promise<void> {
  * observable. The Phase 3.1 notification override typechecked, reviewed clean, and was a silent
  * no-op for exactly this reason — the preload's `window` is not the page's.
  */
+/**
+ * The A4 regression. ⌘W on the last pane destroys the window; the dock icon rebuilds it. Everything
+ * system-level used to keep a closure over the destroyed window and throw from then on.
+ */
+async function probeTeardown(): Promise<void> {
+  const before = process.memoryUsage().rss;
+  const viewsBefore = shell ? shell.serviceCount : 0;
+
+  shell?.win.close();
+  await new Promise((r) => setTimeout(r, 1500));
+  console.log(`[probe] after close: shell=${shell === null ? 'null (disposed)' : 'STILL SET'}`);
+
+  app.emit('activate');
+  await new Promise((r) => setTimeout(r, 3000));
+  if (!shell) return console.log('[probe] activate did not rebuild the window');
+
+  // The three that used to throw `Object has been destroyed`.
+  const results: string[] = [];
+  try {
+    shell.dispatch({ type: 'show-window' });
+    results.push('show-window ok');
+  } catch (e) {
+    results.push(`show-window THREW: ${e}`);
+  }
+  try {
+    shell.dispatch({ type: 'open-settings' });
+    results.push('settings ok');
+  } catch (e) {
+    results.push(`settings THREW: ${e}`);
+  }
+  const after = process.memoryUsage().rss;
+  console.log(
+    `[probe] teardown: views ${viewsBefore}->${shell.serviceCount}, ` +
+      `rss ${(before / 1e6).toFixed(0)}MB->${(after / 1e6).toFixed(0)}MB, ${results.join(', ')}`
+  );
+}
+
 async function probePush(): Promise<void> {
   const state = shell?.state();
   const target = state?.services.find((s) => !s.sleeping);
@@ -261,6 +310,7 @@ async function probeNotifications(): Promise<void> {
   );
 
   await probePush();
+  await probeTeardown();
 }
 
 // --- session durability --------------------------------------------------------------------
@@ -343,7 +393,12 @@ app.on('before-quit', (event) => {
   // Tells the window's close handler this is a real quit, not a close-to-tray.
   beginQuit();
   releaseGlobalShortcut();
-  void persistAll().finally(() => app.quit());
+  // persistAll MUST finish before anything tears down sessions. It promotes session cookies to
+  // persistent ones, which is the whole reason you stay signed in across a restart — disposing
+  // first would sign the user out of everything, the exact failure Phase 1 exists to prevent.
+  void persistAll()
+    .catch((err) => console.error('[quit] cookie promotion failed:', err))
+    .finally(() => app.quit());
 });
 
 // macOS convention: closing the window doesn't quit. Also avoids Electron's default

@@ -38,7 +38,12 @@ import { installWebContextMenu, showFolderMenu, showRailMenu, showServiceMenu } 
 import { exportConfig, importConfig } from '@main/features/transfer';
 import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
-import { applyGlobalShortcut, applyLoginItem, applyProxy } from '@main/platform/system';
+import {
+  applyGlobalShortcut,
+  applyLoginItem,
+  applyProxy,
+  releaseGlobalShortcut,
+} from '@main/platform/system';
 import { allLiveSessions } from '@main/platform/session';
 import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
 import { isQuitting } from '@main/platform/quit-state';
@@ -60,7 +65,7 @@ import {
   renameWorkspace,
   reorderWorkspaces,
 } from '@core/workspace/workspaces';
-import { openSettingsWindow } from '@main/features/settings-window';
+import { closeSettingsWindow, openSettingsWindow } from '@main/features/settings-window';
 import { attachShortcuts } from '@main/window/shortcuts';
 import {
   activeServicesOf,
@@ -1110,6 +1115,57 @@ export class AppWindow {
     const wanted = prefs.appearance.showTrayIcon || prefs.behaviour.closeToTray;
     if (wanted) ensureTray(() => this.state(), (c) => this.dispatch(c));
     else destroyTray();
+  }
+
+  /** Live service views. Diagnostic only — the teardown probe uses it to detect leaked views. */
+  get serviceCount(): number {
+    return this.services.all().size;
+  }
+
+  /**
+   * Tears the window down.
+   *
+   * **Hooked to `closed`, never `close`.** The `close` handler calls `preventDefault()` when
+   * `closeToTray` is on, so disposing there would destroy a window the user only hid — and the
+   * tray icon would then lead somewhere that no longer exists.
+   *
+   * Before this existed, ⌘W on the last pane destroyed the window and the dock icon built a whole
+   * new `AppWindow` while nothing disposed the old one. The global shortcut kept a closure over
+   * the dead window and threw `Object has been destroyed` forever after; `ensureTray` and
+   * `openSettingsWindow` both early-returned on stale instances; the old `PushManager` kept its
+   * sockets, so a second set opened alongside and every notification arrived twice. Service views
+   * were the worst of it: detached with `removeChildView`, they aren't children of the window and
+   * so aren't destroyed with it — roughly 100 MB each, still resident, still running reload timers.
+   *
+   * Electron is explicit that a `WebContentsView`'s `webContents` must be closed explicitly or it
+   * leaks. Nothing here was doing that.
+   */
+  dispose(): void {
+    // Sockets and timers first: they can fire during teardown and would then touch a half-torn
+    // window.
+    this.push.stopAll();
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.flashTimer = null;
+
+    releaseGlobalShortcut();
+    destroyTray();
+    closeSettingsWindow();
+
+    // Every service view, not just the visible ones — the detached ones are exactly the leak.
+    for (const serviceId of [...this.services.all().keys()]) {
+      const runtime = this.services.get(serviceId);
+      if (runtime) {
+        try {
+          this.win.contentView.removeChildView(runtime.view);
+        } catch {
+          // Already detached, or the window is gone. Either way the destroy below is what matters.
+        }
+      }
+      this.services.destroy(serviceId);
+    }
+
+    this.findBar.close();
+    this.consumers.clear();
   }
 
   /**
