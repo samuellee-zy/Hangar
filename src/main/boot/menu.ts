@@ -1,5 +1,5 @@
 import { Menu, app, type MenuItemConstructorOptions } from 'electron';
-import type { Command } from '../shared/types';
+import type { Command } from '@shared/types';
 
 /**
  * Owning the menu is not cosmetic — it's the only way to own the keys.

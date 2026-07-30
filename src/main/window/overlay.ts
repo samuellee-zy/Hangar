@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
-import { loadRoute } from './renderer-url';
-import type { OverlayMode } from '../shared/types';
+import { loadRoute } from '@main/platform/renderer-url';
+import type { OverlayMode } from '@shared/types';
 
 /**
  * The ⌘K palette, layered above the panes.

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RailItem, Workspace } from '../shared/types';
+import type { RailItem, Workspace } from '@shared/types';
 
 /**
  * Operations on a workspace's rail tree.

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
-import { loadRoute } from './renderer-url';
-import type { Rect } from './layout';
+import { loadRoute } from '@main/platform/renderer-url';
+import type { Rect } from '@core/workspace/layout';
 
 /**
  * Find in page.

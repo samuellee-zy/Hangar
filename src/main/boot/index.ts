@@ -1,15 +1,15 @@
 import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
-import { catalogById } from '../shared/catalog';
-import { loadConfig } from './config';
-import { installIconProtocol, registerIconScheme } from './icons';
-import { installMenu } from './menu';
-import { DEFAULT_COOKIE_TTL_DAYS, flushStorage, promoteSessionCookies } from './persist-cookies';
-import { allLiveSessions, partitionFor, pruneSessions } from './session';
-import { applyUserAgent } from './ua';
-import { beginQuit, isQuitting } from './quit-state';
-import { releaseGlobalShortcut } from './system';
-import { AppWindow } from './window';
-import type { Command } from '../shared/types';
+import { catalogById } from '@shared/catalog';
+import { loadConfig } from '@main/platform/config';
+import { installIconProtocol, registerIconScheme } from '@main/features/icons';
+import { installMenu } from '@main/boot/menu';
+import { DEFAULT_COOKIE_TTL_DAYS, flushStorage, promoteSessionCookies } from '@main/platform/persist-cookies';
+import { allLiveSessions, partitionFor, pruneSessions } from '@main/platform/session';
+import { applyUserAgent } from '@main/platform/ua';
+import { beginQuit, isQuitting } from '@main/platform/quit-state';
+import { releaseGlobalShortcut } from '@main/platform/system';
+import { AppWindow } from '@main/window/app-window';
+import type { Command } from '@shared/types';
 
 /**
  * Process entry point. Owns boot order, the single-instance lock, the IPC surface, and the two

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { catalogById } from '../shared/catalog';
-import type { Account, Config, ServiceInstance } from '../shared/types';
+import { catalogById } from '@shared/catalog';
+import type { Account, Config, ServiceInstance } from '@shared/types';
 
 /**
  * Accounts own cookie jars; services borrow them.

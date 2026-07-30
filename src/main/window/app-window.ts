@@ -12,7 +12,7 @@ import {
   shell,
   type WebContents,
 } from 'electron';
-import { catalogById, resolveUrl } from '../shared/catalog';
+import { catalogById, resolveUrl } from '@shared/catalog';
 import {
   addService,
   loadConfig,
@@ -21,7 +21,7 @@ import {
   updateConfig,
   updateConfigReturning,
   quarantinedConfigs,
-} from './config';
+} from '@main/platform/config';
 import {
   Layout,
   PANE_RADIUS,
@@ -29,19 +29,19 @@ import {
   contentArea,
   railBounds,
   windowButtonPosition,
-} from './layout';
-import { Overlay } from './overlay';
-import { loadRoute } from './renderer-url';
-import { ServiceManager } from './service-manager';
-import { FindBar } from './find-bar';
-import { installWebContextMenu, showFolderMenu, showRailMenu, showServiceMenu } from './context-menu';
-import { exportConfig, importConfig } from './transfer';
-import { servicesToHibernate, servicesToRefresh } from './hibernate';
-import { badgeTotal, decideNotification, nextUnread } from './notifications';
-import { applyGlobalShortcut, applyLoginItem, applyProxy } from './system';
-import { allLiveSessions } from './session';
-import { destroyTray, ensureTray, refreshTray } from './tray';
-import { isQuitting } from './quit-state';
+} from '@core/workspace/layout';
+import { Overlay } from '@main/window/overlay';
+import { loadRoute } from '@main/platform/renderer-url';
+import { ServiceManager } from '@main/window/service-manager';
+import { FindBar } from '@main/features/find-bar';
+import { installWebContextMenu, showFolderMenu, showRailMenu, showServiceMenu } from '@main/features/context-menu';
+import { exportConfig, importConfig } from '@main/features/transfer';
+import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
+import { applyGlobalShortcut, applyLoginItem, applyProxy } from '@main/platform/system';
+import { allLiveSessions } from '@main/platform/session';
+import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
+import { isQuitting } from '@main/platform/quit-state';
 import {
   createFolder,
   deleteFolder,
@@ -50,27 +50,27 @@ import {
   moveToFolder,
   pruneMissing,
   reorderItems,
-} from './folders';
-import { findOrphanPartitions } from './permissions';
-import { setPreference } from './preferences';
+} from '@core/workspace/folders';
+import { findOrphanPartitions } from '@core/runtime/permissions';
+import { setPreference } from '@core/config/preferences';
 import {
   createWorkspace,
   deleteWorkspace,
   rehomeUnreachable,
   renameWorkspace,
   reorderWorkspaces,
-} from './workspaces';
-import { openSettingsWindow } from './settings-window';
-import { attachShortcuts } from './shortcuts';
+} from '@core/workspace/workspaces';
+import { openSettingsWindow } from '@main/features/settings-window';
+import { attachShortcuts } from '@main/window/shortcuts';
 import {
   activeServicesOf,
   activeWorkspaceOf,
   projectShellState,
   removeServiceFromConfig,
   resolveCommand,
-} from './shell-state';
-import { PushManager } from './push-manager';
-import { extractNotification, firebaseConfigStatus, pushEligible } from './push';
+} from '@core/shell-state';
+import { PushManager } from '@main/features/push-manager';
+import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import type {
   Command,
   OverlayMode,
@@ -78,7 +78,7 @@ import type {
   ShellState,
   WindowBounds,
   Workspace,
-} from '../shared/types';
+} from '@shared/types';
 
 /**
  * `AppWindow` composes the shell: the window itself, the rail, the panes, and the overlay.

@@ -8,8 +8,8 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { catalog, catalogById, resolveUrl } from '../../src/shared/catalog';
-import { isAllowedHost } from '../../src/main/session';
+import { catalog, catalogById, resolveUrl } from '@shared/catalog';
+import { isAllowedHost } from '@main/platform/session';
 
 describe('identity', () => {
   it('ids are unique', () => {

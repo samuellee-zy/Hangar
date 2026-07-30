@@ -1,8 +1,8 @@
 import { app, protocol, net, type Session, type WebContents } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { catalogById } from '../shared/catalog';
-import type { ServiceInstance } from '../shared/types';
+import { catalogById } from '@shared/catalog';
+import type { ServiceInstance } from '@shared/types';
 
 /**
  * Icons reach the renderer over a `hangar-icon://<serviceId>` scheme rather than file:// paths,

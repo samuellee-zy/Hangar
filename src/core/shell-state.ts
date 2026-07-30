@@ -1,5 +1,5 @@
-import { catalogById } from '../shared/catalog';
-import { flattenServiceIds, pruneMissing } from './folders';
+import { catalogById } from '@shared/catalog';
+import { flattenServiceIds, pruneMissing } from '@core/workspace/folders';
 import type {
   Config,
   Command,
@@ -8,7 +8,7 @@ import type {
   ServiceView,
   ShellState,
   Workspace,
-} from '../shared/types';
+} from '@shared/types';
 
 /**
  * The pure half of `AppWindow`.

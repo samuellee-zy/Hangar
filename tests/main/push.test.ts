@@ -18,7 +18,7 @@ import {
   upsertRegistration,
   MAX_RECONNECT_DELAY_MS,
   PERSISTENT_ID_CAP,
-} from '../../src/main/push';
+} from '@core/push/policy';
 
 
 const FULL = { projectId: 'p', appId: 'a', apiKey: 'k', messagingSenderId: 'm' };

@@ -1,4 +1,4 @@
-import type { RailItem, ServiceView } from '../shared/types';
+import type { RailItem, ServiceView } from '@shared/types';
 
 /**
  * A folder in the rail: a 2×2 grid of its members' icons, with unread rolled up.

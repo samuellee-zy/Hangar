@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AddConnection } from './AddConnection';
 import { Palette } from './Palette';
-import type { OverlayOpen } from '../shared/types';
+import type { OverlayOpen } from '@shared/types';
 
 /**
  * One WebContentsView serves both overlay surfaces. Main attaches and removes it (never merely

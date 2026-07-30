@@ -32,7 +32,7 @@
  * feature stays off until they are. See `docs/push.md`.
  */
 
-import type { MessageEnvelope } from './push-types';
+import type { MessageEnvelope } from '@core/push/types';
 
 /** The four values from a Firebase web app config. All required by the registration endpoint. */
 export interface FirebaseConfig {

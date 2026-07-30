@@ -1,6 +1,6 @@
 import { app, globalShortcut, session, shell } from 'electron';
 import path from 'node:path';
-import type { Preferences, ProxyConfig } from '../shared/types';
+import type { Preferences, ProxyConfig } from '@shared/types';
 
 /**
  * Preferences that reach outside the app — the login item, the proxy, download handling and the

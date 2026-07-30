@@ -1,4 +1,4 @@
-import type { Preferences } from '../shared/types';
+import type { Preferences } from '@shared/types';
 
 /**
  * Every configurable choice, with defaults.

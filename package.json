@@ -2,7 +2,7 @@
   "name": "hangar",
   "productName": "Hangar",
   "version": "0.1.0",
-  "description": "A unified workspace for web apps — one window, isolated sessions, no subscription.",
+  "description": "A unified workspace for web apps \u2014 one window, isolated sessions, no subscription.",
   "main": "out/main/index.js",
   "private": true,
   "scripts": {

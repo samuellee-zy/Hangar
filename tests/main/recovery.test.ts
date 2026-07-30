@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { MAX_AUTO_RETRIES, decideFailure, errorPageHtml, shouldRecoverFromCrash } from '../../src/main/recovery';
+import { MAX_AUTO_RETRIES, decideFailure, errorPageHtml, shouldRecoverFromCrash } from '@core/runtime/recovery';
 
 
 const fail = (over = {}) => decideFailure({ errorCode: -105, isMainFrame: true, attempts: 0, ...over });

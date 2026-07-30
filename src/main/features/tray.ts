@@ -1,5 +1,5 @@
 import { Menu, Tray, app, nativeImage } from 'electron';
-import type { Command, ShellState } from '../shared/types';
+import type { Command, ShellState } from '@shared/types';
 
 /**
  * Menu-bar presence: unread count, a jump list, DND, and a way back to the window when it's hidden.

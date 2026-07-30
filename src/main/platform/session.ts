@@ -1,10 +1,10 @@
 import { session, shell, type Session } from 'electron';
-import { catalogById } from '../shared/catalog';
-import { accountById } from './accounts';
-import { decidePermission } from './permissions';
-import { applyProxy, attachDownloadHandler } from './system';
-import { loadConfig } from './config';
-import type { ServiceInstance } from '../shared/types';
+import { catalogById } from '@shared/catalog';
+import { accountById } from '@core/services/accounts';
+import { decidePermission } from '@core/runtime/permissions';
+import { applyProxy, attachDownloadHandler } from '@main/platform/system';
+import { loadConfig } from '@main/platform/config';
+import type { ServiceInstance } from '@shared/types';
 
 /**
  * The partition comes from the service's Account, verbatim — never recomputed from an id or label.

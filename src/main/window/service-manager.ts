@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { WebContentsView } from 'electron';
-import { resolveUrl } from '../shared/catalog';
-import { captureFavicon } from './icons';
-import { decideFailure, errorPageHtml, shouldRecoverFromCrash } from './recovery';
-import { attachNavigationGuards, partitionFor, sessionFor } from './session';
-import { attachShortcuts, type CommandSink } from './shortcuts';
-import type { ServiceInstance } from '../shared/types';
+import { resolveUrl } from '@shared/catalog';
+import { captureFavicon } from '@main/features/icons';
+import { decideFailure, errorPageHtml, shouldRecoverFromCrash } from '@core/runtime/recovery';
+import { attachNavigationGuards, partitionFor, sessionFor } from '@main/platform/session';
+import { attachShortcuts, type CommandSink } from '@main/window/shortcuts';
+import type { ServiceInstance } from '@shared/types';
 
 /**
  * Owns the WebContentsView per service instance. Views outlive panes: switching a pane to another

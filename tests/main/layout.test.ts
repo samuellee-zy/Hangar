@@ -11,7 +11,7 @@ import {
   contentArea,
   railBounds,
   windowButtonPosition,
-} from '../../src/main/layout';
+} from '@core/workspace/layout';
 
 const W = 1440;
 const H = 900;

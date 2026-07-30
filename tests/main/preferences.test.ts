@@ -4,7 +4,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { DEFAULT_PREFERENCES, setPreference, withDefaults } from '../../src/main/preferences';
+import { DEFAULT_PREFERENCES, setPreference, withDefaults } from '@core/config/preferences';
 
 
 const fresh = () => withDefaults(undefined);

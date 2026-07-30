@@ -8,8 +8,8 @@ import {
   upsertRegistration,
   type FirebaseConfig,
   type StoredRegistration,
-} from './push';
-import type { PushSubscriptionData } from './push-types';
+} from '@core/push/policy';
+import type { PushSubscriptionData } from '@core/push/types';
 
 /**
  * Owns the FCM sockets. Everything that needs a decision lives in `push.ts` — this file is the

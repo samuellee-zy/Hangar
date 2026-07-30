@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ShellState } from '../shared/types';
+import type { ShellState } from '@shared/types';
 
 /**
  * The renderer's only source of truth. It fetches once, then subscribes — it never derives or

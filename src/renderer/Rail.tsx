@@ -3,7 +3,7 @@ import { FolderTile } from './FolderTile';
 import { ServiceIcon } from './ServiceIcon';
 import { SortableRailList, SortableTile } from './SortableRail';
 import { useShellState } from './useShellState';
-import type { ServiceView } from '../shared/types';
+import type { ServiceView } from '@shared/types';
 
 /**
  * The icon rail. Renders `ShellState.railItems` — an ordered tree of top-level services and

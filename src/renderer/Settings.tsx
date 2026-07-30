@@ -1,4 +1,4 @@
-import { catalogById } from '../shared/catalog';
+import { catalogById } from '@shared/catalog';
 import { Choice, Num, Text, Toggle } from './PreferenceControls';
 import { CommitOnBlur } from './CommitOnBlur';
 import { useShellState } from './useShellState';

@@ -1,5 +1,5 @@
 import type { Input, WebContents } from 'electron';
-import type { Command } from '../shared/types';
+import type { Command } from '@shared/types';
 
 /**
  * Accelerators via `before-input-event` on each web contents, deliberately not `globalShortcut`:

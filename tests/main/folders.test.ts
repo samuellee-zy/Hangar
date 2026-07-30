@@ -14,7 +14,7 @@ import {
   moveToFolder,
   pruneMissing,
   reorderItems,
-} from '../../src/main/folders';
+} from '@core/workspace/folders';
 
 
 const ws = (...ids) => ({

@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { decidePermission, findOrphanPartitions } from '../../src/main/permissions';
+import { decidePermission, findOrphanPartitions } from '@core/runtime/permissions';
 
 
 const ask = (permission, over = {}) =>

@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { badgeTotal, decideNotification, nextUnread } from '../../src/main/notifications';
+import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
 
 
 const ctx = (over = {}) => ({ enabled: true, dnd: false, level: 'all', visible: false, ...over });

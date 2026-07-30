@@ -9,7 +9,7 @@
  * The surface is deliberately tiny: read state, send a command. Anything richer would let the
  * renderer accumulate its own state, which is the rule the whole architecture rests on.
  */
-import type { Command, OverlayOpen, ShellState } from '../shared/types';
+import type { Command, OverlayOpen, ShellState } from '@shared/types';
 
 declare global {
   interface Window {

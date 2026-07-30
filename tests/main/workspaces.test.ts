@@ -11,7 +11,7 @@ import {
   rehomeUnreachable,
   renameWorkspace,
   reorderWorkspaces,
-} from '../../src/main/workspaces';
+} from '@core/workspace/workspaces';
 
 
 const svc = (id) => ({ kind: 'service', id });

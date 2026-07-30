@@ -1,6 +1,6 @@
 import { Menu, clipboard, dialog, shell, type BaseWindow, type WebContents } from 'electron';
-import { catalogById } from '../shared/catalog';
-import type { Command, ServiceInstance } from '../shared/types';
+import { catalogById } from '@shared/catalog';
+import type { Command, ServiceInstance } from '@shared/types';
 
 /**
  * Native menus rather than React ones. `Menu.popup()` gets correct macOS styling and keyboard

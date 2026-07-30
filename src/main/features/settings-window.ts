@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { BrowserWindow } from 'electron';
-import { forwardConsole } from './renderer-url';
+import { forwardConsole } from '@main/platform/renderer-url';
 
 /**
  * Settings is a real window rather than another overlay mode, following the macOS Preferences

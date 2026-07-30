@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Pane } from '../shared/types';
+import type { Pane } from '@shared/types';
 
 /**
  * Pane geometry. Deliberately dumb: no tree, no resizable splitters, no persisted ratios — just

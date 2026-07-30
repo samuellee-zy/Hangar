@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { catalog } from '../shared/catalog';
+import { catalog } from '@shared/catalog';
 import { brightenForDark } from './accent';
 import { fuzzy } from './fuzzy';
 import { useShellState } from './useShellState';

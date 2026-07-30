@@ -1,7 +1,7 @@
 import { dialog, type BaseWindow } from 'electron';
 import fs from 'node:fs';
-import { loadConfig, saveConfig } from './config';
-import type { Config } from '../shared/types';
+import { loadConfig, saveConfig } from '@main/platform/config';
+import type { Config } from '@shared/types';
 
 /**
  * Export and import `config.json`.

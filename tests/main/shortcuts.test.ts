@@ -7,7 +7,7 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { attachShortcuts, translate } from '../../src/main/shortcuts';
+import { attachShortcuts, translate } from '@main/window/shortcuts';
 
 
 // Minimal stand-in for a WebContents: attachShortcuts only ever calls .on('before-input-event').

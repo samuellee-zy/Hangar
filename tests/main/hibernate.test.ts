@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { servicesToHibernate, servicesToRefresh } from '../../src/main/hibernate';
+import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 
 
 const NOW = 1_000_000_000;

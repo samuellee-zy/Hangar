@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Command, OverlayOpen, ShellState } from '../shared/types';
+import type { Command, OverlayOpen, ShellState } from '@shared/types';
 
 // The rail and palette get exactly two verbs: read state, send a command. No direct access to
 // services, sessions or windows — that keeps the renderer a pure render target and makes the

@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { accountsForProvider, createAccount, migrateV1, resolveAccount } from '../../src/main/accounts';
+import { accountsForProvider, createAccount, migrateV1, resolveAccount } from '@core/services/accounts';
 
 
 // Shape of a real v1 config: Gmail and Calendar shared the 'gmail' group, everything else its own.

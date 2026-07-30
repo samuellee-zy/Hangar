@@ -20,7 +20,7 @@ export default defineConfig({
   main: {
     resolve: { alias },
     plugins: [externalizeDepsPlugin()],
-    build: { lib: { entry: resolve('src/main/index.ts') } },
+    build: { lib: { entry: resolve('src/main/boot/index.ts') } },
   },
   preload: {
     resolve: { alias },

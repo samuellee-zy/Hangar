@@ -13,9 +13,9 @@ import {
   projectShellState,
   removeServiceFromConfig,
   resolveCommand,
-} from '../../src/main/shell-state';
-import { DEFAULT_PREFERENCES } from '../../src/main/preferences';
-import type { Config, RailItem } from '../../src/shared/types';
+} from '@core/shell-state';
+import { DEFAULT_PREFERENCES } from '@core/config/preferences';
+import type { Config, RailItem } from '@shared/types';
 
 const svc = (id: string, over: Record<string, unknown> = {}) => ({
   id,

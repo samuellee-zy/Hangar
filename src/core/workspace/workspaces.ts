@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { flattenServiceIds } from './folders';
-import type { Config, RailItem, Workspace } from '../shared/types';
+import { flattenServiceIds } from '@core/workspace/folders';
+import type { Config, RailItem, Workspace } from '@shared/types';
 
 /**
  * Workspace lifecycle. Pure over `Config`, so the awkward cases are testable.

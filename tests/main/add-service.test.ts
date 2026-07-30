@@ -15,7 +15,7 @@ import path from 'node:path';
 fs.rmSync(path.join(os.tmpdir(), 'hangar-check'), { recursive: true, force: true });
 
 const { addService, loadConfig, makeCustomInstance, makeInstance } = await import(
-  '../../src/main/config'
+  '@main/platform/config'
 );
 
 
