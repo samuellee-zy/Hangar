@@ -131,3 +131,22 @@ export function captureFavicon(wc: WebContents, svc: ServiceInstance, ses: Sessi
     })();
   });
 }
+
+/**
+ * Deletes a service's cached favicon. Called on removal.
+ *
+ * Small, but these accumulate for the lifetime of the install with nothing referencing them —
+ * and a service id reused later would pick up a stranger's icon.
+ */
+export function deleteCachedIcon(serviceId: string): void {
+  // Only ever a uuid from our own config, but this builds a filesystem path, so it is validated
+  // like any other — the same rule as the catalog slug guard above.
+  if (!/^[A-Za-z0-9-]+$/.test(serviceId)) return;
+  for (const ext of FAVICON_EXTENSIONS) {
+    try {
+      fs.rmSync(path.join(cacheDir(), `${serviceId}.${ext}`), { force: true });
+    } catch {
+      // A cached icon we can't delete is a wasted few KB, not a failure worth surfacing.
+    }
+  }
+}

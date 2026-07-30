@@ -120,3 +120,24 @@ describe("ordering and the safety net", () => {
     assert.equal(c.workspaces[0].items.length, 1, 'no duplicate appended');
   });
 });
+
+describe('layout cleanup', () => {
+  it('deleting a workspace deletes its stored layout', () => {
+    // Keyed by workspace id and referenced nowhere else, so leaving it behind grows config
+    // forever — and a workspace later created with the same id inherits a stale arrangement.
+    const c = config(ws('w1', 's1'), ws('w2', 's2'));
+    c.layouts = {
+      w1: { panes: [{ id: 'p1', serviceId: 's1' }], focusedPaneId: 'p1' },
+      w2: { panes: [{ id: 'p2', serviceId: 's2' }], focusedPaneId: 'p2' },
+    };
+    deleteWorkspace(c, 'w2');
+    assert.deepEqual(Object.keys(c.layouts), ['w1']);
+  });
+
+  it('a refused deletion leaves the layout alone', () => {
+    const c = config(ws('w1', 's1'));
+    c.layouts = { w1: { panes: [], focusedPaneId: null } };
+    deleteWorkspace(c, 'w1'); // the last workspace — refused
+    assert.deepEqual(Object.keys(c.layouts), ['w1']);
+  });
+});

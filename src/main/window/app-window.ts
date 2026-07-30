@@ -34,6 +34,7 @@ import { Overlay } from '@main/window/overlay';
 import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
+import { deleteCachedIcon } from '@main/features/icons';
 import { installWebContextMenu, showFolderMenu, showRailMenu, showServiceMenu } from '@main/features/context-menu';
 import { exportConfig, importConfig } from '@main/features/transfer';
 import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
@@ -228,7 +229,10 @@ export class AppWindow {
 
     // Reconnect whatever was already registered, so a restart doesn't mean silence until each
     // service is opened once.
-    if (loadConfig().preferences.notifications.push) {
+    // Both conditions, matching applyPreferenceEffect. Starting without complete credentials means
+    // every registration fails and the reconnect loop retries them forever.
+    const notify = loadConfig().preferences.notifications;
+    if (notify.push && firebaseConfigStatus(notify.firebase) === 'ready') {
       this.push.start(loadConfig().services.map((s) => s.id));
     }
   }
@@ -247,7 +251,12 @@ export class AppWindow {
     const available = new Set(this.activeServices(workspaceId).map((s) => s.id));
 
     const serviceIds = (stored?.panes ?? []).map((p) => p.serviceId).filter((id) => available.has(id));
-    const focusedIndex = stored?.panes.findIndex((p) => p.id === stored.focusedPaneId) ?? -1;
+    // Resolve the focused *service*, not its index. The index was computed against the unfiltered
+    // stored array and then applied to the filtered live one, so any deleted service shifted focus
+    // onto the wrong pane: stored [deleted, Gmail, Notion] focused on Gmail (index 1) filtered to
+    // [Gmail, Notion], and panes[1] is Notion.
+    const focusedServiceId =
+      stored?.panes.find((p) => p.id === stored.focusedPaneId)?.serviceId ?? null;
 
     if (serviceIds.length === 0) {
       const first = this.activeServices(workspaceId)[0];
@@ -264,12 +273,17 @@ export class AppWindow {
     } finally {
       this.restoring = false;
     }
+    const focusedIndex = focusedServiceId ? serviceIds.indexOf(focusedServiceId) : -1;
     const restoredFocus = this.layout.panes[focusedIndex >= 0 ? focusedIndex : 0];
     if (restoredFocus) this.layout.focusedPaneId = restoredFocus.id;
     this.saveLayout();
   }
 
   private saveLayout(): void {
+    // The flag was set and cleared but never read, so restoring four panes performed four full
+    // write-and-rename cycles at startup, each persisting a *partial* pane list — and a throw
+    // mid-restore left the truncated layout on disk permanently.
+    if (this.restoring) return;
     const workspaceId = loadConfig().activeWorkspaceId;
     if (!workspaceId) return;
     updateConfig((c) => {
@@ -556,6 +570,14 @@ export class AppWindow {
   }
 
   private relayout(): void {
+    // The find bar's target is set once on open, but focus can move underneath it — relayout then
+    // moved the bar over the newly focused pane while it was still searching the old one. Closing
+    // is the honest answer: the alternative is silently retargeting a search the user is mid-way
+    // through.
+    if (this.findBar.isOpen && this.findBar.targetServiceId) {
+      const focused = this.layout.focused();
+      if (!focused || focused.serviceId !== this.findBar.targetServiceId) this.findBar.close();
+    }
     const { width, height } = this.win.getContentBounds();
     const chrome = this.chrome();
     const bounds = this.layout.bounds(chrome, width, height);
@@ -847,7 +869,7 @@ export class AppWindow {
         const pane = this.layout.focused();
         const wc = pane && this.services.get(pane.serviceId)?.view.webContents;
         const rect = pane ? this.paneRect(pane.id) : null;
-        if (wc && rect) this.findBar.open(wc, rect);
+        if (wc && rect && pane) this.findBar.open(wc, rect, pane.serviceId);
         break;
       }
 
@@ -984,6 +1006,8 @@ export class AppWindow {
   private removeService(serviceId: string): void {
     // Before the config write, or the registration row is orphaned with a live socket behind it.
     this.push.unsubscribe(serviceId);
+    this.unread.clear(serviceId);
+    deleteCachedIcon(serviceId);
 
     updateConfig((c) => removeServiceFromConfig(c, serviceId));
 
@@ -999,11 +1023,7 @@ export class AppWindow {
     // Closing the last pane is refused by Layout, so a rail emptied down to one service could
     // leave a pane pointing at something that no longer exists.
     const orphan = this.layout.panes.find((p) => p.serviceId === serviceId);
-    if (orphan) {
-      const fallback = this.activeServices(loadConfig().activeWorkspaceId)[0];
-      if (fallback) orphan.serviceId = fallback.id;
-      else this.layout.panes = [];
-    }
+    if (orphan) this.retargetPane(orphan, serviceId);
 
     this.relayout();
     this.saveLayout();
@@ -1021,11 +1041,37 @@ export class AppWindow {
     this.services.destroy(serviceId);
     // A pane pointing at a sleeping service would render nothing, so retarget it.
     for (const pane of this.layout.panes.filter((p) => p.serviceId === serviceId)) {
-      const replacement = this.activeServices(loadConfig().activeWorkspaceId).find(
-        (s) => s.id !== serviceId
-      );
-      if (replacement) pane.serviceId = replacement.id;
+      this.retargetPane(pane, serviceId);
     }
+    this.saveLayout();
+  }
+
+  /**
+   * Points an orphaned pane at another service and *loads* it.
+   *
+   * Three things went wrong here before. The replacement was never opened, so the pane had no view
+   * and `relayout` showed the **empty state with a full rail**. It wasn't checked against panes
+   * already on screen, so a split could end up rendering the same service twice. And nothing saved
+   * the layout, so config kept naming the service that had just gone.
+   */
+  private retargetPane(pane: { id: string; serviceId: string }, avoid: string): void {
+    const onScreen = new Set(
+      this.layout.panes.filter((p) => p.id !== pane.id).map((p) => p.serviceId)
+    );
+    const candidates = this.activeServices(loadConfig().activeWorkspaceId);
+    const replacement =
+      candidates.find((s) => s.id !== avoid && !onScreen.has(s.id)) ??
+      candidates.find((s) => s.id !== avoid);
+
+    if (!replacement) {
+      // Nothing left to show. Dropping the pane is what makes the empty state correct rather than
+      // a blank pane with no explanation.
+      this.layout.panes = this.layout.panes.filter((p) => p.id !== pane.id);
+      return;
+    }
+    pane.serviceId = replacement.id;
+    // Load it. Without this the pane exists, has no view, and renders nothing.
+    this.services.ensure(replacement);
   }
 
   /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */

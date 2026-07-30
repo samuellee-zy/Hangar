@@ -40,6 +40,10 @@ export function deleteWorkspace(config: Config, workspaceId: string): DeleteResu
   }
 
   const [removed] = config.workspaces.splice(index, 1) as [Workspace];
+  // Layouts are keyed by workspace id and nothing else references them, so leaving this behind
+  // grows config forever — and a workspace later created with the same id would inherit a stale
+  // pane arrangement.
+  delete config.layouts[workspaceId];
   const survivors = new Set(config.workspaces.flatMap(flattenServiceIds));
   const orphans = flattenServiceIds(removed).filter((id) => !survivors.has(id));
 

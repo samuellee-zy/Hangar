@@ -739,3 +739,34 @@ generated names don't match the directories on disk and **every service loses it
 `migrateConfig` now throws on that input. The caller keeps the original file and starts from
 defaults, so the user can be signed out *recoverably* rather than silently and permanently. A
 migration that can't be sure is better off refusing than guessing at cookie-jar identity.
+
+## 60. Retargeting a pane has to open what it points at
+
+`sleep()` and `removeService` both pointed an orphaned pane at "the first other service in the
+workspace" — and stopped there. Nothing loaded it, so the pane had no view, `hasVisibleContent` was
+false, and the **empty state appeared with a full rail**. The replacement also wasn't checked
+against panes already on screen, so a split could render the same service twice, and neither path
+saved the layout, so config kept naming the service that had just gone.
+
+One `retargetPane` now handles both: prefer a service not already visible, load it, and if there's
+genuinely nothing left, drop the pane so the empty state is *correct* rather than accidental.
+
+## 61. The find bar closes when focus moves
+
+`target` was set once on open, while `relayout` moved the bar to follow the focused pane — so it sat
+over one pane and searched another. Closing on divergence is the honest answer; silently retargeting
+a search someone is halfway through is worse than making them press ⌘F again.
+
+## 62. `rename` is atomic; the bytes underneath it are not
+
+`writeAtomic` wrote the temp file and renamed. Rename is atomic with respect to *ordering*, but
+without an `fsync` the contents can still be in the page cache — so a power loss can leave a
+correctly-named file full of zeroes. Which is precisely the failure this module exists to prevent,
+sitting inside the fix for it.
+
+## 63. `app.quit()` before app-ready doesn't stop the module
+
+The single-instance guard called `app.quit()` and carried on: `registerIconScheme()` and the whole
+`whenReady` handler were still registered, so a second copy briefly raced the first over the same
+partitions — the exact thing the lock exists to prevent, and what corrupts a cookie jar.
+`app.exit(0)` stops immediately.

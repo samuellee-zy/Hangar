@@ -1,4 +1,4 @@
-import { Menu, clipboard, dialog, shell, type BaseWindow, type WebContents } from 'electron';
+import { Menu, app, clipboard, dialog, shell, type BaseWindow, type WebContents } from 'electron';
 import { catalogById } from '@shared/catalog';
 import type { Command, ServiceInstance } from '@shared/types';
 
@@ -86,7 +86,11 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
       { label: 'Open page in browser', click: () => void shell.openExternal(wc.getURL()) }
     );
 
-    if (!process.env['npm_lifecycle_event']?.includes('start')) {
+    // `app.isPackaged`, not an npm env var. The old check was
+    // `!process.env['npm_lifecycle_event']?.includes('start')`, which is `!undefined` — i.e. TRUE —
+    // in a packaged app, so "Inspect element" shipped to production and was hidden during
+    // `npm start`, exactly backwards.
+    if (!app.isPackaged) {
       items.push(
         { type: 'separator' },
         { label: 'Inspect element', click: () => wc.inspectElement(params.x, params.y) }

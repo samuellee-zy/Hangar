@@ -24,6 +24,11 @@ export class FindBar {
   private attached = false;
   /** The contents currently being searched, so we can stop cleanly when closing. */
   private target: Electron.WebContents | null = null;
+  /**
+   * Which service that belongs to. Focus can move while the bar is open, and the bar follows the
+   * focused pane on relayout — so the caller needs to notice when the two have diverged.
+   */
+  private targetService: string | null = null;
 
   constructor(
     private win: BaseWindow,
@@ -49,9 +54,10 @@ export class FindBar {
   }
 
   /** `paneBounds` is the focused pane, so the bar follows a split rather than the window. */
-  open(target: Electron.WebContents, paneBounds: Rect): void {
+  open(target: Electron.WebContents, paneBounds: Rect, serviceId?: string): void {
     const view = this.ensure();
     this.target = target;
+    this.targetService = serviceId ?? null;
     if (!this.attached) {
       this.win.contentView.addChildView(view);
       this.attached = true;
@@ -90,6 +96,7 @@ export class FindBar {
       this.target.stopFindInPage('keepSelection');
     }
     this.target = null;
+    this.targetService = null;
     if (!this.attached || !this.view) return;
     // Removed, not hidden — an attached view keeps eating clicks in its rectangle.
     this.win.contentView.removeChildView(this.view);
@@ -102,6 +109,10 @@ export class FindBar {
     this.win.contentView.removeChildView(this.view);
     this.win.contentView.addChildView(this.view);
     this.layout(paneBounds);
+  }
+
+  get targetServiceId(): string | null {
+    return this.targetService;
   }
 
   get contents() {

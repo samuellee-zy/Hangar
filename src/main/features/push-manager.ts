@@ -36,6 +36,12 @@ export interface PushDeps {
 
 export class PushManager {
   private clients = new Map<string, PushReceiver>();
+  /**
+   * Services torn down while a `connect()` was still in flight. `connect` persists after two
+   * awaits, so an `unsubscribe` in between would be undone — the registration written back into
+   * config with a live socket behind it, for a service the user had just deleted.
+   */
+  private abandoned = new Set<string>();
   private timers = new Map<string, NodeJS.Timeout>();
   private attempts = new Map<string, number>();
   private registrations: StoredRegistration[] = [];
@@ -101,6 +107,7 @@ export class PushManager {
 
   /** Tears down one service's socket and forgets its registration — used when a service is removed. */
   unsubscribe(serviceId: string): void {
+    this.abandoned.add(serviceId);
     this.teardown(serviceId);
     const before = this.registrations.length;
     this.registrations = this.registrations.filter((r) => r.serviceId !== serviceId);
@@ -135,6 +142,8 @@ export class PushManager {
 
   private async connect(registration: StoredRegistration): Promise<PushTypes.Credentials> {
     const { serviceId, vapidKey } = registration;
+    // A re-subscribe after a removal is legitimate; clear the tombstone.
+    this.abandoned.delete(serviceId);
     // A second connect for the same service would leave the first socket orphaned and delivering
     // duplicates, since nothing else holds a reference to it.
     this.teardown(serviceId);
@@ -166,7 +175,21 @@ export class PushManager {
       this.attempts.delete(serviceId);
     });
 
-    const credentials = await client.registerIfNeeded();
+    let credentials: PushTypes.Credentials;
+    try {
+      credentials = await client.registerIfNeeded();
+    } catch (error) {
+      // Registration failed — a bad Firebase project, a revoked key, no network. Leaving the
+      // client in the map means a dead object still driving the reconnect loop through its
+      // ON_DISCONNECT handler.
+      this.teardown(serviceId);
+      throw error;
+    }
+    // The service may have been removed during those awaits.
+    if (this.abandoned.has(serviceId)) {
+      this.teardown(serviceId);
+      throw new Error(`push: ${serviceId} was removed while registering`);
+    }
     this.persist({ serviceId, vapidKey, credentials, seenIds: registration.seenIds });
     await client.connect();
     this.deps.log(`push: connected for ${serviceId}`);

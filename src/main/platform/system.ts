@@ -1,4 +1,5 @@
 import { app, globalShortcut, session, shell } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { Preferences, ProxyConfig } from '@shared/types';
 
@@ -85,7 +86,9 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
     const prefs = getPrefs().downloads;
     if (!prefs.askWhereToSave) {
       const folder = prefs.folder ?? app.getPath('downloads');
-      item.setSavePath(path.join(folder, item.getFilename()));
+      // Setting an explicit path disables Chromium's own uniquifier, so downloading invoice.pdf
+      // twice silently destroyed the first copy. Reproduce it ourselves.
+      item.setSavePath(uniqueDownloadPath(folder, item.getFilename()));
     }
     item.once('done', (_e, state) => {
       if (state === 'completed' && prefs.openOnComplete) {
@@ -118,3 +121,20 @@ export function applyGlobalShortcut(accelerator: string | null, toggle: () => vo
 export const releaseGlobalShortcut = () => globalShortcut.unregisterAll();
 
 export { session };
+
+/**
+ * `invoice.pdf` → `invoice (1).pdf` → `invoice (2).pdf`, matching the browser convention.
+ *
+ * Only needed because we set an explicit save path; Chromium does this itself when left alone. The
+ * loop is bounded — at a thousand collisions something else is wrong, and overwriting is still
+ * better than hanging.
+ */
+export function uniqueDownloadPath(folder: string, filename: string): string {
+  const ext = path.extname(filename);
+  const stem = path.basename(filename, ext);
+  let candidate = path.join(folder, filename);
+  for (let n = 1; fs.existsSync(candidate) && n < 1000; n++) {
+    candidate = path.join(folder, `${stem} (${n})${ext}`);
+  }
+  return candidate;
+}

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { WebContentsView } from 'electron';
 import { resolveUrl } from '@shared/catalog';
+import { loadConfig } from '@main/platform/config';
 import { captureFavicon } from '@main/features/icons';
 import { decideFailure, errorPageHtml, shouldRecoverFromCrash } from '@core/runtime/recovery';
 import { attachNavigationGuards, partitionFor, sessionFor } from '@main/platform/session';
@@ -144,7 +145,14 @@ export class ServiceManager {
       }
     });
 
-    view.webContents.setZoomFactor(svc.zoom);
+    // Applied on every load, not once before the first navigation. Chromium's zoom level is
+    // per-origin and resets on a cross-origin navigation, so a factor set on the empty
+    // about:blank contents never survived to the real page — which read as "zoom resets itself"
+    // after every reload and every wake from hibernation.
+    view.webContents.on('did-finish-load', () => {
+      const current = loadConfig().services.find((entry) => entry.id === svc.id);
+      if (current) view.webContents.setZoomFactor(current.zoom);
+    });
     void view.webContents.loadURL(resolveUrl(svc));
 
     return runtime;

@@ -42,7 +42,10 @@ const trackWindow = (w: AppWindow) => {
 const gotLock = app.requestSingleInstanceLock();
 console.log(`[boot] single-instance lock: ${gotLock ? 'acquired' : 'denied — handing off and quitting'}`);
 if (!gotLock) {
-  app.quit();
+  // `app.quit()` before app-ready doesn't stop this module executing — everything below still
+  // registered, and a second copy briefly raced the first over the same partitions, which is
+  // exactly what corrupts a cookie jar. Exit outright instead.
+  app.exit(0);
 }
 
 // Must precede app-ready, hence not inside whenReady with the rest of the setup.

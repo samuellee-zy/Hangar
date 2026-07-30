@@ -156,6 +156,15 @@ export function writeAtomic(paths: ConfigPaths, contents: string): void {
   }
 
   const temp = `${paths.main}.tmp`;
-  fs.writeFileSync(temp, contents);
+  // Write, flush, *then* rename. `rename` is atomic with respect to ordering, but without the
+  // fsync the temp file's contents may still be in the page cache — so a power loss can leave a
+  // correctly-named file full of zeroes, which is the failure this whole module exists to prevent.
+  const fd = fs.openSync(temp, 'w');
+  try {
+    fs.writeFileSync(fd, contents);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(temp, paths.main);
 }
