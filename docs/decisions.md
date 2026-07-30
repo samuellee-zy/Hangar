@@ -613,3 +613,37 @@ ids the list exists to remember.
 
 Now a falsy id delivers the message — it's still a message — without recording it. We can't
 recognise it again, and pretending otherwise costs us the ones we can.
+
+## 52. Feature-sliced modules, with the boundary enforced rather than intended
+
+`src/main/` was 24 files in one flat directory: 14 pure, 18 importing Electron, and nothing marking
+which was which. The "pure module" discipline that makes this codebase testable was a convention
+held by hand — nothing stopped a pure module gaining `import { app } from 'electron'`, and it would
+only have been noticed if that module happened to have a test.
+
+Now `src/core/` is the pure domain and `src/main/` the Electron adapters, grouped by role
+(`boot`, `window`, `features`, `platform`). `dependency-cruiser` runs in `npm run check` and fails
+the build on `core → electron`, `core → react`, `core → main`, `renderer → main`, and cycles.
+
+That's also what keeps the core genuinely extractable. A single package is right today, but if
+`core/` ever needs to become one, the work is a `git mv` plus a manifest **provided the boundary
+actually held** — which is now proven continuously rather than discovered to be false on the day it
+matters.
+
+## 53. A boundary rule that never fires is worse than no rule
+
+Three of the five rules were misconfigured and silently passed. `to: { path: '^electron$' }` never
+matches, because what the dependency graph holds is the *resolved* path
+`node_modules/electron/index.js`. Same for `^(react|react-dom)`. And `electron` is an `npm-dev`
+dependency, not `npm`, so a `dependencyTypes: ['npm']` filter excluded it too.
+
+All three reported a clean graph. Nothing was wrong with the code — the rules just weren't looking
+at anything.
+
+Found by **deliberately adding a violation and checking the rule caught it.** Every rule here has
+been verified that way. A green boundary check reads as proof, so it has to actually be one; the
+same reasoning as the isolated-world bug in #31, where code that typechecked and reviewed clean was
+a silent no-op.
+
+`tsConfig` must also be passed in options, or every `@core/*` alias misresolves and the rules cruise
+a graph that isn't the real one.
