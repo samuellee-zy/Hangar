@@ -62,6 +62,13 @@ import {
 } from './workspaces';
 import { openSettingsWindow } from './settings-window';
 import { attachShortcuts } from './shortcuts';
+import {
+  activeServicesOf,
+  activeWorkspaceOf,
+  projectShellState,
+  removeServiceFromConfig,
+  resolveCommand,
+} from './shell-state';
 import { PushManager } from './push-manager';
 import { extractNotification, firebaseConfigStatus, pushEligible } from './push';
 import type {
@@ -280,52 +287,28 @@ export class AppWindow {
   // --- state ------------------------------------------------------------------------------
 
   private activeWorkspace(workspaceId: string | null) {
-    const config = loadConfig();
-    return config.workspaces.find((w) => w.id === workspaceId) ?? config.workspaces[0];
+    return activeWorkspaceOf(loadConfig(), workspaceId);
   }
+
 
   /** Flattened in rail order, so ⌘1..9 and the palette match what you see. */
   private activeServices(workspaceId: string | null): ServiceInstance[] {
-    const config = loadConfig();
-    const workspace = this.activeWorkspace(workspaceId);
-    // No workspace means nothing to show — falling back to every service used to silently render
-    // tiles that belong to no workspace at all.
-    if (!workspace) return [];
-    const byId = new Map(config.services.map((s) => [s.id, s]));
-    return flattenServiceIds(workspace)
-      .map((id) => byId.get(id))
-      .filter((s): s is ServiceInstance => Boolean(s));
+    return activeServicesOf(loadConfig(), workspaceId);
   }
 
+
   state(): ShellState {
-    const config = loadConfig();
-    return {
-      accounts: config.accounts,
-      preferences: config.preferences,
-      orphanPartitions: this.orphanPartitions,
-      quarantinedConfigs: quarantinedConfigs(),
-      allServices: config.services,
-      flashServiceId: this.flashServiceId,
-      services: this.activeServices(config.activeWorkspaceId).map((svc) => {
-        const entry = catalogById(svc.catalogId);
-        const runtime = this.services.get(svc.id);
-        return {
-          ...svc,
-          initials: entry?.initials ?? svc.name.slice(0, 2),
-          // Custom connections carry their own colour; catalog ones take the brand hex.
-          color: entry?.color ?? svc.color ?? '#666',
-          loading: runtime?.loading ?? false,
-          sleeping: !runtime,
-          unread: runtime?.unread ?? 0,
-        };
-      }),
-      workspaces: config.workspaces,
-      railItems: this.activeWorkspace(config.activeWorkspaceId)?.items ?? [],
+    return projectShellState({
+      config: loadConfig(),
+      runtimes: this.services.all(),
       panes: this.layout.panes,
       focusedPaneId: this.layout.focusedPaneId,
-      activeWorkspaceId: config.activeWorkspaceId,
-    };
+      orphanPartitions: this.orphanPartitions,
+      quarantinedConfigs: quarantinedConfigs(),
+      flashServiceId: this.flashServiceId,
+    });
   }
+
 
   /**
    * Pulled by the overlay renderer on mount. The push in `Overlay.open()` races the view's first
@@ -604,25 +587,12 @@ export class AppWindow {
 
   /** Resolves the `#n` / `#focused` placeholders the keyboard layer can't resolve on its own. */
   private resolve(command: Command): Command | null {
-    const config = loadConfig();
-
-    if (command.type === 'focus-service' && command.serviceId.startsWith('#')) {
-      const index = Number(command.serviceId.slice(1)) - 1;
-      const svc = this.activeServices(config.activeWorkspaceId)[index];
-      return svc ? { type: 'focus-service', serviceId: svc.id } : null;
-    }
-    if (command.type === 'set-workspace' && command.workspaceId.startsWith('#')) {
-      const index = Number(command.workspaceId.slice(1)) - 1;
-      const ws = config.workspaces[index];
-      return ws ? { type: 'set-workspace', workspaceId: ws.id } : null;
-    }
-    if (command.type === 'close-pane' && command.paneId === '#focused') {
-      return this.layout.focusedPaneId
-        ? { type: 'close-pane', paneId: this.layout.focusedPaneId }
-        : null;
-    }
-    return command;
+    return resolveCommand(command, {
+      config: loadConfig(),
+      focusedPaneId: this.layout.focusedPaneId,
+    });
   }
+
 
   /** Returns whether anything happened — the keyboard layer uses this to decide whether to
    *  swallow the keystroke. See CommandSink. */
@@ -1001,18 +971,7 @@ export class AppWindow {
     // Before the config write, or the registration row is orphaned with a live socket behind it.
     this.push.unsubscribe(serviceId);
 
-    updateConfig((c) => {
-      c.services = c.services.filter((s) => s.id !== serviceId);
-      const alive = new Set(c.services.map((s) => s.id));
-      for (const w of c.workspaces) pruneMissing(w, alive);
-      for (const layout of Object.values(c.layouts)) {
-        layout.panes = layout.panes.filter((p) => p.serviceId !== serviceId);
-      }
-      // An account with no services is a cookie jar nothing can reach. Drop it, or Settings fills
-      // up with dead entries over time.
-      const used = new Set(c.services.map((s) => s.accountId));
-      c.accounts = c.accounts.filter((a) => used.has(a.id));
-    });
+    updateConfig((c) => removeServiceFromConfig(c, serviceId));
 
     for (const pane of this.layout.panes.filter((p) => p.serviceId === serviceId)) {
       this.layout.close(pane.id);
