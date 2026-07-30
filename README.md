@@ -66,29 +66,44 @@ default: copy/paste, open-link-in-browser, and spelling suggestions.
 
 ## Testing
 
-There's no unit-test surface for the shell itself — it's integration with third-party web
-properties, verified by using it. What *is* tested is the pure logic where a mistake is silent and
-expensive. **140 checks across 12 suites**, each bundling one module with esbuild and running it under
-plain node, so they're fast and need no Electron.
+**253 tests under Vitest**, plus `dependency-cruiser` enforcing the module boundaries on every run.
 
-| Suite | Covers |
+The architecture is what makes this possible: `src/core/` is pure — no Electron, no React — so its
+logic runs under plain node with no window. That isn't a convention any more; `npm run check` fails
+the build if a `core` module imports `electron`, and each rule was verified by deliberately breaking
+it ([decisions #53](docs/decisions.md)).
+
+| Area | Covers |
 | --- | --- |
-| `check:config-store` | Atomic writes, corrupt-file quarantine, backup recovery — the highest-stakes tests here |
-| `check:layout` | Pane geometry across all four rail positions, and pane lifecycle |
-| `check:shortcuts` | Key translation, and that a listener can't be double-registered |
-| `check:accounts` | The v1→v2 migration preserves every partition name |
-| `check:add` | Adding services, second accounts, custom URLs and their host allowlists |
-| `check:preferences` | Defaults merging and `set-preference` validation |
-| `check:folders` | The rail tree's invariants and the v3→v4 migration |
-| `check:workspaces` | Workspace lifecycle, and that deletion never strands a service |
-| `check:hibernate` | Which services are eligible to unload, and what reloads after a wake |
-| `check:notifications` | Banner-vs-count policy, DND, muting, badge totals |
-| `check:permissions` | Permission policy by provenance, deny-by-default, orphan partition detection |
-| `check:recovery` | Which load failures matter, retry backoff, crash recovery, error-page escaping |
+| `config-store` | Atomic writes, corrupt-file quarantine, backup recovery, and that an **empty** config is valid rather than corrupt — the highest-stakes tests here |
+| `migrate` | v1/v2 → current end to end; partition names byte-identical; refuses input that would silently sign you out |
+| `shell-state` | State projection, `#n`/`#focused` resolution, and that removing a service touches all five structures that reference it |
+| `layout` | Pane geometry across all four rail positions, and pane lifecycle |
+| `shortcuts` | Every chord, and that a listener can't be double-registered |
+| `accounts` | The v1→v2 migration preserves every partition name |
+| `add-service` | Adding services, second accounts, custom URLs and their host allowlists |
+| `preferences` | Defaults merging and `set-preference` validation, to three levels deep |
+| `folders` / `workspaces` | Rail-tree invariants, migrations, and that deletion never strands a service |
+| `hibernate` | Which services are eligible to unload, and what reloads after a wake |
+| `notifications` | Banner-vs-count policy, DND, muting, window visibility, badge totals |
+| `permissions` | Policy by provenance, deny-by-default, orphan partition detection |
+| `recovery` | Which load failures matter, retry backoff, crash recovery, error-page escaping |
+| `push` | Eligibility, replay suppression, payload extraction across six shapes, backoff |
+| `accent` | Contrast lifting, and that no input can produce invalid CSS |
+| `catalog` | Data invariants: unique ids, icon files exist, every entry allows its own URL |
 
-There's also `HANGAR_PROBE=1`, which opens the picker on launch, reports what the rail and overlay
-actually rendered, and clicks a tile with a **real input event**. It exists because renderer
-failures are invisible from the terminal — see [decisions #14](docs/decisions.md).
+`HANGAR_PROBE=1` covers what unit tests structurally can't — it drives the real app and reports what
+actually happened:
+
+```
+[probe] hibernated push to "Calendar": sleeping=true, unread 1 -> 2 (badge 2)
+[probe] after close: shell=null (disposed)
+[probe] teardown: views 1->1, show-window ok, settings ok
+```
+
+It exists because renderer and lifecycle failures are invisible from the terminal
+([decisions #14](docs/decisions.md)). Its weakness is that it logs rather than fails — promoting it
+to Playwright is the top item in [the backlog](docs/backlog.md#5-testing-gaps).
 
 ## Docs
 
@@ -102,7 +117,7 @@ failures are invisible from the terminal — see [decisions #14](docs/decisions.
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
-| [decisions.md](docs/decisions.md) | **46 findings that cost real time. Read before changing behaviour.** |
+| [decisions.md](docs/decisions.md) | **63 findings that cost real time. Read before changing behaviour.** |
 
 ## Status
 

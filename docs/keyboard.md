@@ -50,7 +50,7 @@ behind ⌃Space ([decisions #25](decisions.md)).
 
 ## Menu ownership
 
-Accelerators also live in `src/main/menu.ts`, and that isn't duplication — it's the point. Electron
+Accelerators also live in `src/main/boot/menu.ts`, and that isn't duplication — it's the point. Electron
 ships a default menu whose Window submenu binds ⌘W to the `close` role, and that accelerator fires
 at app level regardless of `before-input-event`. Owning the menu is the only way to own the key
 ([decisions #11](decisions.md)).

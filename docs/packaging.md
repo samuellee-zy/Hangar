@@ -37,7 +37,7 @@ dots are what remain legible.
 
 `app.getAppPath()` points *inside* the archive once packaged, and Chromium can't read an SVG from a
 path that doesn't exist on disk. So brand icons ship as `extraResources` and
-[`icons.ts`](../src/main/icons.ts) resolves `process.resourcesPath` when packaged.
+[`icons.ts`](../src/main/features/icons.ts) resolves `process.resourcesPath` when packaged.
 
 These two halves have to stay in step — if the `extraResources` block moves, that lookup moves with
 it. Getting it wrong means every service tile falls back to initials, and only in the packaged
@@ -49,7 +49,7 @@ Verified live: the packaged app reports 9 brand icons rendered in the rail.
 
 macOS **kills the app outright, with no dialog**, if a permission is requested without a usage
 string in Info.plist. Catalog services can be granted microphone and camera (see
-[`permissions.ts`](../src/main/permissions.ts)), so `NSMicrophoneUsageDescription` and
+[`permissions.ts`](../src/core/runtime/permissions.ts)), so `NSMicrophoneUsageDescription` and
 `NSCameraUsageDescription` aren't boilerplate — without them, the first Slack huddle terminates
 Hangar.
 

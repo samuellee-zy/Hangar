@@ -4,8 +4,12 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after Phase 3.7 (packaging). The app is feature-complete for daily use: 162 automated
-checks, a packaged DMG, and every shipped control does something.
+Last updated after **Phase 4** (audit, modularity, tests). 253 automated tests, enforced module
+boundaries, a packaged DMG, and every shipped control does something.
+
+Phase 4 closed everything in the old §1.4 and most of §2 — including a P0 that destroyed the config
+when you removed your last service, and the discovery that **Web Push had never worked for the case
+it was built for**. See [decisions.md](decisions.md) #47–63 for the findings.
 
 ---
 
@@ -62,8 +66,8 @@ Listed separately from "done" on purpose.
 
 | Item | What's unverified | How to check |
 | --- | --- | --- |
-| **Web Push delivery** | Registration and interception are confirmed live in the page's world; an actual push arriving is not. | Configure Firebase, hibernate Slack, DM yourself. |
-| **Find in page** | Documented and wired, no runtime probe. The overlay-vs-own-view reasoning is sound but untested against a real page. | ⌘F in Gmail, check the match count and ↑/↓. |
+| **Web Push transport** | *Delivery to a sleeping service is now verified* by injecting a synthetic payload — it was broken, and is fixed. What remains untested is FCM registration, the MCS socket and real decryption. | Configure Firebase, hibernate Slack, DM yourself. |
+| **Find in page** | Wired and now closes correctly when focus moves, but never driven against a real page. | ⌘F in Gmail, check the match count and ↑/↓. |
 | **DMG install flow** | The app was launched from `dist/mac-arm64/` directly, never installed from the mounted DMG to `/Applications`. | Mount, drag, launch, confirm icons still resolve. |
 | **Salesforce session survival** | Known to have failed earlier in the project; `sessionNotPersistable` exists for it but the fix wasn't re-confirmed after the durability work. | Sign in, quit, relaunch. |
 | **Long-run hibernation** | Never observed over hours. The 30-second sweep and wake path work in a short session. | Leave it running a day with `hibernateAfterMinutes` set. |
@@ -125,17 +129,24 @@ probably a day, and it's the thing most likely to be embarrassing if anyone else
 
 ## 5. Testing gaps
 
-162 checks, all over **pure modules**. That was a deliberate architecture — policy extracted from
-Electron so it's testable under plain node — and it's why there are 162 rather than none.
+253 tests under Vitest, plus `dependency-cruiser` on every run. The pure-module architecture is
+what makes that possible, and `shell-state.ts` and `migrate.ts` were extracted from `app-window.ts`
+and `config.ts` specifically so their logic could be reached.
 
-What it doesn't cover:
+What it still doesn't cover:
 
-- **`window.ts` (~1,200 lines) and `service-manager.ts`** have no automated tests. They're the
-  Electron-coupled orchestration layer. Every bug found by the runtime probe lived here.
-- **No integration or E2E tests.** The `HANGAR_PROBE=1` harness is manual and its assertions are
-  `console.log` lines a human reads.
-- **No renderer tests.** No React component is tested.
-- **The probe's timing is racy** — icon counts read 0, 4 and 9 across three runs at the same 3-second
+- **No integration or E2E tests.** `HANGAR_PROBE=1` now exercises the real paths — hibernated push
+  delivery, window teardown and rebuild, the preload's main-world patches — but its assertions are
+  `console.log` lines a human reads, not a failing exit code. **Promoting it to Playwright is the
+  highest-value remaining test work**; the eight target cases are listed in the Phase 4 plan.
+- **No renderer tests** beyond `accent.ts`. No React component is tested; `@testing-library/react`
+  is the intended tool.
+- **`app-window.ts` is still ~1,300 lines** and its Electron-coupled half — `relayout`,
+  `openService`, `dispatch`'s side effects — remains untestable without a real window.
+- **`tests/` is not typechecked.** Including it surfaces ~86 errors that are one real finding:
+  fixtures for older config versions are honest about missing fields that the types declare
+  required. Now that `migrateConfig` accepts partials this is mostly resolvable.
+- **The probe's timing is racy** — icon counts read 0, 4 and 9 across runs at the same 3-second
   mark, because icons load asynchronously. Fine for a diagnostic, wrong for a test.
 
 **Highest value next:** promote the probe to a real harness with assertions and a non-zero exit
@@ -167,9 +178,30 @@ Not bugs; things that will look like bugs later.
 
 If picking this up fresh:
 
-1. **Accessibility roles** (§4.3) — cheapest real quality win, and currently the weakest area.
-2. **Reset to defaults** (§4.2) — small, and removes the only "edit the JSON" recovery path.
-3. **Promote the probe to a real test harness** (§5) — everything after this gets safer.
-4. **Verify the unverified** (§2) — an afternoon with a checklist, no new code.
-5. **Code signing** (§1.1) — a purchase decision; unblocks three things at once.
-6. **Drag onto a pane / into a folder** (§4.1) — the two gestures people will try and find missing.
+1. **Promote the probe to Playwright** (§5) — everything after it gets safer, and the probe already
+   knows what to assert; it just can't fail a build.
+2. **Per-service unread detection** (§6, D1) — the largest remaining correctness gap: unread is
+   still a tally of `Notification` calls, so it only ever rises and reads zero for a service whose
+   browser notifications are off.
+3. **Accessibility roles** (§4.3) — cheapest real quality win, still the weakest area.
+4. **Reset to defaults** (§4.2) — small, and removes the only "edit the JSON" recovery path.
+5. **Verify the unverified** (§2) — an afternoon with a checklist, no new code.
+6. **Code signing** (§1.1) — a purchase decision; unblocks three things at once.
+
+---
+
+## 8. What Phase 4 fixed
+
+Kept for context on where the remaining gaps sit. Full reasoning in
+[decisions.md](decisions.md) #47–63.
+
+| | Was |
+| --- | --- |
+| **P0 data loss** | Removing your last service wrote `services: []`, which the loader treated as corruption — quarantining the config and falling back to a backup the next window-move had already overwritten. Defaults were then written over everything, replacing all accounts and partitions. |
+| **Web Push never worked** | `handleNotification` bailed on a missing runtime, and a hibernated service has no runtime *by definition*. Every push the feature existed to deliver was decrypted, deduplicated, marked consumed and discarded. |
+| **Unread died on hibernate** | The count lived on the object holding the view, so sleeping a service reset it. |
+| **Close-to-tray silenced the front pane** | Visibility was pane occupancy alone, with no `isVisible()` check. |
+| **⌘W broke the app** | Nothing disposed the old window: global shortcut, tray, Settings and push sockets all kept dead references, and detached views leaked ~100 MB each. |
+| **Import bypassed migration** | `saveConfig({ ...parsed })` with no defaults or versioning wrote invalid config straight to disk. |
+| **Every custom tile lost its accent** | `brightenForDark` returned `#NaNNaN14` for the `hsl()` colours `colorForHost` generates — invalid CSS, silently discarded. |
+| **No version control** | 7,261 lines, no git. |

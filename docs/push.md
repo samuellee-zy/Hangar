@@ -108,10 +108,25 @@ warning in the log. This is upstream, not something Hangar can work around local
 **Non-JSON payloads are dropped.** The library `JSON.parse`s the decrypted body unconditionally, so
 a site sending plain text throws inside the receiver and the message is lost.
 
-**Not verified end to end here.** Everything up to and including registration is exercised: the
-subscribe interception is confirmed live in the page's world by `HANGAR_PROBE`, and the policy has
-22 tests. Actual delivery needs a real Firebase project and a real service sending you a real
-message. Test it with a DM to yourself with the service hibernated.
+**Delivery to a sleeping service is verified; the transport is not.** For its entire first version
+this feature did **not** work for the case it exists for — `handleNotification` bailed on a missing
+runtime, and a hibernated service has no runtime by definition, so every push it was built to
+deliver was decrypted, deduplicated, marked consumed, and discarded. See
+[decisions #56](decisions.md).
+
+That went unnoticed because verification stopped at "subscribe is intercepted", on the assumption
+that testing delivery needed a Firebase project and a real inbound message. It needed neither:
+`handlePushMessage` receives an *already decrypted* payload, so a synthetic one exercises everything
+downstream of decryption — which is exactly where the bug was. `HANGAR_PROBE` now sleeps a service,
+injects a payload, and asserts the count rises:
+
+```
+[probe] hibernated push to "Calendar": sleeping=true, unread 1 -> 2 (badge 2)
+```
+
+What remains unverified is the **transport** — FCM registration, the MCS socket, and real
+end-to-end decryption. That does need your Firebase project and a real message. Test it with a DM
+to yourself with the service hibernated.
 
 **The site's service worker never sees the push.** We notify from main instead. Anything the worker
 would have done beyond showing a notification — syncing read state, badging in-page — doesn't
@@ -121,7 +136,8 @@ happen.
 
 | File | Role |
 | --- | --- |
-| [`src/main/push.ts`](../src/main/push.ts) | Pure policy: eligibility, dedupe, payload extraction, backoff |
-| [`src/main/push-manager.ts`](../src/main/push-manager.ts) | Sockets, registration, reconnect, persistence |
+| [`src/core/push/policy.ts`](../src/core/push/policy.ts) | Pure policy: eligibility, dedupe, payload extraction, backoff |
+| [`src/main/features/push-manager.ts`](../src/main/features/push-manager.ts) | Sockets, registration, reconnect, persistence |
 | [`src/preload/service.ts`](../src/preload/service.ts) | The `PushManager.prototype` patch, in the page's world |
-| [`scripts/push-check.mjs`](../scripts/push-check.mjs) | 22 checks over the policy |
+| [`src/core/notify/unread.ts`](../src/core/notify/unread.ts) | Counts keyed by service id, surviving hibernation — what makes delivery possible |
+| [`tests/main/push.test.ts`](../tests/main/push.test.ts) | 25 checks over the policy |

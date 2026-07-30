@@ -27,7 +27,7 @@ authorization endpoint), so Google is not keying on the Electron token at the en
 
 **Not needed, having been measured:** stripping the app name, a hardcoded Chrome UA, host-scoped UA
 swaps, `Sec-CH-UA` client-hint alignment, or signing in via a separate `BrowserWindow`.
-Ferdium's failures are most likely its much older Electron. See `src/main/ua.ts`.
+Ferdium's failures are most likely its much older Electron. See `src/main/platform/ua.ts`.
 
 ## 2. Rambox has no unread counts, but does run a push stack
 
@@ -51,7 +51,7 @@ Three parts, each learned the hard way:
 3. **Promote on sign-in detection too** — quitting within the first minute of logging in otherwise
    loses the session silently.
 
-See `src/main/persist-cookies.ts`.
+See `src/main/platform/persist-cookies.ts`.
 
 ## 4. Salesforce is unfixable at the webview layer
 
@@ -86,7 +86,7 @@ were computed from an id scheme or a label, renaming an account — or changing 
 v1→v2 migration does — would silently orphan every session on disk.
 
 The migration reuses the original `persist:grp-*` names verbatim. Verified against the real
-partition directories before it was allowed to run. See `src/main/accounts.ts`.
+partition directories before it was allowed to run. See `src/core/services/accounts.ts`.
 
 ## 8. Panes, not "the active service"
 
@@ -118,7 +118,7 @@ through the overlay, which draws zones over the pane rectangles main already com
 
 Electron installs a default menu when you don't, and its Window submenu binds ⌘W to the `close`
 role. That accelerator fires at app level regardless of `before-input-event`, so ⌘W closed the whole
-window even when the intent was "close this pane". `src/main/menu.ts` exists primarily to take that
+window even when the intent was "close this pane". `src/main/boot/menu.ts` exists primarily to take that
 binding back — discoverability is a bonus. The Edit menu's roles are also required for ⌘C/⌘V/⌘A to
 work inside the web apps.
 
@@ -236,7 +236,7 @@ as far as unwritten session cookies go, and views that slept through it hold a d
 ## 23. Close-to-tray needs to know a real quit from a window close
 
 Intercepting the window's close event to hide instead would swallow ⌘Q too. `quit-state.ts` holds
-the flag, in its own module so `window.ts` needn't import `index.ts` and create a cycle.
+the flag, in its own module so `app-window.ts` needn't import `index.ts` and create a cycle.
 
 ## 24. Export excludes sessions, and says so
 
@@ -289,7 +289,7 @@ The chain: crash or power loss mid-write → truncated JSON → next launch dest
 account, folder and preference, and orphans every partition on disk. Config is written on every
 preference change, every layout change and a 400ms window-bounds debounce, so the exposure was real.
 
-`config-store.ts` now guarantees three things, each with tests:
+`store.ts` now guarantees three things, each with tests:
 
 1. **Atomic writes** — temp file plus rename, which is atomic within a filesystem. The temp file
    lives in the same directory deliberately; a temp dir can be on another volume, where rename

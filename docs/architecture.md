@@ -46,56 +46,53 @@ If you find yourself caching shell state in a component, that's the bug.
 
 ## Modules
 
-### Main
+Two top-level directories, and the split is enforced rather than intended — `npm run check` runs
+`dependency-cruiser` and fails the build on any arrow that crosses the wrong way.
 
-| File | Owns |
+### `src/core/` — pure
+
+No `electron`, no `react`, no imports from `main/` or `renderer/`. Everything here is a fold over
+data, which is why nearly all the test coverage lives on this side. It's also the part that could
+become its own package: the boundary is what makes that a `git mv` rather than an excavation.
+
+| Path | Role |
 | --- | --- |
-| `index.ts` | Boot order, single-instance lock, IPC surface, background loops, `powerMonitor` |
-| `window.ts` | Composition: window, rail, panes, overlay. The `dispatch` switch |
-| `layout.ts` | Pane geometry, rail placement, window-button position. Pure |
-| `service-manager.ts` | View lifecycle per service, custom CSS/JS injection |
-| `session.ts` | Partitions, permissions, navigation guards, spellcheck, downloads |
-| `accounts.ts` | Accounts, partition assignment, v1→v2 migration. Pure |
-| `folders.ts` | The rail tree and its invariants, v3→v4 migration. Pure |
-| `preferences.ts` | Defaults-as-schema, merging, validated `setPreference`. Pure |
-| `hibernate.ts` | Which services are eligible to unload or refresh. Pure |
-| `notifications.ts` | Banner/count policy and badge totals. Pure |
-| `permissions.ts` | Permission policy and orphan partition detection. Pure |
-| `recovery.ts` | Load-failure policy, retry backoff, the in-pane error page. Pure |
-| `workspaces.ts` | Workspace lifecycle and orphan rehoming. Pure |
-| `overlay.ts` | The palette / picker layer |
-| `push.ts` | Web Push policy — pure ([push.md](push.md)) |
-| `push-manager.ts` | FCM sockets, registration, reconnect |
-| `find-bar.ts` | Find in page — its own small view, not the overlay ([decisions #38](decisions.md)) |
-| `context-menu.ts` | Native menus for web views, rail tiles, folders, rail background |
-| `shortcuts.ts` | `before-input-event` translation |
-| `menu.ts` | Application menu — and therefore ownership of ⌘W |
-| `icons.ts` | `hangar-icon://` and `hangar-catalog://`, favicon capture and sniffing |
-| `system.ts` | Login item, proxy, downloads, the one global shortcut |
-| `tray.ts` | Menu-bar icon, unread count, jump list |
-| `transfer.ts` | Config export / import |
-| `settings-window.ts` | The ⌘, `BrowserWindow` |
-| `quit-state.ts` | Real-quit vs close-to-tray flag, isolated to avoid an import cycle |
-| `config-store.ts` | Atomic writes, corrupt-file quarantine, rolling backup. Pure |
-| `persist-cookies.ts` | Session-cookie promotion and flushing |
-| `renderer-url.ts` | Route loading and console forwarding |
-| `ua.ts` | The user-agent scrub |
+| `config/preferences.ts` | Defaults-as-schema; `setPreference` validates every IPC write |
+| `config/store.ts` | Atomic write, corrupt-file quarantine, rolling backup ([#28](decisions.md), [#47](decisions.md)) |
+| `config/migrate.ts` | v1→v4 in one place, shared by load *and* import ([#58](decisions.md)) |
+| `services/accounts.ts` | Account identity; partition names are never recomputed |
+| `workspace/{workspaces,folders,layout}.ts` | Rail tree, one level deep; pane geometry for all four rail positions |
+| `notify/policy.ts` | Banner-vs-count decision, including DND and window visibility |
+| `notify/unread.ts` | Counts keyed by service id, outliving the view ([#56](decisions.md)) |
+| `push/policy.ts` | Eligibility, replay suppression, payload extraction, backoff |
+| `runtime/{hibernate,recovery,permissions}.ts` | Sleep policy, failure classification, per-service permission grants |
+| `shell-state.ts` | `projectShellState`, `resolveCommand`, `removeServiceFromConfig` |
 
-### Renderer and shared
+### `src/main/` — Electron adapters
 
-| File | Owns |
+| Path | Role |
 | --- | --- |
-| `renderer/Rail.tsx` | The rail: tree rendering, orientation, tiles |
-| `renderer/OverlayRoot.tsx` | Switches the overlay between palette and picker |
-| `renderer/Settings.tsx` | Every settings section |
-| `renderer/PreferenceControls.tsx` | Toggle / Choice / Num, each a thin `set-preference` sender |
-| `renderer/accent.ts` | Lifts brand colours to a readable contrast on dark tiles |
-| `shared/` | Types and catalog. Imported by both sides, so **no Electron imports allowed** |
+| `boot/index.ts` | Entry point: boot order, single-instance lock, IPC surface, background loops |
+| `boot/menu.ts` | The application menu — owning it is the only way to own ⌘W ([#11](decisions.md)) |
+| `window/app-window.ts` | Composition root. `dispatch`, `sync`, `relayout`, `dispose` |
+| `window/service-manager.ts` | A `WebContentsView` per service; load, sleep, recover |
+| `window/overlay.ts` | Palette and picker layer, attached on demand |
+| `window/shortcuts.ts` | `before-input-event` accelerators |
+| `features/` | push-manager, find-bar, tray, settings-window, transfer, icons, context-menu |
+| `platform/` | config, session, persist-cookies, system, ua, quit-state, renderer-url |
 
-**The pure modules are pure on purpose.** `layout`, `accounts`, `folders`, `preferences`,
-`hibernate` and `config-store` import nothing from Electron, which is what lets `npm run check`
-exercise them under plain node in milliseconds. Keep it that way — a stray `import { app }` costs a
-whole test suite.
+### Dependency direction
+
+```
+renderer ──IPC──▶ main ──▶ core
+                            ▲
+                  shared ───┘   (types + catalog; imported by all three)
+```
+
+Enforced rules: `core` may not import `electron`, `react`, `main` or `renderer`; `renderer` may not
+import `main` or `core`; no cycles anywhere. Each rule was verified by deliberately introducing a
+violation and confirming it failed — three of them were initially misconfigured and passing on a
+graph they weren't actually looking at ([#53](decisions.md)).
 
 ## Rules worth stating
 
