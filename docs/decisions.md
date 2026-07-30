@@ -566,3 +566,50 @@ with a Show in Finder button — rendered only when there's something to show.
 Never deleted automatically: a file that exists because recovery failed shouldn't be cleaned up by
 the same code that failed. `reveal-path` is restricted to paths we surfaced, since an arbitrary path
 over IPC would be a way to probe the disk.
+
+## 49. Two bugs that produced invalid CSS, not wrong colours
+
+`brightenForDark` assumed `#RRGGBB` and indexed blindly:
+
+```
+brightenForDark('hsl(147 55% 55%)')  →  '#NaNNaN14'   — every custom connection
+brightenForDark('#666')              →  '#6606NaN'    — the state() fallback
+```
+
+`colorForHost` emits `hsl(…)` for every custom connection, and `'#666'` is hardcoded in `state()`,
+so both were live on every launch. Nothing complained: `parseInt('hs', 16)` is `NaN`, `NaN < 4.5` is
+`false` so the contrast loop never ran, and the browser silently discarded the malformed
+`--accent`. The tile just looked plain.
+
+Now `parse` returns null for anything it can't read and the caller **returns the input unchanged**.
+An `hsl()` string is valid CSS, so the tile keeps its colour — it just doesn't get the contrast
+lift. Failing open beats emitting a value the browser will throw away.
+
+The general lesson: a function that produces a *string* consumed by a lenient parser has no failure
+mode. CSS, URLs and shell arguments all swallow garbage silently, so the validation has to be ours.
+
+## 50. Vitest, and why the migration came before the restructure
+
+The hand-rolled harness worked, but `package.json` hardcoded 13 `esbuild src/main/<file>.ts` paths —
+one per suite. Moving any file into `src/core/` would have broken all 13 at once, so the plan's
+claim that "the existing checks stay green throughout and are the safety net" was false: they'd have
+been *offline for the entire restructure*.
+
+Vitest resolves through `tsconfig`, so it survives the moves. Hence tests first, restructure second.
+
+The port was a codemod, not a rewrite — `ok()` → `it()`, `console.log(section)` → `describe`, and
+`node:assert/strict` kept as-is. Rewriting ~289 assertions into `expect()` at the same time would
+have meant that if the suite went red, there'd be no way to tell which change did it. 168 tests in,
+168 tests out.
+
+Electron is aliased to the existing stub rather than `vi.mock`'d, for the same reason: the stub is
+already proven against this code.
+
+## 51. A missing persistentId turned deduplication off
+
+`persistentId` is typed as a string but arrives from the wire, and FCM doesn't guarantee it. An
+`undefined` was pushed into `seen`, so a run of them filled the 512-entry cap and evicted the real
+ids the list exists to remember.
+
+Now a falsy id delivers the message — it's still a message — without recording it. We can't
+recognise it again, and pretending otherwise costs us the ones we can.

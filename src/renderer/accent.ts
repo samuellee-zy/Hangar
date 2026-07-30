@@ -12,12 +12,29 @@ const TARGET_CONTRAST = 4.5;
 
 type RGB = [number, number, number];
 
-const parse = (hex: string): RGB => {
-  const h = hex.replace('#', '');
+/**
+ * Returns null for anything that isn't a hex colour.
+ *
+ * This used to assume `#RRGGBB` and index blindly, which produced *invalid CSS* for two inputs
+ * that occur constantly:
+ *
+ *   brightenForDark('hsl(147 55% 55%)')  →  '#NaNNaN14'   — every custom connection
+ *   brightenForDark('#666')              →  '#6606NaN'    — the state() fallback
+ *
+ * `colorForHost` emits `hsl(…)` for every custom connection and `'#666'` is the hardcoded fallback
+ * in `state()`, so both were live. Nothing complained: `parseInt('hs', 16)` is `NaN`, `NaN < 4.5`
+ * is `false` so the contrast loop never ran, and the browser silently dropped the bad `--accent`.
+ * The tile just lost its colour.
+ */
+const parse = (color: string): RGB | null => {
+  const h = color.trim().replace(/^#/, '');
+  // Expand #abc → #aabbcc. Shorthand is valid CSS and was being read as a truncated 6-digit hex.
+  const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
   return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
+    parseInt(full.slice(0, 2), 16),
+    parseInt(full.slice(2, 4), 16),
+    parseInt(full.slice(4, 6), 16),
   ];
 };
 
@@ -43,12 +60,21 @@ const lighten = (rgb: RGB, amount: number): RGB =>
 
 const cache = new Map<string, string>();
 
-export function brightenForDark(hex: string): string {
-  const cached = cache.get(hex);
+export function brightenForDark(color: string): string {
+  const cached = cache.get(color);
   if (cached) return cached;
 
-  const base = parse(hex);
+  const base = parse(color);
+  // Anything we can't read is returned untouched rather than mangled into `#NaN…`. An `hsl()`
+  // string is perfectly good CSS — leaving it alone means the tile keeps its colour, just without
+  // the contrast lift. Failing open beats emitting a value the browser will discard.
+  if (!base) {
+    cache.set(color, color);
+    return color;
+  }
+  // TILE_BG is a literal we control, so this cannot be null — but assert rather than assume.
   const bg = parse(TILE_BG);
+  if (!bg) return color;
 
   let result = base;
   // 5% steps: fine enough that nothing overshoots into pastel, coarse enough to terminate fast.
@@ -57,6 +83,6 @@ export function brightenForDark(hex: string): string {
   }
 
   const out = toHex(result);
-  cache.set(hex, out);
+  cache.set(color, out);
   return out;
 }

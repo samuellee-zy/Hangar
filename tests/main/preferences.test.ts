@@ -86,3 +86,44 @@ describe("setPreference validation", () => {
     assert.equal(setPreference(fresh(), '', 1), false);
   });
 });
+
+// Settings sends these and nothing tested them. Every one is a path the renderer actually uses,
+// and a rejected write is silent — the control snaps back and nobody knows why.
+describe('deep paths — three levels, all reachable from Settings', () => {
+  it('accepts every proxy field with the right type', () => {
+    const p = fresh();
+    assert.equal(setPreference(p, 'network.proxy.host', 'proxy.local'), true);
+    assert.equal(p.network.proxy.host, 'proxy.local');
+    assert.equal(setPreference(p, 'network.proxy.port', 8080), true);
+    assert.equal(p.network.proxy.port, 8080);
+    assert.equal(setPreference(p, 'network.proxy.mode', 'socks5'), true);
+  });
+
+  it('rejects a proxy port sent as a string, which is what an <input> naturally produces', () => {
+    const p = fresh();
+    assert.equal(setPreference(p, 'network.proxy.port', '8080'), false);
+    assert.equal(p.network.proxy.port, 0);
+  });
+
+  it('accepts all four Firebase fields and rejects non-strings', () => {
+    const p = fresh();
+    for (const key of ['projectId', 'appId', 'apiKey', 'messagingSenderId']) {
+      assert.equal(setPreference(p, `notifications.firebase.${key}`, 'x'), true, key);
+      assert.equal(setPreference(p, `notifications.firebase.${key}`, 42), false, key);
+    }
+    assert.equal(p.notifications.firebase.apiKey, 'x');
+  });
+
+  it('a branch write at depth two is still refused', () => {
+    // Replacing a whole section wholesale bypasses per-key type validation.
+    const p = fresh();
+    assert.equal(setPreference(p, 'network.proxy', { mode: 'none', host: '', port: 0 }), false);
+    assert.equal(setPreference(p, 'notifications.firebase', { apiKey: 'x' }), false);
+  });
+
+  it('an unknown leaf under a real branch is refused', () => {
+    const p = fresh();
+    assert.equal(setPreference(p, 'network.proxy.username', 'admin'), false);
+    assert.equal(setPreference(p, 'notifications.firebase.secret', 'x'), false);
+  });
+});

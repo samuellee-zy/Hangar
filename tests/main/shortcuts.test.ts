@@ -107,3 +107,40 @@ describe("chord translation", () => {
     assert.deepEqual(translate(key('w')), { type: 'close-pane', paneId: '#focused' });
   });
 });
+
+// Seven of translate()'s fifteen chord branches had no test. Added alongside the Phase 3.5
+// affordances but never asserted, so a stray edit to the key list would go unnoticed.
+describe('the affordance chords', () => {
+  const chord = (key, over = {}) => translate({ type: 'keyDown', key, meta: true, ...over });
+
+  it('⌘K opens the palette and ⌘F the find bar', () => {
+    assert.deepEqual(chord('k'), { type: 'open-palette' });
+    assert.deepEqual(chord('f'), { type: 'open-find' });
+  });
+
+  it('⌘P prints', () => {
+    assert.deepEqual(chord('p'), { type: 'print' });
+  });
+
+  it('zoom covers both the shifted and unshifted plus key', () => {
+    // '=' unshifted, '+' with shift — layouts differ and only handling one is a common miss.
+    assert.deepEqual(chord('='), { type: 'zoom', direction: 'in' });
+    assert.deepEqual(chord('+'), { type: 'zoom', direction: 'in' });
+    assert.deepEqual(chord('-'), { type: 'zoom', direction: 'out' });
+    assert.deepEqual(chord('0'), { type: 'zoom', direction: 'reset' });
+  });
+
+  it('⌘⌥0 is not a workspace — workspaces are 1-9 and there is no zeroth', () => {
+    assert.equal(translate({ type: 'keyDown', key: '0', meta: true, alt: true }), null);
+  });
+
+  it('a bare key with no modifier is never a command', () => {
+    for (const key of ['f', 'p', 'k', '0', '\\']) {
+      assert.equal(translate({ type: 'keyDown', key }), null, key);
+    }
+  });
+
+  it('keyUp is ignored — only keyDown dispatches', () => {
+    assert.equal(translate({ type: 'keyUp', key: 'f', meta: true }), null);
+  });
+});

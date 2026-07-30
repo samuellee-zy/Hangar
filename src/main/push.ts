@@ -106,9 +106,15 @@ export const PERSISTENT_ID_CAP = 512;
 
 export function dedupePersistentIds(
   seen: string[],
-  incoming: string,
+  incoming: string | undefined,
   cap: number = PERSISTENT_ID_CAP
 ): { fresh: boolean; seen: string[] } {
+  // `persistentId` is typed as a string but comes off the wire, and FCM doesn't guarantee it.
+  // Recording a missing one meant a run of them filled the cap and evicted the real ids this list
+  // exists to remember — quietly turning deduplication off. Deliver the message (it's still a
+  // message), just don't pretend we can recognise it again.
+  if (!incoming) return { fresh: true, seen };
+
   if (seen.includes(incoming)) return { fresh: false, seen };
   const next = [...seen, incoming];
   // Trim from the front: the oldest ids are the least likely to be replayed.

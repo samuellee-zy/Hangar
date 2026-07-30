@@ -192,3 +192,24 @@ describe("registration bookkeeping", () => {
     assert.deepEqual(staleRegistrations([reg('svc-1')], ['svc-1']), []);
   });
 });
+
+// MessageEnvelope.persistentId is typed as a string but arrives from the wire, and FCM does not
+// guarantee it. An undefined id used to be pushed into `seen`, so a run of them would fill the
+// 512-entry cap and evict the real ids it exists to remember — silently un-deduplicating.
+describe('a missing persistentId', () => {
+  it('does not pollute the seen list', () => {
+    const { fresh, seen } = dedupePersistentIds(['real-1'], undefined);
+    assert.equal(fresh, true, 'still deliver it — a message without an id is still a message');
+    assert.deepEqual(seen, ['real-1'], 'but do not remember it');
+  });
+
+  it('repeated undefined ids never evict real ones', () => {
+    let seen = ['real-1', 'real-2'];
+    for (let i = 0; i < 600; i++) seen = dedupePersistentIds(seen, undefined).seen;
+    assert.deepEqual(seen, ['real-1', 'real-2']);
+  });
+
+  it('an empty-string id is treated the same way', () => {
+    assert.deepEqual(dedupePersistentIds(['real-1'], '').seen, ['real-1']);
+  });
+});
