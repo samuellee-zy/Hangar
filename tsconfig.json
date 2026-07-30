@@ -14,7 +14,11 @@
     "noEmit": true,
     "types": ["node"],
     "baseUrl": ".",
-    "paths": { "@shared/*": ["src/shared/*"] }
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@main/*": ["src/main/*"],
+      "@shared/*": ["src/shared/*"]
+    }
   },
   // tests/ is deliberately NOT typechecked yet. Including it surfaces 181 errors, and 86 of them
   // are one real finding rather than test sloppiness: `migrateV1` declares its input as full

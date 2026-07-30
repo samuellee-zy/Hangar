@@ -22,6 +22,10 @@ export default defineConfig({
     alias: {
       // Only `app.getPath` is needed; see the stub.
       electron: resolve('scripts/electron-stub.mjs'),
+      // Must mirror tsconfig.json and electron.vite.config.ts.
+      '@core': resolve('src/core'),
+      '@main': resolve('src/main'),
+      '@shared': resolve('src/shared'),
     },
   },
   test: {
