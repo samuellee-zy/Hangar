@@ -1,0 +1,17 @@
+{
+  "name": "hangar",
+  "productName": "Hangar",
+  "version": "0.1.0",
+  "description": "Phase 0 spike: which UA strategy gets us past Google's embedded-webview block?",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "probe": "electron probe-headless.js",
+    "report": "node report.js",
+    "reset": "rm -rf sessions sessions-headless results.json results.md probe-results.json"
+  },
+  "devDependencies": {
+    "electron": "^43.1.1"
+  }
+}

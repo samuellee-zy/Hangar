@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 10px 14px; font: 12px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+    background: Canvas; color: CanvasText;
+  }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  select, button { font: inherit; padding: 4px 8px; border-radius: 6px; }
+  select { min-width: 210px; }
+  button { cursor: pointer; }
+  button.pass { font-weight: 600; }
+  .note { opacity: .65; font-style: italic; flex: 1; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 11px; }
+  .ok   { background: #16794820; color: #16a34a; }
+  .bad  { background: #b9182820; color: #ef4444; }
+  .warn { background: #a1620020; color: #d97706; }
+  .idle { background: #8883; opacity: .7; }
+  code { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+         display: block; white-space: nowrap; overflow-x: auto; opacity: .8; }
+  .grid { display: flex; gap: 4px; flex-wrap: wrap; }
+  .cell { padding: 1px 6px; border-radius: 4px; background: #8882; font-size: 10px; }
+  .cell.p { background: #16a34a33; }
+  .cell.f { background: #ef444433; }
+</style>
+
+<div class="row">
+  <select id="strategy"></select>
+  <select id="service"></select>
+  <button id="load">Load ⏎</button>
+  <button id="reload">Reload</button>
+  <button id="loginWin">Login window</button>
+  <button id="devtools">DevTools</button>
+  <button id="clear">Clear session</button>
+</div>
+
+<div class="row">
+  <span id="verdictState" class="pill idle">not run</span>
+  <span id="blockState" class="pill idle">—</span>
+  <span id="urlState" class="note">no page loaded</span>
+  <button id="pass" class="pass">✓ PASS</button>
+  <button id="fail">✗ fail</button>
+  <button id="md">Write results.md</button>
+</div>
+
+<div class="row"><code id="ua">—</code></div>
+<div class="row"><div class="grid" id="matrix"></div></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let cfg;
+
+  const setPill = (el, text, cls) => { el.textContent = text; el.className = 'pill ' + cls; };
+
+  function renderMatrix() {
+    $('matrix').innerHTML = cfg.strategies.map((st) =>
+      cfg.services.map((sv) => {
+        const r = cfg.results[st.id + '::' + sv.id];
+        const cls = r?.verdict === 'pass' ? 'p' : r?.verdict === 'fail' ? 'f' : '';
+        return `<span class="cell ${cls}" title="${st.name} × ${sv.name}">${st.id.slice(0, 6)}·${sv.id.slice(0, 4)}</span>`;
+      }).join('')
+    ).join('');
+  }
+
+  async function init() {
+    cfg = await window.spike.config();
+    $('strategy').innerHTML = cfg.strategies.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+    $('service').innerHTML = cfg.services.map((s) =>
+      `<option value="${s.id}">${s.gate ? '★ ' : ''}${s.name}</option>`).join('');
+    // Skip the baseline control by default — strategy 1 is the one we expect to work.
+    $('strategy').value = 'rambox';
+    $('ua').textContent = cfg.defaultUa;
+    renderMatrix();
+  }
+
+  const load = () => window.spike.load($('strategy').value, $('service').value);
+
+  $('load').onclick = load;
+  $('strategy').onchange = load;
+  $('service').onchange = load;
+  $('reload').onclick = () => window.spike.reload();
+  $('devtools').onclick = () => window.spike.devtools();
+  $('loginWin').onclick = () => window.spike.loginWindow();
+  $('clear').onclick = async () => { await window.spike.clearSession(); cfg = await window.spike.config(); renderMatrix(); };
+  $('md').onclick = async () => { const p = await window.spike.writeMd(); $('urlState').textContent = 'wrote ' + p; };
+
+  for (const v of ['pass', 'fail']) {
+    $(v).onclick = async () => {
+      cfg.results = await window.spike.verdict(v);
+      setPill($('verdictState'), v === 'pass' ? 'PASS' : 'fail', v === 'pass' ? 'ok' : 'bad');
+      renderMatrix();
+    };
+  }
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+
+  window.spike.onStatus((s) => {
+    $('urlState').textContent = s.url;
+    $('ua').textContent = s.ua + (s.uaData ? '   ·   UA-CH: ' + s.uaData.brands.map((b) => b.brand + ' ' + b.version).join(', ') : '   ·   UA-CH: none');
+
+    if (s.blocked) setPill($('blockState'), 'BLOCKED', 'bad');
+    else if (s.signedIn) setPill($('blockState'), 'signed in', 'ok');
+    else setPill($('blockState'), 'auth page', 'warn');
+
+    const r = cfg.results[s.strategyId + '::' + s.serviceId];
+    if (r?.verdict) setPill($('verdictState'), r.verdict === 'pass' ? 'PASS' : 'fail', r.verdict === 'pass' ? 'ok' : 'bad');
+    else setPill($('verdictState'), 'not recorded', 'idle');
+  });
+
+  init();
+</script>

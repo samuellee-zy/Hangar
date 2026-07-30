@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Hardened runtime entitlements.
+
+    Electron needs the first two: Chromium's JIT compiles JavaScript at runtime, and the hardened
+    runtime blocks writable-executable memory unless told otherwise. Without them a signed build
+    crashes on launch rather than failing to build, which is a slow way to find out.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- Media, matching the Info.plist usage strings. Catalog services can be granted these. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+
+  <!-- Outbound network. Every service is a web app, and Web Push holds a socket to Google. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

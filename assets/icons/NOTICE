@@ -1,0 +1,7 @@
+Icons vendored from https://github.com/homarr-labs/dashboard-icons
+Licensed Apache-2.0. Brand marks remain the property of their respective owners.
+
+Upstream commit: 03e8f8e22da1
+Fetched slugs: gmail, google-calendar, google-drive, microsoft-teams, slack, notion, linear, figma, salesforce
+
+Refresh with: npm run icons

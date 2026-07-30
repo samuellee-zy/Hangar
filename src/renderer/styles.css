@@ -1,0 +1,866 @@
+/* Placeholder visuals only — the visual redesign is Phase 6.5. The job here is to make the
+   interaction model legible: which services exist, which are on screen, which pane has focus. */
+
+:root {
+  --bg: #1b1b1f;
+  --fg: #e8e8ea;
+  --muted: #8a8a92;
+  --line: #2e2e34;
+  --radius: 10px;
+
+  /* Tile surfaces, in ascending order of prominence. Kept as one neutral ramp so that adding a
+     service can never introduce an illegible tile — see accent.ts for the identity colour. */
+  --tile: #26262c;
+  --tile-hover: #2c2c33;
+  --tile-visible: #2e2e35;
+  --tile-focused: #33333c;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--fg);
+  background: var(--bg);
+  user-select: none;
+  overflow: hidden;
+}
+
+/* The overlay view must be transparent so the panes show through behind the scrim. This selector
+   was left as 'palette' when the route was renamed, which made the overlay fully opaque — the
+   kind of rename miss that produces no error anywhere. */
+body[data-route='overlay'] {
+  background: transparent;
+}
+
+/* --- rail ------------------------------------------------------------------------------- */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-right: 1px solid var(--line);
+}
+
+/* Clears the traffic lights (positioned at y:18, ~12pt tall) and doubles as the window drag
+   handle, since the frameless window has no title bar of its own. */
+.rail-drag {
+  height: 46px;
+  flex: none;
+  -webkit-app-region: drag;
+}
+
+.rail-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.rail-items::-webkit-scrollbar {
+  display: none;
+}
+
+/* One neutral surface for every tile. State is carried by surface *value* plus an edge indicator,
+   never by the brand colour — tinting the tile with brand at low opacity collapsed Slack to 1.03:1
+   against the rail and made Linear and Teams identical to each other. */
+.rail-item {
+  position: relative;
+  width: 52px; /* matches the 52pt traffic-light span, so the rail has one aligned column */
+  height: 52px;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 12px;
+  background: var(--tile);
+  color: var(--accent, var(--fg));
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.rail-item:hover {
+  background: var(--tile-hover);
+}
+
+/* On screen in some pane, but not focused. */
+.rail-item.is-visible {
+  background: var(--tile-visible);
+}
+
+/* The focused pane. A 3px edge bar in the service's accent — the Slack/VS Code convention.
+   Quiet next to the old full-colour flood, and it survives the switch to real icons unchanged. */
+.rail-item.is-focused {
+  background: var(--tile-focused);
+}
+
+.rail-item.is-focused::before {
+  content: '';
+  position: absolute;
+  /* The tile is 52px centred in a 72px rail, so there are only 10px of margin to sit in.
+     -7px puts the 3px bar at 3–6px from the rail edge; anything beyond -10px clips off-window. */
+  left: -7px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--accent, var(--fg));
+}
+
+.rail-item.is-loading::after {
+  content: '';
+  position: absolute;
+  inset: auto 6px 4px 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--fg);
+  opacity: 0.5;
+  animation: pulse 900ms ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.rail-icon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* Fallback when a service has neither a vendored logo nor a captured favicon. Coloured with the
+   brightened accent rather than plain white so services stay distinguishable. */
+.rail-initials {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--accent, var(--fg));
+}
+
+.rail-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #ff453a;
+  color: #fff;
+  font-size: 10px;
+  line-height: 17px;
+  font-weight: 700;
+}
+
+.rail-footer {
+  padding: 8px 0 12px;
+  flex: none;
+}
+
+.rail-add {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+
+.rail-add:hover {
+  background: var(--tile);
+  color: var(--fg);
+}
+
+.rail-plus {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* --- add connection sheet ---------------------------------------------------------------- */
+
+.sheet {
+  width: min(620px, 88vw);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #232329;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+  overflow: hidden;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.grid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.grid-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--tile);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.grid-tile:hover {
+  background: var(--tile-focused);
+  border-color: var(--accent);
+}
+
+.grid-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.grid-name {
+  font-size: 13px;
+}
+
+.grid-sub,
+.hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.grid-alt {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.grid-alt:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.sheet-footer-btn {
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--fg);
+  padding: 12px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sheet-footer-btn:hover {
+  background: var(--tile);
+}
+
+.custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.field {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1b1b1f;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+}
+
+.field:focus {
+  border-color: var(--muted);
+}
+
+.custom-form .row {
+  display: flex;
+  gap: 8px;
+}
+
+.custom-form button {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--tile);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.custom-form button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- palette ---------------------------------------------------------------------------- */
+
+.scrim {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 14vh;
+  background: rgb(0 0 0 / 45%);
+}
+
+.palette {
+  width: min(560px, 82vw);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #232329;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+  overflow: hidden;
+}
+
+.palette-input {
+  width: 100%;
+  padding: 16px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font-size: 15px;
+  outline: none;
+  user-select: text;
+}
+
+.palette-results {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.palette-results li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.palette-results li.is-active {
+  background: #34343c;
+}
+
+.palette-hint,
+.palette-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.palette-empty {
+  cursor: default;
+  justify-content: center;
+  padding: 18px;
+}
+
+.palette-footer {
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #2b2b32;
+  font-family: inherit;
+}
+
+/* A service you already have. Muted rather than disabled — clicking still takes you to it. */
+.grid-tile.is-added {
+  opacity: 0.62;
+}
+
+.grid-tile.is-added:hover {
+  opacity: 1;
+}
+
+/* --- settings window --------------------------------------------------------------------- */
+
+.settings {
+  height: 100%;
+  overflow-y: auto;
+  padding: 46px 28px 32px;
+  user-select: none;
+}
+
+.settings h1 {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0 0 24px;
+}
+
+.settings h2 {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+
+.settings section {
+  margin-bottom: 30px;
+}
+
+.settings code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.rows {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rows li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--tile);
+}
+
+.rows .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.rows .meta {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rows li.empty {
+  justify-content: center;
+  color: var(--muted);
+  font-size: 12px;
+  border-style: dashed;
+}
+
+.rows.keys kbd {
+  min-width: 78px;
+  text-align: center;
+}
+
+.settings button.danger {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings button.danger:hover {
+  color: #ff6b60;
+  border-color: #ff6b6040;
+}
+
+/* Confirms an action whose effect might otherwise be invisible — focusing a service that is
+   already the focused pane, for instance. Without this, 6 of 9 picker tiles looked like dead
+   buttons. See docs/decisions.md #16. */
+.rail-item.is-flashing {
+  animation: tile-flash 900ms ease-out;
+}
+
+@keyframes tile-flash {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  15% {
+    box-shadow: 0 0 0 3px var(--accent, var(--fg));
+  }
+}
+
+/* Rail thickness is a preference; the tile stays centred within whatever it's set to. */
+.rail {
+  width: var(--rail-size, 72px);
+}
+
+.rail-label {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-settings {
+  margin-top: 6px;
+}
+
+.rail-gear {
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* --- settings: preference controls -------------------------------------------------------- */
+
+.rows li.pref {
+  justify-content: space-between;
+}
+
+.pref-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pref-name {
+  font-size: 13px;
+}
+
+.pref-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pref select,
+.pref input[type='number'] {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1b1b1f;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+
+.pref input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: #4b8bf5;
+}
+
+.pref.is-pending {
+  opacity: 0.5;
+}
+
+.pref.is-pending .pref-note::after {
+  content: ' · not wired up yet';
+}
+
+/* --- folders ------------------------------------------------------------------------------ */
+
+.rail-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail-folder {
+  border: 1px dashed var(--line);
+  background: transparent;
+}
+
+.rail-folder.is-open {
+  background: var(--tile);
+  border-style: solid;
+}
+
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  width: 28px;
+  margin: 0 auto;
+}
+
+.folder-mini {
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+}
+
+.folder-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+/* Members of an open folder sit inset, so the grouping reads without indentation guides. */
+.rail-item.is-nested {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+}
+
+.rail-item.is-sleeping {
+  opacity: 0.5;
+}
+
+/* --- rail orientation --------------------------------------------------------------------- */
+
+/* Vertical is the default the rest of the file assumes; horizontal flips the main axis and swaps
+   which dimension the rail-size preference drives. */
+.rail.is-horizontal {
+  width: 100%;
+  height: var(--rail-size, 72px);
+  flex-direction: row;
+  align-items: center;
+  border-right: 0;
+}
+
+.rail.is-horizontal .rail-items {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rail.is-horizontal .rail-slot {
+  flex-direction: row;
+}
+
+.rail.is-horizontal .rail-footer {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 0 10px;
+}
+
+/* Only the top rail hosts the window buttons; a bottom rail needs no clearance for them. */
+.rail.is-top .rail-drag {
+  height: 100%;
+  width: 78px;
+  flex: none;
+}
+
+.rail.is-bottom .rail-drag,
+.rail.is-right .rail-drag {
+  display: none;
+}
+
+.rail.is-right {
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+.rail.is-top {
+  border-bottom: 1px solid var(--line);
+}
+
+.rail.is-bottom {
+  border-top: 1px solid var(--line);
+}
+
+/* The focus bar sits on whichever edge faces the content. */
+.rail.is-right .rail-item.is-focused::before {
+  left: auto;
+  right: -7px;
+}
+
+.rail.is-horizontal .rail-item.is-focused::before {
+  left: 50%;
+  top: auto;
+  bottom: -7px;
+  translate: -50% 0;
+  width: 26px;
+  height: 3px;
+}
+
+/* --- density and compact ------------------------------------------------------------------ */
+
+.rail.is-compact .rail-item,
+.rail.is-compact .rail-add {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
+.rail.is-compact .rail-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.rail.is-comfortable .rail-items {
+  gap: 6px;
+}
+
+.rail.is-compact-density .rail-items,
+.rail.is-compact .rail-items {
+  gap: 3px;
+}
+
+/* --- light theme -------------------------------------------------------------------------- */
+
+/* Electron drives prefers-color-scheme from nativeTheme.themeSource, so honouring the media query
+   is all that's needed to follow the `theme` preference — no class plumbing. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f4f6;
+    --fg: #1b1b1f;
+    --muted: #6b6b74;
+    --line: #d8d8de;
+    --tile: #e7e7ec;
+    --tile-hover: #dedee4;
+    --tile-visible: #d6d6dd;
+    --tile-focused: #c9c9d2;
+  }
+
+  .sheet,
+  .palette {
+    background: #ffffff;
+    box-shadow: 0 24px 64px rgb(0 0 0 / 18%);
+  }
+
+  .field,
+  .pref select,
+  .pref input[type='number'] {
+    background: #ffffff;
+  }
+
+  .scrim {
+    background: rgb(0 0 0 / 28%);
+  }
+}
+
+/* --- empty state -------------------------------------------------------------------------- */
+
+.empty-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 32px;
+  text-align: center;
+  background: var(--tile);
+}
+
+.empty-state h1 {
+  font-size: 17px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.empty-state p {
+  margin: 0 0 10px;
+  max-width: 360px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.empty-state button {
+  padding: 8px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.empty-state button:hover {
+  border-color: var(--muted);
+}
+
+.empty-hint {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* --- find bar ----------------------------------------------------------------------------- */
+
+/* Its own small view, so only this rectangle intercepts clicks — the page behind stays usable. */
+.findbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #232329;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+}
+
+@media (prefers-color-scheme: light) {
+  .findbar { background: #ffffff; box-shadow: 0 8px 24px rgb(0 0 0 / 14%); }
+}
+
+.findbar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+}
+
+.findbar-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.findbar button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.findbar button:hover {
+  background: var(--tile);
+  color: var(--fg);
+}

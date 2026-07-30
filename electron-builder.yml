@@ -1,0 +1,78 @@
+# Packaging. See docs/packaging.md for the reasoning and the known gaps.
+appId: com.hangar.desktop
+productName: Hangar
+copyright: Hangar
+
+directories:
+  buildResources: build
+  output: dist
+
+# Only the built output and what it needs at runtime. Source, scripts, docs and the check harness
+# would otherwise be shipped inside the app — electron-builder's default is to include everything
+# not explicitly excluded.
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+# Icons live OUTSIDE the asar on purpose.
+#
+# `app.getAppPath()` points inside the archive once packaged, and Chromium can't read an SVG
+# through a path that doesn't exist on disk. `icons.ts` resolves to `process.resourcesPath` when
+# packaged for exactly this reason — the two halves of that decision have to stay in step, so if
+# this block moves, that lookup has to move with it.
+extraResources:
+  - from: assets/icons
+    to: assets/icons
+    # NOTICE carries the upstream icon licence and sits in this directory — the filter has to let
+    # it through, or the attribution is dropped from the shipped app.
+    filter: ['**/*.svg', 'NOTICE']
+
+asar: true
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  # 'dark' so the traffic lights and any system chrome match the window, which is dark regardless
+  # of the system theme.
+  darkModeSupport: true
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  # Hardened runtime is required for notarisation and requires a Developer ID certificate. Left on
+  # so a signed build works unchanged; an unsigned local build passes `identity: null` on the CLI
+  # (see `npm run dist`), which skips signing and this along with it.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # macOS kills the app outright — with no dialog — if a permission is requested without a usage
+    # string. Media is grantable to catalog services (see permissions.ts), so these are load-bearing
+    # rather than boilerplate.
+    NSMicrophoneUsageDescription: >-
+      Hangar needs microphone access so services like Slack and Teams can make calls.
+    NSCameraUsageDescription: >-
+      Hangar needs camera access so services like Slack and Teams can make video calls.
+    NSDownloadsFolderUsageDescription: >-
+      Hangar saves files you download from your services to this folder.
+    # Without this, a second launch of a packaged copy silently does nothing instead of focusing
+    # the running one.
+    LSMultipleInstancesProhibited: true
+
+dmg:
+  # The conventional drag-to-install layout. Anything else makes people hunt for the target.
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+# Not configured: auto-update. It needs a Developer ID certificate and a notarised, signed build —
+# shipping an unsigned updater is a way to hand someone else's binary to your users.
+publish: null

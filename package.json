@@ -1,0 +1,55 @@
+{
+  "name": "hangar",
+  "productName": "Hangar",
+  "version": "0.1.0",
+  "description": "A unified workspace for web apps \u2014 one window, isolated sessions, no subscription.",
+  "main": "out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:layout": "esbuild src/main/layout.ts --bundle --platform=node --format=esm --outfile=out-check/layout.mjs --log-level=warning && node scripts/layout-check.mjs",
+    "check:shortcuts": "esbuild src/main/shortcuts.ts --bundle --platform=node --format=esm --outfile=out-check/shortcuts.mjs --log-level=warning && node scripts/shortcuts-check.mjs",
+    "check:accounts": "esbuild src/main/accounts.ts --bundle --platform=node --format=esm --outfile=out-check/accounts.mjs --log-level=warning && node scripts/accounts-check.mjs",
+    "check": "npm run typecheck && npm run check:config-store && npm run check:layout && npm run check:shortcuts && npm run check:accounts && npm run check:add && npm run check:preferences && npm run check:permissions && npm run check:folders && npm run check:workspaces && npm run check:hibernate && npm run check:notifications && npm run check:recovery && npm run check:push",
+    "icons": "node scripts/fetch-icons.mjs",
+    "check:add": "esbuild src/main/config.ts --bundle --platform=node --format=esm --alias:electron=./scripts/electron-stub.mjs --outfile=out-check/config.mjs --log-level=warning && node scripts/add-service-check.mjs",
+    "check:preferences": "esbuild src/main/preferences.ts --bundle --platform=node --format=esm --outfile=out-check/preferences.mjs --log-level=warning && node scripts/preferences-check.mjs",
+    "check:folders": "esbuild src/main/folders.ts --bundle --platform=node --format=esm --outfile=out-check/folders.mjs --log-level=warning && node scripts/folders-check.mjs",
+    "check:hibernate": "esbuild src/main/hibernate.ts --bundle --platform=node --format=esm --outfile=out-check/hibernate.mjs --log-level=warning && node scripts/hibernate-check.mjs",
+    "check:config-store": "esbuild src/main/config-store.ts --bundle --platform=node --format=esm --outfile=out-check/config-store.mjs --log-level=warning && node scripts/config-store-check.mjs",
+    "check:notifications": "esbuild src/main/notifications.ts --bundle --platform=node --format=esm --outfile=out-check/notifications.mjs --log-level=warning && node scripts/notifications-check.mjs",
+    "check:workspaces": "esbuild src/main/workspaces.ts --bundle --platform=node --format=esm --outfile=out-check/workspaces.mjs --log-level=warning && node scripts/workspaces-check.mjs",
+    "check:push": "esbuild src/main/push.ts --bundle --platform=node --format=esm --outfile=out-check/push.mjs --log-level=warning && node scripts/push-check.mjs",
+    "check:recovery": "esbuild src/main/recovery.ts --bundle --platform=node --format=esm --outfile=out-check/recovery.mjs --log-level=warning && node scripts/recovery-check.mjs",
+    "check:permissions": "esbuild src/main/permissions.ts --bundle --platform=node --format=esm --outfile=out-check/permissions.mjs --log-level=warning && node scripts/permissions-check.mjs",
+    "icon": "electron scripts/make-icon.mjs",
+    "dist": "npm run build && npm run icon && electron-builder --mac -c.mac.identity=null",
+    "dist:signed": "npm run build && npm run icon && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@eneris/push-receiver": "^4.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "author": {
+    "name": "Hangar"
+  },
+  "homepage": "https://github.com/samuel/hangar"
+}
