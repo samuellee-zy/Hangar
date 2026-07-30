@@ -494,6 +494,32 @@ export function Settings() {
             </button>
           </li>
         </ul>
+
+        {/* Only rendered when there's something to say. A permanently-empty row inviting you to
+            worry about config corruption is worse than no row. */}
+        {state.quarantinedConfigs.length > 0 && (
+          <>
+            <h3>Recovered configuration</h3>
+            <p className="hint">
+              Hangar couldn't read your configuration at some point and kept the original rather
+              than overwriting it. If services or accounts went missing, the copy below is what you
+              had. Nothing here is deleted automatically.
+            </p>
+            <ul className="rows">
+              {state.quarantinedConfigs.map((file) => (
+                <li className="pref" key={file}>
+                  <span className="pref-label">
+                    <span className="pref-name">Saved copy</span>
+                    <span className="pref-note">{file}</span>
+                  </span>
+                  <button onClick={() => window.hangar.send({ type: 'reveal-path', path: file })}>
+                    Show in Finder
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
       <section>

@@ -103,6 +103,40 @@ export function readWithRecovery<T>(
 }
 
 /**
+ * Quarantined copies left behind by earlier failures, newest first.
+ *
+ * These are the only surviving record of a config that couldn't be read, and until now nothing ever
+ * mentioned them again — a user whose setup was replaced by defaults had a full copy sitting beside
+ * it and no way to know. Surfaced at boot and in Settings.
+ *
+ * Never deleted automatically. A file that exists because recovery failed is the last thing that
+ * should be cleaned up by the same code that failed.
+ */
+export function findQuarantined(paths: ConfigPaths): string[] {
+  const dir = path.dirname(paths.main);
+  const prefix = `${path.basename(paths.main)}.corrupt-`;
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => path.join(dir, name))
+      // Newest first. The suffix is a millisecond timestamp, so a lexical sort would put
+      // `...-2` (the collision suffix) in the wrong place; sort by mtime instead.
+      .sort((a, b) => statMs(b) - statMs(a));
+  } catch {
+    return [];
+  }
+}
+
+function statMs(file: string): number {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Writes atomically, rotating the previous good copy into the backup first.
  *
  * The temp file sits in the same directory deliberately: `rename` is only atomic within a

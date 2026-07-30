@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { catalog, catalogById } from '../shared/catalog';
 import { createAccount, migrateV1, resolveAccount } from './accounts';
-import { pathsFor, readWithRecovery, writeAtomic } from './config-store';
+import { findQuarantined, pathsFor, readWithRecovery, writeAtomic } from './config-store';
 import { migrateWorkspaceV3 } from './folders';
 import { withDefaults } from './preferences';
 import type { Config, RailItem, ServiceInstance } from '../shared/types';
@@ -114,14 +114,31 @@ export function loadConfig(): Config {
 
   const { value: raw, note } = readWithRecovery(configPaths(), (text) => {
     const parsed = JSON.parse(text) as { services?: unknown[] };
-    // Parseable but useless is still a failure — `{}` would otherwise look like a valid config
-    // and silently replace a real one.
-    if (!Array.isArray(parsed.services) || parsed.services.length === 0) {
-      throw new Error('no services');
+    // Structurally absent is a failure — `{}` would otherwise look like a valid config and
+    // silently replace a real one.
+    //
+    // An **empty** array is not. `services: []` is a state the app deliberately writes: removing
+    // your last service produces it, and there's an EmptyState view built for it. Rejecting it
+    // here made a legitimate config indistinguishable from a truncated file, so `readWithRecovery`
+    // quarantined it and fell back to the backup — which the next window-bounds write had already
+    // overwritten with the same empty config. The result was every service, account and partition
+    // mapping replaced by defaults. See docs/decisions.md #47.
+    if (!Array.isArray(parsed.services)) {
+      throw new Error('no services array');
     }
     return parsed;
   });
   if (note) console.warn(`[config] ${note}`);
+
+  // Not only the copy quarantined on *this* boot — any left by an earlier one. A user whose setup
+  // was replaced by defaults had a full copy sitting beside it and no way to know.
+  const stale = findQuarantined(configPaths());
+  if (stale.length) {
+    console.warn(
+      `[config] ${stale.length} quarantined config copy/copies from earlier failures. ` +
+        `Most recent: ${stale[0]}`
+    );
+  }
 
   if (!raw) {
     cached = defaultConfig();
@@ -193,3 +210,8 @@ export function updateConfigReturning<T>(mutate: (c: Config) => T): T {
 }
 
 export { catalog };
+
+/** Quarantined copies on disk, newest first. Surfaced in Settings; never deleted automatically. */
+export function quarantinedConfigs(): string[] {
+  return findQuarantined(configPaths());
+}

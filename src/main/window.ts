@@ -9,6 +9,7 @@ import {
   nativeTheme,
   screen,
   session,
+  shell,
   type WebContents,
 } from 'electron';
 import { catalogById, resolveUrl } from '../shared/catalog';
@@ -19,6 +20,7 @@ import {
   makeInstance,
   updateConfig,
   updateConfigReturning,
+  quarantinedConfigs,
 } from './config';
 import {
   Layout,
@@ -301,6 +303,7 @@ export class AppWindow {
       accounts: config.accounts,
       preferences: config.preferences,
       orphanPartitions: this.orphanPartitions,
+      quarantinedConfigs: quarantinedConfigs(),
       allServices: config.services,
       flashServiceId: this.flashServiceId,
       services: this.activeServices(config.activeWorkspaceId).map((svc) => {
@@ -703,6 +706,12 @@ export class AppWindow {
         this.relayout();
         break;
       }
+
+      case 'reveal-path':
+        // Restricted to paths we actually surfaced. The renderer is a separate process and this is
+        // an IPC boundary — an arbitrary path from a message would be a way to probe the disk.
+        if (quarantinedConfigs().includes(command.path)) shell.showItemInFolder(command.path);
+        break;
 
       case 'purge-orphan-partitions':
         this.purgeOrphanPartitions();

@@ -535,3 +535,34 @@ that quietly does nothing is worse than one that admits it can't.
 macOS kills the app outright, with no dialog, if a permission is requested without a usage string.
 Catalog services can be granted microphone and camera, so without `NSMicrophoneUsageDescription`
 the first Slack huddle terminates Hangar.
+
+## 47. An empty config is not a corrupt config
+
+`loadConfig`'s guard rejected `services: []`, and `readWithRecovery` treats a rejected parse as
+corruption — so it quarantined the file and fell back to the backup.
+
+But `services: []` is a state the app *itself writes*: removing your last service produces it, and
+there's an `EmptyState` view built for that case. The guard made a legitimate config
+indistinguishable from a truncated one.
+
+The full path: remove your last service → the next window move rotates the now-empty config into the
+backup → restart → main quarantined, backup also rejected → `defaultConfig()` writes six new
+services on six new partitions over everything. Every account-to-partition mapping gone; the real
+setup surviving only in a `.corrupt-*` file nobody was ever told about.
+
+Verified end to end against a staged config: before, accounts were replaced; after, all seven
+survive and no quarantine file is created.
+
+The rule: **validate structure, not emptiness.** An absent `services` key is corruption. An empty
+one is a Tuesday.
+
+## 48. Quarantined copies have to be surfaced
+
+Nothing ever mentioned a `.corrupt-*` file again after the boot that created it. Since these exist
+precisely when the user's setup could not be loaded, they're the one thing worth pointing at.
+`findQuarantined` lists them, boot logs them, and Settings shows a "Recovered configuration" section
+with a Show in Finder button — rendered only when there's something to show.
+
+Never deleted automatically: a file that exists because recovery failed shouldn't be cleaned up by
+the same code that failed. `reveal-path` is restricted to paths we surfaced, since an arbitrary path
+over IPC would be a way to probe the disk.

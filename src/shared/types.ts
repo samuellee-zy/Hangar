@@ -233,6 +233,11 @@ export interface ShellState {
    * would sign the user out of everything.
    */
   orphanPartitions: string[];
+  /**
+   * Config copies quarantined after a failed read. Surfaced because they are the only surviving
+   * record of a setup that couldn't be loaded — until now nothing ever mentioned them again.
+   */
+  quarantinedConfigs: string[];
   /** So the picker can offer "open with Google (work)" vs "add another account". */
   accounts: Account[];
   workspaces: Workspace[];
@@ -274,6 +279,8 @@ export type Command =
   | { type: 'delete-workspace'; workspaceId: string }
   | { type: 'reorder-workspaces'; workspaceIds: string[] }
   | { type: 'purge-orphan-partitions' }
+  /** Reveal a file in Finder. Used for quarantined config copies, which are otherwise unfindable. */
+  | { type: 'reveal-path'; path: string }
   | { type: 'open-find' }
   | { type: 'close-find' }
   | { type: 'find'; query: string; forward?: boolean; findNext?: boolean }
