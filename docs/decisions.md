@@ -770,3 +770,24 @@ The single-instance guard called `app.quit()` and carried on: `registerIconSchem
 `whenReady` handler were still registered, so a second copy briefly raced the first over the same
 partitions — the exact thing the lock exists to prevent, and what corrupts a cookie jar.
 `app.exit(0)` stops immediately.
+
+## 64. Unread is read from the service, not tallied from its notifications
+
+The count was a running total of `new Notification()` calls. Three consequences: it only ever went
+up; it never reflected messages read somewhere else; and it was permanently zero for a service whose
+browser notifications are off — Gmail displaying "(5) Inbox" reported nothing.
+
+Now, where a catalog entry declares a pattern, the page title is treated as the **authoritative**
+count. A title that stops matching means zero, which is how reading your mail on your phone clears
+the badge here. That's a behaviour a tally structurally cannot have.
+
+**Per-service and opt-in, which is the whole design.** A global `\((\d+)\)` parser is the obvious
+idea and the wrong one: a Notion page called "(2) Draft", a Google Doc, a YouTube tab all match, and
+each becomes a permanent phantom count. Rambox reached the same conclusion — it injects per-service
+JavaScript as the primary mechanism and falls back to a title pattern only where a site has none. So
+detection is declared per entry and simply absent for custom connections, where there's nothing to
+know.
+
+`\+?` in the pattern is load-bearing: without it "(99+) Slack" fails to match and a *busy* Slack
+reports zero. Caught by a test asserting each catalog pattern against the titles its service
+actually produces.

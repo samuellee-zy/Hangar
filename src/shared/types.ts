@@ -22,6 +22,12 @@ export interface CatalogEntry {
   provider: string;
   /** Services whose session the server drops on browser close (Salesforce) — see plan, Tier 2. */
   sessionNotPersistable?: boolean;
+  /**
+   * How to read this service's unread count from its own UI. Opt-in per entry, and deliberately
+   * absent for custom connections: a universal title parser produces phantom counts from any page
+   * whose title happens to contain a number in brackets. See core/notify/unread.ts.
+   */
+  unread?: { titlePattern?: string };
 }
 
 /**

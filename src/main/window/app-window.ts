@@ -39,7 +39,7 @@ import { installWebContextMenu, showFolderMenu, showRailMenu, showServiceMenu } 
 import { exportConfig, importConfig } from '@main/features/transfer';
 import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { decideNotification } from '@core/notify/policy';
-import { UnreadCounts } from '@core/notify/unread';
+import { UnreadCounts, unreadFromTitle } from '@core/notify/unread';
 import {
   applyGlobalShortcut,
   applyLoginItem,
@@ -174,7 +174,8 @@ export class AppWindow {
       (active, total) => {
         const contents = this.findBar.contents;
         if (contents) safeSend(contents, 'find:result', { active, total });
-      }
+      },
+      (serviceId, title) => this.handleTitle(serviceId, title)
     );
     this.findBar = new FindBar(this.win, (wc) => this.registerConsumer(wc));
     this.overlay = new Overlay(
@@ -1286,6 +1287,34 @@ export class AppWindow {
       body: content.body,
       silent: false,
     });
+  }
+
+  /**
+   * A service changed its title.
+   *
+   * Where the catalog declares a pattern, the title is treated as the *authoritative* unread count
+   * rather than another event to tally. That's a real difference: counting `new Notification()`
+   * calls only ever goes up, never reflects what you've already read elsewhere, and reads zero for
+   * a service whose browser notifications are off — Gmail showing "(5) Inbox" reported nothing.
+   *
+   * A title that stops matching means zero, which is how reading your mail on your phone clears
+   * the badge here.
+   */
+  private handleTitle(serviceId: string, title: string): void {
+    const svc = loadConfig().services.find((s) => s.id === serviceId);
+    if (!svc) return;
+    const detected = unreadFromTitle(title, catalogById(svc.catalogId)?.unread);
+    // null means the rule doesn't apply — no information, which is not the same as zero.
+    if (detected === null) return;
+
+    // Muting and the per-service toggle still win: an unread count is an interruption of a
+    // quieter kind, and opting out should mean opting out of both.
+    if (svc.notificationLevel === 'muted' || !svc.notifications) return;
+
+    if (this.unread.get(serviceId) === detected) return;
+    this.unread.set(serviceId, detected);
+    this.updateBadge();
+    this.sync();
   }
 
   /**

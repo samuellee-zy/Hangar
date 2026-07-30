@@ -6,6 +6,8 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
+import { unreadFromTitle } from '@core/notify/unread';
+import { catalog } from '@shared/catalog';
 
 
 const ctx = (over = {}) => ({
@@ -123,5 +125,62 @@ describe('the two vetoes that were missing', () => {
       decideNotification(ctx({ serviceEnabled: false })),
       { banner: false, count: false }
     );
+  });
+});
+
+// D1 — reading unread from what a service displays, rather than tallying the notifications it
+// fires. A tally only ever rises, never reflects what you read elsewhere, and is zero for a
+// service whose browser notifications are off.
+describe('unread from the page title', () => {
+  // Mirrors the catalog. The `\\+?` is load-bearing: without it "(99+)" fails to match, and a
+  // busy Slack reports ZERO unread rather than a lot.
+  const gmail = { titlePattern: '^\\((\\d+)\\+?\\)' };
+
+  it('reads the count out of a real Gmail title', () => {
+    assert.equal(unreadFromTitle('(5) Inbox - you@gmail.com - Gmail', gmail), 5);
+  });
+
+  it('reads a real Slack title', () => {
+    assert.equal(unreadFromTitle('(3) Slack | general | Acme', gmail), 3);
+  });
+
+  it('A TITLE THAT STOPS MATCHING MEANS ZERO — this is how reading elsewhere clears the badge', () => {
+    // The behaviour a running tally structurally cannot have.
+    assert.equal(unreadFromTitle('Inbox - you@gmail.com - Gmail', gmail), 0);
+  });
+
+  it('NULL when no pattern is declared — no information, which is not zero', () => {
+    // Custom connections have no pattern, and a global parser would invent counts from any page
+    // whose title happens to contain a bracketed number.
+    assert.equal(unreadFromTitle('(2) Draft — Notion', undefined), null);
+    assert.equal(unreadFromTitle('(2) Draft', {}), null);
+  });
+
+  it('a match with no capture group counts as one', () => {
+    // Covers sites that show a bare dot or asterisk rather than a number.
+    assert.equal(unreadFromTitle('• Linear', { titlePattern: '^•' }), 1);
+  });
+
+  it('handles 99+ and other truncated counts', () => {
+    assert.equal(unreadFromTitle('(99+) Slack', gmail), 99);
+  });
+
+  it('a malformed pattern returns null rather than throwing', () => {
+    // One bad catalog entry must not break title handling for every other service.
+    assert.equal(unreadFromTitle('(1) x', { titlePattern: '([unclosed' }), null);
+  });
+
+  it('clamps a negative capture to zero rather than taking its absolute value', () => {
+    // Nonsense input should read as "nothing unread", not "four unread".
+    assert.equal(unreadFromTitle('(-4) x', { titlePattern: '\\((-?\\d+)\\)' }), 0);
+  });
+
+  it('the catalog patterns match the titles their services actually produce', () => {
+    for (const entry of catalog) {
+      if (!entry.unread?.titlePattern) continue;
+      assert.equal(unreadFromTitle(`(7) ${entry.name}`, entry.unread), 7, entry.id);
+      assert.equal(unreadFromTitle(`(99+) ${entry.name}`, entry.unread), 99, entry.id);
+      assert.equal(unreadFromTitle(entry.name, entry.unread), 0, entry.id);
+    }
   });
 });

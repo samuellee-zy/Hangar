@@ -12,6 +12,7 @@ const MS_AUTH = ['login.microsoftonline.com', 'login.live.com', 'login.microsoft
 export const catalog: CatalogEntry[] = [
   {
     id: 'gmail',
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
     icon: 'gmail',
     name: 'Gmail',
     // Bare host, NOT /mail/u/0/ — same trap as Calendar. With no session at user index 0, Google
@@ -48,6 +49,7 @@ export const catalog: CatalogEntry[] = [
   },
   {
     id: 'teams',
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
     icon: 'microsoft-teams',
     name: 'Teams',
     url: 'https://teams.microsoft.com/',
@@ -59,6 +61,7 @@ export const catalog: CatalogEntry[] = [
   },
   {
     id: 'slack',
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
     icon: 'slack',
     name: 'Slack',
     url: 'https://app.slack.com/client',
@@ -79,6 +82,7 @@ export const catalog: CatalogEntry[] = [
   },
   {
     id: 'linear',
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
     icon: 'linear',
     name: 'Linear',
     url: 'https://linear.app/',

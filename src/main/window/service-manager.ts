@@ -34,7 +34,9 @@ export class ServiceManager {
     /** Lets the window attach the web context menu without ServiceManager knowing about menus. */
     private onViewCreated: (wc: Electron.WebContents) => void,
     /** Search results are reported by the searched contents, but rendered by the find bar. */
-    private onFoundInPage: (active: number, total: number) => void
+    private onFoundInPage: (active: number, total: number) => void,
+    /** A service's own title is the most reliable unread signal it gives us. See notify/unread.ts. */
+    private onTitle: (serviceId: string, title: string) => void = () => {}
   ) {}
 
   get(serviceId: string): ServiceRuntime | undefined {
@@ -100,6 +102,10 @@ export class ServiceManager {
       this.onFoundInPage(result.activeMatchOrdinal, result.matches);
     });
 
+    // Fires on every SPA title change, not just navigation — which is exactly what a chat app does
+    // when a message arrives.
+    view.webContents.on('page-title-updated', (_e, title) => this.onTitle(svc.id, title));
+
     view.webContents.on('did-finish-load', () => {
       runtime.failures = 0;
     });
@@ -149,6 +155,10 @@ export class ServiceManager {
     // per-origin and resets on a cross-origin navigation, so a factor set on the empty
     // about:blank contents never survived to the real page — which read as "zoom resets itself"
     // after every reload and every wake from hibernation.
+    // Fires on every SPA title change, not just navigation — which is exactly what a chat app does
+    // when a message arrives.
+    view.webContents.on('page-title-updated', (_e, title) => this.onTitle(svc.id, title));
+
     view.webContents.on('did-finish-load', () => {
       const current = loadConfig().services.find((entry) => entry.id === svc.id);
       if (current) view.webContents.setZoomFactor(current.zoom);

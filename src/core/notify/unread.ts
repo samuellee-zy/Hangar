@@ -71,3 +71,51 @@ export class UnreadCounts {
     return new Map(this.counts);
   }
 }
+
+/**
+ * Detecting unread from what a service *displays*, rather than counting the notifications it fires.
+ *
+ * The count today is a tally of `new Notification()` calls. That only ever rises, never reflects
+ * reality, and reads zero for a service whose browser notifications are off — Gmail showing
+ * "(5) Inbox" reports nothing at all.
+ *
+ * **Per-service, and opt-in.** A global `\((\d+)\)` parser is the obvious idea and the wrong one:
+ * a Notion page named "(2) Draft", a Google Doc, a YouTube tab all match, and each becomes a
+ * permanent phantom count. Rambox learned this — it injects per-service JavaScript as the primary
+ * mechanism and falls back to a title pattern only where a site has none. So detection is declared
+ * per catalog entry and simply absent for custom connections, where there is nothing to know.
+ */
+export interface UnreadDetection {
+  /**
+   * Regex source matched against the page title. The first capturing group is the count; a match
+   * with no group counts as 1, which covers sites that show a bare dot or asterisk.
+   */
+  titlePattern?: string;
+}
+
+/**
+ * Returns the count a title implies, or null when the rule doesn't apply — null meaning "no
+ * information", which is different from zero. A title that stops matching *is* zero: that's how
+ * reading your mail elsewhere clears the badge here.
+ */
+export function unreadFromTitle(
+  title: string,
+  detection: UnreadDetection | undefined
+): number | null {
+  if (!detection?.titlePattern) return null;
+  let match: RegExpMatchArray | null;
+  try {
+    match = title.match(new RegExp(detection.titlePattern));
+  } catch {
+    // A bad pattern in the catalog shouldn't take out title handling for every service.
+    return null;
+  }
+  if (!match) return 0;
+
+  const captured = match[1];
+  if (captured === undefined) return 1;
+
+  const n = Number.parseInt(captured, 10);
+  // "99+" parses to 99, which is the right answer. Anything unparseable means matched-but-unknown.
+  return Number.isFinite(n) ? Math.max(0, n) : 1;
+}
