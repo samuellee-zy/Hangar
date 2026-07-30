@@ -37,7 +37,8 @@ import { FindBar } from '@main/features/find-bar';
 import { installWebContextMenu, showFolderMenu, showRailMenu, showServiceMenu } from '@main/features/context-menu';
 import { exportConfig, importConfig } from '@main/features/transfer';
 import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
+import { decideNotification } from '@core/notify/policy';
+import { UnreadCounts } from '@core/notify/unread';
 import {
   applyGlobalShortcut,
   applyLoginItem,
@@ -130,6 +131,13 @@ export class AppWindow {
   private findBar: FindBar;
   private consumers = new Set<WebContents>();
   private flashServiceId: string | null = null;
+  /**
+   * Unread counts live here rather than on `ServiceRuntime`, so they survive hibernation and can
+   * be set for a service that was never loaded. See core/notify/unread.ts.
+   */
+  private unread = new UnreadCounts();
+  /** Held so GC can't collect a banner before its click handler runs. */
+  private liveNotifications = new Set<Notification>();
   private flashTimer: NodeJS.Timeout | null = null;
 
   /**
@@ -306,6 +314,7 @@ export class AppWindow {
     return projectShellState({
       config: loadConfig(),
       runtimes: this.services.all(),
+      unread: this.unread.snapshot(),
       panes: this.layout.panes,
       focusedPaneId: this.layout.focusedPaneId,
       orphanPartitions: this.orphanPartitions,
@@ -1117,6 +1126,18 @@ export class AppWindow {
     else destroyTray();
   }
 
+  /**
+   * Feeds a synthetic push through the real delivery path. Diagnostic only.
+   *
+   * Exists because A1 shipped unverified: testing delivery looked like it needed a Firebase project
+   * and a real message, so it was skipped. It doesn't — `handlePushMessage` receives an already
+   * decrypted payload, so injecting one covers everything downstream of decryption, which is where
+   * the bug was.
+   */
+  injectPush(serviceId: string, payload: { title: string; body: string }): void {
+    this.handlePushMessage(serviceId, payload);
+  }
+
   /** Live service views. Diagnostic only — the teardown probe uses it to detect leaked views. */
   get serviceCount(): number {
     return this.services.all().size;
@@ -1228,17 +1249,22 @@ export class AppWindow {
   handleNotification(serviceId: string, payload: { title: string; body: string; silent: boolean }): void {
     const config = loadConfig();
     const svc = config.services.find((s) => s.id === serviceId);
-    const runtime = this.services.get(serviceId);
-    if (!svc || !runtime) return;
+    // Deliberately no runtime check. A hibernated service has no runtime by definition, and a Web
+    // Push exists precisely to reach you then — requiring one dropped every push this feature was
+    // built for. See docs/decisions.md #56.
+    if (!svc) return;
 
     const decision = decideNotification({
       enabled: config.preferences.notifications.enabled,
       dnd: config.preferences.notifications.dnd,
       level: svc.notificationLevel ?? 'all',
-      visible: this.layout.visibleServiceIds().has(serviceId),
+      serviceEnabled: svc.notifications,
+      inVisiblePane: this.layout.visibleServiceIds().has(serviceId),
+      // A pane inside a window you closed to the tray is not something you're looking at.
+      windowVisible: !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized(),
     });
 
-    runtime.unread = nextUnread(runtime.unread, decision);
+    if (decision.count) this.unread.increment(serviceId);
 
     if (decision.banner) {
       const notification = new Notification({
@@ -1252,22 +1278,26 @@ export class AppWindow {
         this.dispatch({ type: 'focus-service', serviceId });
       });
       notification.show();
+      // Retained until it's dismissed: the object is otherwise only referenced by this local, so
+      // GC can collect it before the click handler ever fires and click-to-focus does nothing.
+      this.liveNotifications.add(notification);
+      notification.on('close', () => this.liveNotifications.delete(notification));
     }
 
     this.updateBadge();
     this.sync();
   }
 
+
   /** macOS hides the badge at 0, so it must be *set* to 0 rather than skipped. */
   private updateBadge(): void {
-    app.setBadgeCount(badgeTotal([...this.services.all().values()].map((r) => r.unread)));
+    app.setBadgeCount(this.unread.total());
   }
 
   /** Looking at a service is what marks it read — the only signal we reliably have. */
   private clearUnread(serviceId: string): void {
-    const runtime = this.services.get(serviceId);
-    if (!runtime || runtime.unread === 0) return;
-    runtime.unread = 0;
+    if (this.unread.get(serviceId) === 0) return;
+    this.unread.clear(serviceId);
     this.updateBadge();
   }
 

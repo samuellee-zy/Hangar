@@ -17,8 +17,21 @@ export interface NotifyContext {
   dnd: boolean;
   /** Per-service. */
   level: NotificationLevel;
-  /** True when the service is on screen — no point interrupting you about what you're looking at. */
-  visible: boolean;
+  /**
+   * True when the service occupies a pane. NOT sufficient on its own — see `windowVisible`.
+   */
+  inVisiblePane: boolean;
+  /**
+   * Whether the window is actually on screen.
+   *
+   * Pane occupancy was previously the whole test, with no check of `win.isVisible()`. So with
+   * `closeToTray` on, closing the window while Slack held the focused pane discarded **every**
+   * Slack message — no banner, no unread, no tray count — because the app believed you were
+   * looking at a pane inside a hidden window. Two features silently cancelling each other out.
+   */
+  windowVisible: boolean;
+  /** Per-service notification toggle. Off means neither banner nor count. */
+  serviceEnabled: boolean;
 }
 
 export interface NotifyDecision {
@@ -32,11 +45,16 @@ export function decideNotification(ctx: NotifyContext): NotifyDecision {
   // Muted means "I don't care about this service" — neither banner nor badge.
   if (ctx.level === 'muted') return { banner: false, count: false };
 
+  // The per-service toggle. This used to gate Web Push but not in-page notifications, so turning
+  // notifications off for a service half-worked: pushes stopped, banners kept arriving.
+  if (!ctx.serviceEnabled) return { banner: false, count: false };
+
   // Notifications off entirely is a global mute, same reasoning.
   if (!ctx.enabled) return { banner: false, count: false };
 
-  // Already looking at it: no banner, and nothing unread about a message you can see.
-  if (ctx.visible) return { banner: false, count: false };
+  // Already looking at it: no banner, and nothing unread about a message you can see. Both halves
+  // are required — a pane inside a hidden window is not something you are looking at.
+  if (ctx.inVisiblePane && ctx.windowVisible) return { banner: false, count: false };
 
   // DND silences the interruption but keeps the tally, so nothing is lost while you focus.
   if (ctx.dnd) return { banner: false, count: true };

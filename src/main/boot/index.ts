@@ -219,6 +219,37 @@ async function probeOverlay(): Promise<void> {
  * The A4 regression. ⌘W on the last pane destroys the window; the dock icon rebuilds it. Everything
  * system-level used to keep a closure over the destroyed window and throw from then on.
  */
+/**
+ * A1 — the headline bug, and the one whose first "verification" was worthless.
+ *
+ * Phase 3.6 was verified only as far as "subscribe is intercepted", which it was. Delivery went
+ * untested because it appeared to need a Firebase project and a real message. It doesn't:
+ * `handlePushMessage` takes a decrypted payload, so a synthetic one exercises the whole path from
+ * decryption onward — which is exactly where it was broken.
+ */
+async function probeHibernatedPush(): Promise<void> {
+  const state = shell?.state();
+  const target = state?.services.find((s) => !s.sleeping && !state.panes.some((p) => p.serviceId === s.id))
+    ?? state?.services.find((s) => !s.sleeping);
+  if (!target || !shell) return console.log('[probe] no service to sleep');
+
+  // Put it to sleep — the state a push exists to reach.
+  shell.dispatch({ type: 'sleep-service', serviceId: target.id });
+  await new Promise((r) => setTimeout(r, 1200));
+  const asleep = shell.state().services.find((s) => s.id === target.id);
+  if (!asleep?.sleeping) return console.log(`[probe] ${target.name} would not sleep`);
+
+  const before = asleep.unread;
+  shell.injectPush(target.id, { title: 'Probe', body: 'sent while asleep' });
+  await new Promise((r) => setTimeout(r, 600));
+
+  const after = shell.state().services.find((s) => s.id === target.id);
+  console.log(
+    `[probe] hibernated push to "${target.name}": sleeping=${after?.sleeping}, ` +
+      `unread ${before} -> ${after?.unread} (badge ${app.getBadgeCount?.() ?? 'n/a'})`
+  );
+}
+
 async function probeTeardown(): Promise<void> {
   const before = process.memoryUsage().rss;
   const viewsBefore = shell ? shell.serviceCount : 0;
@@ -310,6 +341,7 @@ async function probeNotifications(): Promise<void> {
   );
 
   await probePush();
+  await probeHibernatedPush();
   await probeTeardown();
 }
 

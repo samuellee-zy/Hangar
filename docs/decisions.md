@@ -679,3 +679,35 @@ exact failure Phase 1 was built to prevent, reintroduced by the fix for #54.
 
 So the quit path awaits it, and now logs a failure instead of dropping it into an unhandled
 rejection.
+
+## 56. Unread outlives the view, which is what makes Web Push work
+
+`unread` was a field on `ServiceRuntime` — the object holding a service's live `WebContentsView`.
+That tied the count to the view's lifetime, and broke two things:
+
+**Hibernation wiped the count.** `sleep()` destroys the runtime, so "3 unread in Slack" evaporated
+the moment Slack idled out. Badge, tray and folder roll-up all reset with no user action.
+
+**Web Push was dropped entirely.** `handleNotification` opened with
+`if (!svc || !runtime) return;` — and a hibernated service has no runtime *by definition*. Every
+push for a sleeping service was decrypted, deduplicated, its `persistentId` persisted so it would
+never replay, and then discarded. Silently. The entire premise of Phase 3.6 — that hibernating a
+service shouldn't mean going silent on it — was false for its whole existence.
+
+Counts now live in `core/notify/unread.ts`, keyed by service id. Not persisted: a restart
+legitimately starts from zero, and persisting would mean a disk write per notification. Pruned on
+service removal, or the badge counts something the user deleted.
+
+## 57. Verifying A1 needed no Firebase at all
+
+Phase 3.6 was verified as far as "subscribe is intercepted", which it was. Delivery was left because
+it looked like it required a Firebase project and a real inbound message — so the broken half went
+untested and shipped.
+
+It never needed either. `handlePushMessage` receives an *already decrypted* payload, so injecting a
+synthetic one exercises everything downstream of decryption, which is precisely where the bug lived.
+`PushDeps.deliver` was already an injected seam.
+
+The lesson is about where a verification boundary gets drawn. "Needs external setup" was true of the
+transport and false of the logic, and treating them as one thing is what let a non-functioning
+feature ship as done.

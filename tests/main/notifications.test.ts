@@ -8,7 +8,15 @@ import assert from 'node:assert/strict';
 import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
 
 
-const ctx = (over = {}) => ({ enabled: true, dnd: false, level: 'all', visible: false, ...over });
+const ctx = (over = {}) => ({
+  enabled: true,
+  dnd: false,
+  level: 'all',
+  serviceEnabled: true,
+  inVisiblePane: false,
+  windowVisible: true,
+  ...over,
+});
 
 describe("banner vs count", () => {
 
@@ -29,7 +37,7 @@ describe("banner vs count", () => {
       banner: false,
       count: false,
     });
-    assert.deepEqual(decideNotification(ctx({ level: 'muted', visible: true })), {
+    assert.deepEqual(decideNotification(ctx({ level: 'muted', inVisiblePane: true })), {
       banner: false,
       count: false,
     });
@@ -40,11 +48,11 @@ describe("banner vs count", () => {
   });
 
   it('a visible service neither banners nor counts — you can already see it', () => {
-    assert.deepEqual(decideNotification(ctx({ visible: true })), { banner: false, count: false });
+    assert.deepEqual(decideNotification(ctx({ inVisiblePane: true })), { banner: false, count: false });
   });
 
   it('visible wins over DND: no phantom unread for a pane in front of you', () => {
-    assert.deepEqual(decideNotification(ctx({ visible: true, dnd: true })), {
+    assert.deepEqual(decideNotification(ctx({ inVisiblePane: true, dnd: true })), {
       banner: false,
       count: false,
     });
@@ -78,5 +86,42 @@ describe("badge total", () => {
 
   it('negative counts cannot drag the total below zero', () => {
     assert.equal(badgeTotal([5, -3]), 5);
+  });
+});
+
+// A3 and A14.2. Both flipped from the characterisation baseline: previously `visible` was pane
+// occupancy alone, and the per-service toggle was not consulted here at all.
+describe('the two vetoes that were missing', () => {
+  it('CLOSE-TO-TRAY NO LONGER SILENCES THE FRONT PANE', () => {
+    // Pane occupancy used to be the whole test. With closeToTray on, closing the window while
+    // Slack held the focused pane discarded every Slack message — the app believed you were
+    // looking at a pane inside a hidden window.
+    assert.deepEqual(ctx, ctx); // keep the helper referenced for readers
+    const hidden = decideNotification(ctx({ inVisiblePane: true, windowVisible: false }));
+    assert.deepEqual(hidden, { banner: true, count: true });
+  });
+
+  it('a visible pane in a visible window still suppresses, as before', () => {
+    assert.deepEqual(
+      decideNotification(ctx({ inVisiblePane: true, windowVisible: true })),
+      { banner: false, count: false }
+    );
+  });
+
+  it('a minimised window is not "looking at it" either', () => {
+    // windowVisible folds in isMinimized() on the caller's side.
+    assert.deepEqual(
+      decideNotification(ctx({ inVisiblePane: true, windowVisible: false, dnd: true })),
+      { banner: false, count: true }
+    );
+  });
+
+  it("the per-service toggle now gates banners, not just push", () => {
+    // It gated pushEligible but never decideNotification, so turning notifications off for a
+    // service stopped pushes while banners kept arriving.
+    assert.deepEqual(
+      decideNotification(ctx({ serviceEnabled: false })),
+      { banner: false, count: false }
+    );
   });
 });

@@ -107,6 +107,7 @@ describe('activeServicesOf', () => {
 describe('projectShellState', () => {
   const base = {
     runtimes: new Map(),
+    unread: new Map<string, number>(),
     panes: [],
     focusedPaneId: null,
     orphanPartitions: [],
@@ -125,7 +126,8 @@ describe('projectShellState', () => {
     const state = projectShellState({
       ...base,
       config: c,
-      runtimes: new Map([['a', { loading: true, unread: 3 }]]),
+      runtimes: new Map([['a', { loading: true }]]),
+      unread: new Map([['a', 3]]),
     });
     expect(state.services[0]).toMatchObject({ sleeping: false, loading: true, unread: 3 });
   });
@@ -328,5 +330,23 @@ describe('removeServiceFromConfig', () => {
     expect(c.accounts).toEqual([]);
     expect(c.workspaces[0]!.items).toEqual([]);
     expect(c.layouts['w']!.panes).toEqual([]);
+  });
+});
+
+// A1/A2: the count is keyed by service id, not carried on the runtime, so it outlives hibernation
+// and can exist for a service that has never been loaded. That is what makes Web Push work.
+describe('unread survives having no runtime', () => {
+  it('A HIBERNATED SERVICE CAN STILL SHOW UNREAD', () => {
+    const c = config({ services: [svc('a')], workspaces: [ws('w', ['a'])], activeWorkspaceId: 'w' });
+    const state = projectShellState({
+      config: c,
+      runtimes: new Map(),          // asleep
+      unread: new Map([['a', 5]]),  // ...and still has unread
+      panes: [],
+      focusedPaneId: null,
+      orphanPartitions: [],
+      quarantinedConfigs: [],
+    });
+    expect(state.services[0]).toMatchObject({ sleeping: true, unread: 5 });
   });
 });

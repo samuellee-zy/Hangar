@@ -16,7 +16,6 @@ import type { ServiceInstance } from '@shared/types';
 export interface ServiceRuntime {
   view: WebContentsView;
   loading: boolean;
-  unread: number;
   /** Consecutive automatic recovery attempts. Reset by any successful load. */
   failures: number;
   /** Epoch ms of the last time this service was on screen. Drives hibernation. */
@@ -73,7 +72,6 @@ export class ServiceManager {
     const runtime: ServiceRuntime = {
       view,
       loading: true,
-      unread: 0,
       failures: 0,
       lastActiveAt: Date.now(),
     };

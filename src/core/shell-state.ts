@@ -48,13 +48,17 @@ export function activeServicesOf(config: Config, workspaceId: string | null): Se
 /** Just enough of a live service view for the projection; the real one owns a WebContentsView. */
 export interface RuntimeView {
   loading: boolean;
-  unread: number;
 }
 
 export interface ProjectionInput {
   config: Config;
   /** Keyed by service id. A service absent from this map is asleep, by definition. */
   runtimes: Map<string, RuntimeView>;
+  /**
+   * Keyed by service id, and deliberately separate from `runtimes` — a hibernated service has no
+   * runtime but can still have unread, which is the whole point of Web Push.
+   */
+  unread: Map<string, number>;
   panes: Pane[];
   focusedPaneId: string | null;
   orphanPartitions: string[];
@@ -86,7 +90,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
         loading: runtime?.loading ?? false,
         // No runtime *is* the definition of asleep — there's no separate flag to disagree with.
         sleeping: !runtime,
-        unread: runtime?.unread ?? 0,
+        unread: input.unread.get(svc.id) ?? 0,
       };
     }),
     workspaces: config.workspaces,
