@@ -63,9 +63,9 @@ describe('v1 → current', () => {
   it('converts flat serviceIds into a rail tree, order preserved', () => {
     const c = migrateConfig(v1());
     expect(c.workspaces[0]!.items).toEqual([
-      { kind: 'service', id: 's1' },
-      { kind: 'service', id: 's2' },
-      { kind: 'service', id: 's3' },
+      { kind: 'service' as const, id: 's1' },
+      { kind: 'service' as const, id: 's2' },
+      { kind: 'service' as const, id: 's3' },
     ]);
   });
 

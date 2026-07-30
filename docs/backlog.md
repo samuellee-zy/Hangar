@@ -230,3 +230,21 @@ Kept for context on where the remaining gaps sit. Full reasoning in
 | **Import bypassed migration** | `saveConfig({ ...parsed })` with no defaults or versioning wrote invalid config straight to disk. |
 | **Every custom tile lost its accent** | `brightenForDark` returned `#NaNNaN14` for the `hsl()` colours `colorForHost` generates — invalid CSS, silently discarded. |
 | **No version control** | 7,261 lines, no git. |
+
+---
+
+## 10. Typechecking the tests — partially done
+
+`npm run typecheck:tests` runs `tsconfig.test.json`, which extends the root config but relaxes
+`noUncheckedIndexedAccess` and `noImplicitAny`. Both are right for `src/` and pure friction in
+tests: `panes[0]!.id` on an empty array should fail as a *test*, not as a compile error, and
+threading assertions through every fixture obscures what each case asserts.
+
+**It is not yet wired into `npm run check`, because 86 errors remain.** They're fixture annotations
+in individual suites, not defects — mechanical to clear, worth doing, not urgent.
+
+What this exercise was actually worth: it found that `migrateV1`'s signature was **a lie**. It
+declared its input as full `ServiceInstance`s, but v1 data has no `accountId` — creating it is the
+function's entire job — and pre-2.0 data has no `zoom`, `hibernate` or `notifications` either. The
+type asserted they were present, so nothing forced a caller to supply them and nothing filled them
+in. That's the root of A11, and it's now `StoredService`, which says what's actually true.

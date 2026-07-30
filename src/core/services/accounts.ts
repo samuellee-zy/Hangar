@@ -51,13 +51,25 @@ export function resolveAccount(config: Config, provider: string, forceNew = fals
   return createAccount(config, provider);
 }
 
+/** A service as it may appear on disk: anything from v1 onward, plus the dropped `sessionGroup`. */
+export type StoredService = Partial<ServiceInstance> &
+  Pick<ServiceInstance, 'id' | 'catalogId' | 'name'> & { sessionGroup?: string };
+
 /**
  * v1 → v2. Each distinct `sessionGroup` becomes an Account that **keeps its original partition
  * name**, so upgrading doesn't sign anyone out. Provider comes from the catalog entry of the first
  * service in the group.
  */
 export function migrateV1(raw: {
-  services?: Array<ServiceInstance & { sessionGroup?: string }>;
+  /**
+   * **Partial on purpose.** This used to declare full `ServiceInstance`s, which was simply false:
+   * v1 data has no `accountId` — creating it is this function's entire job — and pre-2.0 data has
+   * no `zoom`, `hibernate` or `notifications` either. The signature asserted those were present,
+   * so nothing forced a caller to supply them and nothing here filled them in.
+   *
+   * `migrateConfig` backfills before calling, and the type now says so.
+   */
+  services?: Array<StoredService>;
 }): { accounts: Account[]; services: ServiceInstance[] } {
   const accounts: Account[] = [];
   const byGroup = new Map<string, Account>();
@@ -83,7 +95,15 @@ export function migrateV1(raw: {
     }
 
     const { sessionGroup: _dropped, ...rest } = svc;
-    services.push({ ...rest, accountId: account.id });
+    // Defaults for anything the stored version predates. `migrateConfig` normally supplies these,
+    // but migrateV1 is exported and must be safe called directly.
+    services.push({
+      notifications: true,
+      hibernate: true,
+      zoom: 1,
+      ...rest,
+      accountId: account.id,
+    });
   }
 
   return { accounts, services };

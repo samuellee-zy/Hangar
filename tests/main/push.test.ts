@@ -48,7 +48,7 @@ describe("eligibility — opt-in at every level", () => {
       pushEnabled: true,
       configStatus: 'ready',
       serviceNotifications: true,
-      level: 'all',
+      level: 'all' as const,
       ...over,
     });
 
@@ -64,7 +64,7 @@ describe("eligibility — opt-in at every level", () => {
   it('the global toggle, the service toggle and mute each veto on their own', () => {
     assert.equal(eligible({ pushEnabled: false }), false);
     assert.equal(eligible({ serviceNotifications: false }), false);
-    assert.equal(eligible({ level: 'muted' }), false);
+    assert.equal(eligible({ level: 'muted' as const }), false);
   });
 });
 

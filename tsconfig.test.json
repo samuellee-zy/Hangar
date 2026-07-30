@@ -1,0 +1,18 @@
+{
+  // Tests are typechecked, but against slightly looser rules than src/.
+  //
+  // `noUncheckedIndexedAccess` is right for production code and pure friction here: a test that
+  // does `panes[0]!.id` on an empty array should fail as a test, not as a compile error, and
+  // threading non-null assertions through every fixture obscures what each case is actually
+  // asserting. Same for implicit `any` on inline callback params.
+  //
+  // Everything else stays strict — which is the point. What this catches is drift: a test still
+  // calling a function whose signature changed, or asserting a field that no longer exists.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": false,
+    "noImplicitAny": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}

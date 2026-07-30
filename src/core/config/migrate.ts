@@ -1,5 +1,5 @@
 import { catalogById } from '@shared/catalog';
-import { migrateV1 } from '@core/services/accounts';
+import { migrateV1, type StoredService } from '@core/services/accounts';
 import { migrateWorkspaceV3 } from '@core/workspace/folders';
 import { withDefaults } from '@core/config/preferences';
 import type { Config, RailItem, ServiceInstance } from '@shared/types';
@@ -22,7 +22,7 @@ import type { Config, RailItem, ServiceInstance } from '@shared/types';
 /** The loose shape of anything read from disk — untrusted, and possibly any prior version. */
 type StoredConfig = Omit<Partial<Config>, 'version' | 'workspaces'> & {
   version?: number;
-  services?: Array<Partial<ServiceInstance> & { sessionGroup?: string }>;
+  services?: StoredService[];
   workspaces?: Array<{ id: string; name: string; serviceIds?: string[]; items?: RailItem[] }>;
 };
 
@@ -35,7 +35,7 @@ type StoredConfig = Omit<Partial<Config>, 'version' | 'workspaces'> & {
  *     `restoreLayout` → the constructor, so the app failed to render at all on the first launch
  *     after upgrading.
  */
-function backfillService(svc: Partial<ServiceInstance> & { sessionGroup?: string }): ServiceInstance {
+function backfillService(svc: StoredService): ServiceInstance {
   return {
     ...svc,
     notifications: svc.notifications ?? true,

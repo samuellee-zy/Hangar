@@ -20,7 +20,7 @@ import {
 const ws = (...ids) => ({
   id: 'w',
   name: 'W',
-  items: ids.map((id) => ({ kind: 'service', id })),
+  items: ids.map((id) => ({ kind: 'service' as const, id })),
 });
 
 /** Every service id anywhere in the tree, for duplicate detection. */
@@ -38,7 +38,7 @@ describe("v3 → v4 migration", () => {
   });
 
   it('an already-migrated workspace is left alone', () => {
-    const items = [{ kind: 'folder', id: 'f', name: 'F', collapsed: false, serviceIds: ['a'] }];
+    const items = [{ kind: 'folder' as const, id: 'f', name: 'F', collapsed: false, serviceIds: ['a'] }];
     assert.deepEqual(migrateWorkspaceV3({ id: 'w', name: 'W', items }).items, items);
   });
 });

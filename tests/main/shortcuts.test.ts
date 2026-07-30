@@ -19,7 +19,7 @@ class FakeContents extends EventEmitter {
   }
 }
 
-const key = (k, mods = {}) => ({ type: 'keyDown', key: k, meta: true, alt: false, ...mods });
+const key = (k, mods = {}) => ({ type: 'keyDown' as const, key: k, meta: true, alt: false, ...mods });
 
 describe("listener registration", () => {
 
@@ -64,7 +64,7 @@ describe("listener registration", () => {
   it('a chord the sink DECLINED passes through — Escape must still close a web app dialog', () => {
     const wc = new FakeContents();
     attachShortcuts(wc, () => false); // e.g. Escape while no overlay is open
-    const event = wc.press({ type: 'keyDown', key: 'Escape', meta: false, alt: false });
+    const event = wc.press({ type: 'keyDown' as const, key: 'Escape', meta: false, alt: false });
     assert.equal(event.defaultPrevented, false);
   });
 });
@@ -72,20 +72,20 @@ describe("listener registration", () => {
 describe("chord translation", () => {
 
   it('bare keys and keyUp are ignored', () => {
-    assert.equal(translate({ type: 'keyDown', key: 'k', meta: false, alt: false }), null);
-    assert.equal(translate({ type: 'keyUp', key: 'k', meta: true, alt: false }), null);
+    assert.equal(translate({ type: 'keyDown' as const, key: 'k', meta: false, alt: false }), null);
+    assert.equal(translate({ type: 'keyUp' as const, key: 'k', meta: true, alt: false }), null);
   });
 
   it('bare Escape closes the overlay — bound everywhere, not just on the overlay itself', () => {
     // Binding this only to the overlay's contents left a blank overlay unclosable, because
     // before-input-event only fires for whichever contents holds focus.
-    assert.deepEqual(translate({ type: 'keyDown', key: 'Escape', meta: false, alt: false }), {
+    assert.deepEqual(translate({ type: 'keyDown' as const, key: 'Escape', meta: false, alt: false }), {
       type: 'close-overlay',
     });
   });
 
   it('modified Escape is left alone', () => {
-    assert.equal(translate({ type: 'keyDown', key: 'Escape', meta: true, alt: false }), null);
+    assert.equal(translate({ type: 'keyDown' as const, key: 'Escape', meta: true, alt: false }), null);
   });
 
   it('⌘1..9 and ⌘⌥1..9 resolve to different commands', () => {
@@ -111,7 +111,7 @@ describe("chord translation", () => {
 // Seven of translate()'s fifteen chord branches had no test. Added alongside the Phase 3.5
 // affordances but never asserted, so a stray edit to the key list would go unnoticed.
 describe('the affordance chords', () => {
-  const chord = (key, over = {}) => translate({ type: 'keyDown', key, meta: true, ...over });
+  const chord = (key, over = {}) => translate({ type: 'keyDown' as const, key, meta: true, ...over });
 
   it('⌘K opens the palette and ⌘F the find bar', () => {
     assert.deepEqual(chord('k'), { type: 'open-palette' });
@@ -131,16 +131,16 @@ describe('the affordance chords', () => {
   });
 
   it('⌘⌥0 is not a workspace — workspaces are 1-9 and there is no zeroth', () => {
-    assert.equal(translate({ type: 'keyDown', key: '0', meta: true, alt: true }), null);
+    assert.equal(translate({ type: 'keyDown' as const, key: '0', meta: true, alt: true }), null);
   });
 
   it('a bare key with no modifier is never a command', () => {
     for (const key of ['f', 'p', 'k', '0', '\\']) {
-      assert.equal(translate({ type: 'keyDown', key }), null, key);
+      assert.equal(translate({ type: 'keyDown' as const, key }), null, key);
     }
   });
 
   it('keyUp is ignored — only keyDown dispatches', () => {
-    assert.equal(translate({ type: 'keyUp', key: 'f', meta: true }), null);
+    assert.equal(translate({ type: 'keyUp' as const, key: 'f', meta: true }), null);
   });
 });

@@ -13,7 +13,7 @@ import { catalog } from '@shared/catalog';
 const ctx = (over = {}) => ({
   enabled: true,
   dnd: false,
-  level: 'all',
+  level: 'all' as const,
   serviceEnabled: true,
   inVisiblePane: false,
   windowVisible: true,
@@ -31,15 +31,15 @@ describe("banner vs count", () => {
   });
 
   it('a muted service neither banners nor counts — you asked not to care', () => {
-    assert.deepEqual(decideNotification(ctx({ level: 'muted' })), { banner: false, count: false });
+    assert.deepEqual(decideNotification(ctx({ level: 'muted' as const })), { banner: false, count: false });
   });
 
   it('muting beats DND, and beats being visible', () => {
-    assert.deepEqual(decideNotification(ctx({ level: 'muted', dnd: true })), {
+    assert.deepEqual(decideNotification(ctx({ level: 'muted' as const, dnd: true })), {
       banner: false,
       count: false,
     });
-    assert.deepEqual(decideNotification(ctx({ level: 'muted', inVisiblePane: true })), {
+    assert.deepEqual(decideNotification(ctx({ level: 'muted' as const, inVisiblePane: true })), {
       banner: false,
       count: false,
     });

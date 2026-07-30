@@ -30,7 +30,7 @@ const svc = (id: string, over: Record<string, unknown> = {}) => ({
 
 function config(over: Partial<Config> = {}): Config {
   return {
-    version: 4,
+    version: 4 as const,
     preferences: DEFAULT_PREFERENCES,
     accounts: [],
     services: [],
@@ -83,8 +83,8 @@ describe('activeServicesOf', () => {
           id: 'w',
           name: 'w',
           items: [
-            { kind: 'service', id: 'a' },
-            { kind: 'folder', id: 'f', name: 'F', collapsed: false, serviceIds: ['b', 'c'] },
+            { kind: 'service' as const, id: 'a' },
+            { kind: 'folder' as const, id: 'f', name: 'F', collapsed: false, serviceIds: ['b', 'c'] },
           ],
         },
       ],
@@ -260,7 +260,7 @@ describe('removeServiceFromConfig', () => {
         {
           id: 'w2',
           name: 'w2',
-          items: [{ kind: 'folder', id: 'f', name: 'F', collapsed: false, serviceIds: ['a', 'c'] }],
+          items: [{ kind: 'folder' as const, id: 'f', name: 'F', collapsed: false, serviceIds: ['a', 'c'] }],
         },
       ],
       layouts: {
@@ -280,7 +280,7 @@ describe('removeServiceFromConfig', () => {
     // Two nesting levels; missing either leaves a tile pointing at nothing.
     const c = populated();
     removeServiceFromConfig(c, 'a');
-    expect(c.workspaces[0]!.items).toEqual([{ kind: 'service', id: 'b' }]);
+    expect(c.workspaces[0]!.items).toEqual([{ kind: 'service' as const, id: 'b' }]);
     const folder = c.workspaces[1]!.items[0] as Extract<RailItem, { kind: 'folder' }>;
     expect(folder.serviceIds).toEqual(['c']);
   });

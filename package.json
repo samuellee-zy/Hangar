@@ -10,15 +10,16 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "check": "npm run typecheck && vitest run && npm run check:boundaries",
+    "check:boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
+    "graph": "depcruise src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > dependency-graph.svg",
     "icons": "node scripts/fetch-icons.mjs",
     "icon": "electron scripts/make-icon.mjs",
     "dist": "npm run build && npm run icon && electron-builder --mac -c.mac.identity=null",
-    "dist:signed": "npm run build && npm run icon && electron-builder --mac",
-    "check:boundaries": "depcruise src --config .dependency-cruiser.cjs",
-    "graph": "depcruise src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > dependency-graph.svg"
+    "dist:signed": "npm run build && npm run icon && electron-builder --mac"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
