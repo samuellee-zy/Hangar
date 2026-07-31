@@ -167,7 +167,9 @@ export function loadConfig(): Config {
  * folder operation changed the config and never synced it.
  */
 let onSaved: (() => void) | null = null;
-export function onConfigSaved(listener: () => void): void {
+
+/** Pass null to unregister — `AppWindow.dispose()` does, so a torn-down window stops being called. */
+export function onConfigSaved(listener: (() => void) | null): void {
   onSaved = listener;
 }
 

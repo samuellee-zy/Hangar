@@ -1037,3 +1037,37 @@ Three ways the first version could hang or do damage in a repo the user actually
   readable reason.
 - **The user's pre-commit hooks run.** A lint hook in their dotfiles repo should not be able to
   break config sync when we only touch our own file. `--no-verify`.
+
+## 82. The conflict UI did the opposite of what its buttons said
+
+`resolve('local')` and `resolve('remote')` both wrote the *remote* as the new base — so they were
+the same function. `decideSync` then saw local as the only side that had moved and returned
+`push-local` for both, meaning **"Keep repo" pushed this machine over the repo**, discarding exactly
+the copy the user had asked to keep.
+
+The mechanism is nicer than a branch: set the base to the side being **discarded**, and the existing
+three-way decision does the rest. Keep local → base := remote → local looks ahead → push. Keep repo
+→ base := local → the remote looks ahead → apply.
+
+A conflict UI that does the wrong thing is worse than no conflict UI, because the user believes it.
+Pinned by a test asserting the two produce *opposite* actions — an identical base would silently
+invert one of them again.
+
+## 83. Sync gets its own end-to-end suite, because units keep passing while it breaks
+
+Every bug this feature shipped with survived a full set of unit tests. They passed because they
+tested the design — two machines taking turns — rather than the way it's used: one machine, changes
+that never pushed, a restart, a conflict nobody planned for.
+
+Four Playwright tests now run real git against a real repo:
+
+1. seeding an empty repo, and asserting the Firebase key and the repo path are **not** in the commit
+2. a service added and never pushed **surviving a restart** — the P0
+3. a conflict reported with **neither side modified**
+4. "Keep repo" actually adopting the repo
+
+Two harness lessons worth keeping: editing the repo while the app runs races its own debounced
+reconcile, so the divergence is set up with the app closed — which is also the real scenario, since
+two machines don't edit simultaneously. And `await`ing inside `app.evaluate` while `onApplied` tears
+down and rebuilds every pane holds the call open past Playwright's timeout; dispatch and poll the
+file instead.

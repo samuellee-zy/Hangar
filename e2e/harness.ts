@@ -16,7 +16,7 @@ export interface Harness {
   userData: string;
   /** The rail's renderer. Most assertions about the UI go through this. */
   rail: () => Promise<Page>;
-  close: () => Promise<void>;
+  close: (options?: { keepProfile?: boolean }) => Promise<void>;
 }
 
 let seq = 0;
@@ -62,19 +62,32 @@ export function seedConfig(origin: string, over: Record<string, unknown> = {}) {
 }
 
 export async function launch(
-  configOverride?: (origin: string) => unknown | string
+  configOverride?: (origin: string) => unknown | string,
+  /**
+   * Reuse an existing profile instead of creating one.
+   *
+   * The restart tests need this: relaunching against a *fresh* userData proves nothing about
+   * whether state survives, which is the whole question.
+   */
+  options: { reuseUserData?: string } = {}
 ): Promise<Harness> {
   const fixture = await startFixtureServer();
-  const userData = path.join(os.tmpdir(), `hangar-e2e-${process.pid}-${seq++}`);
-  fs.rmSync(userData, { recursive: true, force: true });
-  fs.mkdirSync(userData, { recursive: true });
+  const reusing = Boolean(options.reuseUserData);
+  const userData = options.reuseUserData ?? path.join(os.tmpdir(), `hangar-e2e-${process.pid}-${seq++}`);
+  if (!reusing) {
+    fs.rmSync(userData, { recursive: true, force: true });
+    fs.mkdirSync(userData, { recursive: true });
+  }
 
-  const seeded = configOverride ? configOverride(fixture.origin) : seedConfig(fixture.origin);
-  // A string lets a test write deliberately malformed bytes — the corrupt-config case.
-  fs.writeFileSync(
-    path.join(userData, 'config.json'),
-    typeof seeded === 'string' ? seeded : JSON.stringify(seeded, null, 2)
-  );
+  // A reused profile keeps whatever is already on disk — that is the point of reusing it.
+  if (!reusing) {
+    const seeded = configOverride ? configOverride(fixture.origin) : seedConfig(fixture.origin);
+    // A string lets a test write deliberately malformed bytes — the corrupt-config case.
+    fs.writeFileSync(
+      path.join(userData, 'config.json'),
+      typeof seeded === 'string' ? seeded : JSON.stringify(seeded, null, 2)
+    );
+  }
 
   const app = await electron.launch({
     args: [path.join(__dirname, '..', 'out', 'main', 'index.js')],
@@ -102,10 +115,10 @@ export async function launch(
       }
       throw new Error(`no rail window; saw ${app.windows().map((w) => w.url()).join(', ')}`);
     },
-    close: async () => {
+    close: async ({ keepProfile = false } = {}) => {
       await app.close().catch(() => {});
       await fixture.close();
-      fs.rmSync(userData, { recursive: true, force: true });
+      if (!keepProfile) fs.rmSync(userData, { recursive: true, force: true });
     },
   };
 }

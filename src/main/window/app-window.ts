@@ -263,6 +263,10 @@ export class AppWindow {
     // The single funnel: every config write schedules a reconcile. Sync previously fired only from
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
+
+    // Safe to start here despite `onApplied` touching panes: `reconcile` awaits `git --version`
+    // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
+    // time an incoming config could land.
     void this.configSync.reconcile();
 
     this.scanOrphanPartitions();
@@ -1307,6 +1311,9 @@ export class AppWindow {
     releaseGlobalShortcut();
     destroyTray();
     closeSettingsWindow();
+    // Drop the config hook, or a write after teardown schedules a reconcile against a window that
+    // no longer exists. A rebuilt AppWindow re-registers its own.
+    onConfigSaved(null);
 
     // Every service view, not just the visible ones — the detached ones are exactly the leak.
     for (const serviceId of [...this.services.all().keys()]) {

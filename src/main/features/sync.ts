@@ -124,17 +124,23 @@ export class ConfigSync {
     const repo = await this.ready();
     if (!repo) return this.status;
 
+    // Set the base to the side being DISCARDED. `decideSync` then sees exactly one side as having
+    // moved, and does the right thing without needing a special case.
+    //
+    // Both branches originally wrote the *remote* as the base, which made them identical — so
+    // "Keep repo" pushed local over the repo, the precise opposite of its label, discarding the
+    // copy the user had just asked to keep.
     if (winner === 'local') {
-      // Adopt whatever is in the repo as the base so the push is seen as a fast-forward, then push.
-      const remote = this.readRemote(repo);
-      this.deps.writeBase(remote ?? '');
+      // Discarding the remote: base := remote, so local looks ahead → push.
+      this.deps.writeBase(this.readRemote(repo) ?? '');
       return this.reconcile();
     }
 
-    const remote = this.readRemote(repo);
-    if (!remote) return this.set({ state: 'error', detail: 'the repo has no config to adopt' });
-    // Claim the remote as our base, which makes the next decision a plain fast-forward.
-    this.deps.writeBase(remote);
+    if (!this.readRemote(repo)) {
+      return this.set({ state: 'error', detail: 'the repo has no config to adopt' });
+    }
+    // Discarding local: base := local, so the remote looks ahead → apply it.
+    this.deps.writeBase(serialise(this.deps.read()));
     return this.reconcile();
   }
 
@@ -246,15 +252,22 @@ export class ConfigSync {
       //
       // `--no-verify` skips the user's hooks: a lint hook in their dotfiles repo should not be able
       // to break config sync, and we only ever touch our own file.
-      await this.git(repo, [
-        'commit',
-        '--only',
-        '--no-verify',
-        '-m',
-        `Hangar config from ${os.hostname()}`,
-        '--',
-        CONFIG_FILE,
-      ]);
+      try {
+        await this.git(repo, [
+          'commit',
+          '--only',
+          '--no-verify',
+          '-m',
+          `Hangar config from ${os.hostname()}`,
+          '--',
+          CONFIG_FILE,
+        ]);
+      } catch (error) {
+        // "nothing to commit" means the file already matches what's committed — reachable when a
+        // previous run committed but failed to record the base. That's success with nothing to do,
+        // not a failure, and reporting it as one would leave sync stuck in `error` forever.
+        if (!/nothing (added )?to commit|no changes added/i.test(describe(error))) throw error;
+      }
       await this.git(repo, ['push']);
 
       this.deps.writeBase(localText);

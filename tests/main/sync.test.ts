@@ -287,3 +287,29 @@ describe('machine-local preferences never travel', () => {
     expect(JSON.stringify(local)).toBe(before);
   });
 });
+
+// Conflict resolution works by choosing the BASE, not by branching on the winner — set the base to
+// the side being discarded and `decideSync` does the rest. Both branches originally wrote the
+// remote, making them identical, so "Keep repo" pushed local over the repo.
+describe('resolving a conflict by choosing the base', () => {
+  const LOCAL = 'local-config';
+  const REMOTE = 'remote-config';
+
+  it('KEEP LOCAL discards the remote — base becomes the remote, so local is ahead', () => {
+    expect(decideSync({ local: LOCAL, remote: REMOTE, base: REMOTE })).toEqual({
+      kind: 'push-local',
+    });
+  });
+
+  it('KEEP REMOTE discards local — base becomes local, so the remote is ahead', () => {
+    expect(decideSync({ local: LOCAL, remote: REMOTE, base: LOCAL })).toEqual({
+      kind: 'apply-remote',
+    });
+  });
+
+  it('the two produce OPPOSITE actions — an identical base would silently invert one of them', () => {
+    const keepLocal = decideSync({ local: LOCAL, remote: REMOTE, base: REMOTE }).kind;
+    const keepRemote = decideSync({ local: LOCAL, remote: REMOTE, base: LOCAL }).kind;
+    expect(keepLocal).not.toBe(keepRemote);
+  });
+});
