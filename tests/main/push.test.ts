@@ -166,7 +166,7 @@ describe("registration bookkeeping", () => {
 
   it('a registration is found by service and key together', () => {
     const list = [reg('svc-1'), reg('svc-2')];
-    assert.equal(findRegistration(list, 'svc-1', 'v1').serviceId, 'svc-1');
+    assert.equal(findRegistration(list, 'svc-1', 'v1')!.serviceId, 'svc-1');
     // A rotated VAPID key means the stored registration is dead — FCM rejects pushes signed with a
     // key that doesn't match the subscription, so this must miss.
     assert.equal(findRegistration(list, 'svc-1', 'v2'), undefined);
@@ -174,7 +174,7 @@ describe("registration bookkeeping", () => {
   });
 
   it('UPSERT REPLACES BY SERVICE — a rotated key evicts, it does not accumulate', () => {
-    let list = [reg('svc-1', 'v1')];
+    let list = [reg('svc-1', 'v1')] as ReturnType<typeof upsertRegistration>;
     list = upsertRegistration(list, reg('svc-1', 'v2'));
     assert.equal(list.length, 1);
     assert.equal(list[0].vapidKey, 'v2');

@@ -89,7 +89,7 @@ describe("reading and recovery", () => {
 
     const result = readWithRecovery(p, parse);
     assert.deepEqual(result.value.services, [{ id: 'a' }], 'recovered the previous good state');
-    assert.ok(result.note.includes('recovered from backup'));
+    assert.ok(result!.note!.includes('recovered from backup'));
   });
 
   it('a corrupt config with no backup yields null — the caller uses defaults, nothing is destroyed', () => {
@@ -114,7 +114,7 @@ describe("reading and recovery", () => {
     fs.writeFileSync(p.backup, GOOD);
     const result = readWithRecovery(p, parse);
     assert.deepEqual(result.value.services, [{ id: 'a' }]);
-    assert.ok(result.note.includes('restored from backup'));
+    assert.ok(result!.note!.includes('restored from backup'));
   });
 
   it('a corrupt backup does not mask a good main file', () => {
@@ -131,8 +131,8 @@ describe("reading and recovery", () => {
     fs.writeFileSync(p.main, 'bad two');
     const second = readWithRecovery(p, parse).quarantined;
     assert.notEqual(first, second, 'timestamped, so both survive');
-    assert.equal(fs.existsSync(first), true);
-    assert.equal(fs.existsSync(second), true);
+    assert.equal(fs.existsSync(first!), true);
+    assert.equal(fs.existsSync(second!), true);
   });
 });
 

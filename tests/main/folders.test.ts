@@ -59,15 +59,15 @@ describe("folder operations", () => {
     moveToFolder(w, 'a', f1);
     moveToFolder(w, 'a', f2);
     assert.deepEqual(allIds(w).sort(), ['a', 'b']);
-    assert.deepEqual(findFolder(w, f1).serviceIds, []);
-    assert.deepEqual(findFolder(w, f2).serviceIds, ['a']);
+    assert.deepEqual(findFolder(w, f1)!.serviceIds, []);
+    assert.deepEqual(findFolder(w, f2)!.serviceIds, ['a']);
   });
 
   it('moving to null returns a service to the top level', () => {
     const w = ws('a');
     const f = createFolder(w, 'F', ['a']);
     moveToFolder(w, 'a', null);
-    assert.deepEqual(findFolder(w, f).serviceIds, []);
+    assert.deepEqual(findFolder(w, f)!.serviceIds, []);
     assert.deepEqual(flattenServiceIds(w), ['a']);
   });
 
@@ -105,7 +105,7 @@ describe("ordering and pruning", () => {
     const f = createFolder(w, 'F', ['b']);
     pruneMissing(w, new Set(['a']));
     assert.deepEqual(flattenServiceIds(w), ['a']);
-    assert.deepEqual(findFolder(w, f).serviceIds, [], 'folder survives, its dead member does not');
+    assert.deepEqual(findFolder(w, f)!.serviceIds, [], 'folder survives, its dead member does not');
   });
 
   it('folders never nest — a folder cannot be moved into a folder', () => {
@@ -114,7 +114,7 @@ describe("ordering and pruning", () => {
     const inner = createFolder(w, 'Inner');
     // moveToFolder only accepts service ids; a folder id simply isn't found.
     moveToFolder(w, inner, outer);
-    assert.equal(findFolder(w, outer).serviceIds.length, 0);
+    assert.equal(findFolder(w, outer)!.serviceIds.length, 0);
     assert.ok(findFolder(w, inner), 'the inner folder is still a top-level item');
   });
 });

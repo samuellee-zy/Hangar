@@ -146,7 +146,7 @@ describe("pane lifecycle", () => {
     ['a', 'b', 'c', 'd'].forEach((id) => l.add(id));
     l.add('e');
     assert.equal(l.panes.length, 4);
-    assert.equal(l.focused().serviceId, 'e');
+    assert.equal(l.focused()!.serviceId, 'e');
   });
 
   it('the last pane cannot be closed', () => {
@@ -161,7 +161,7 @@ describe("pane lifecycle", () => {
     l.add('a');
     l.add('b');
     const focused = l.focusedPaneId;
-    l.close(focused);
+    l.close(focused!);
     assert.equal(l.panes.length, 1);
     assert.notEqual(l.focusedPaneId, focused);
   });

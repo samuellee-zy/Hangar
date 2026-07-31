@@ -112,6 +112,7 @@ describe('projectShellState', () => {
     focusedPaneId: null,
     orphanPartitions: [],
     quarantinedConfigs: [],
+    syncStatus: { state: 'off' as const },
   };
 
   it('a service with no runtime is reported asleep', () => {
@@ -346,6 +347,7 @@ describe('unread survives having no runtime', () => {
       focusedPaneId: null,
       orphanPartitions: [],
       quarantinedConfigs: [],
+      syncStatus: { state: 'off' as const },
     });
     expect(state.services[0]).toMatchObject({ sleeping: true, unread: 5 });
   });

@@ -11,7 +11,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
-    "check": "npm run typecheck && vitest run && npm run check:boundaries",
+    "check": "npm run typecheck && npm run typecheck:tests && vitest run && npm run check:boundaries",
     "check:boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",

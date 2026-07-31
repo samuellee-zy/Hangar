@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { catalog, catalogById, resolveUrl } from '@shared/catalog';
 import { isAllowedHost } from '@main/platform/session';
+import type { ServiceInstance } from '@shared/types';
 
 describe('identity', () => {
   it('ids are unique', () => {
@@ -68,7 +69,9 @@ describe('host allowlists', () => {
     // teams.cloud.microsoft. The symptom is the service bouncing to the system browser on launch,
     // which reads as "the app is broken" rather than "one host is stale".
     for (const e of catalog) {
-      const svc = { catalogId: e.id, allowedHosts: undefined };
+      // isAllowedHost only reads `catalogId` and `allowedHosts`; the rest of ServiceInstance is
+      // irrelevant to the host check, so this stands in rather than being spelled out.
+      const svc = { catalogId: e.id, allowedHosts: undefined } as unknown as ServiceInstance;
       expect(isAllowedHost(svc, e.url), `${e.id}: ${e.url}`).toBe(true);
     }
   });

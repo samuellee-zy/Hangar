@@ -6,6 +6,14 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { accountsForProvider, createAccount, migrateV1, resolveAccount } from '@core/services/accounts';
+import type { Config } from '@shared/types';
+
+/**
+ * These fixtures are deliberately partial: `resolveAccount` and `createAccount` read `accounts` and
+ * nothing else, so spelling out a whole `Config` for each case would bury what the case is about.
+ * Cast once here rather than at every call site.
+ */
+const asConfig = (partial: unknown) => partial as unknown as Config;
 
 
 // Shape of a real v1 config: Gmail and Calendar shared the 'gmail' group, everything else its own.
@@ -52,14 +60,14 @@ describe("v1 → v2 migration", () => {
   });
 
   it('a service with no sessionGroup falls back to its catalog id', () => {
-    const { accounts } = migrateV1({ services: [{ id: 'x', catalogId: 'notion', zoom: 1 }] });
+    const { accounts } = migrateV1({ services: [{ id: 'x', catalogId: 'notion', name: 'Notion', zoom: 1 }] });
     assert.equal(accounts[0].partition, 'persist:grp-notion');
   });
 });
 
 describe("account resolution", () => {
 
-  const freshConfig = () => ({ version: 2, accounts: [], services: [], workspaces: [], layouts: {} });
+  const freshConfig = () => asConfig({ version: 2, accounts: [], services: [], workspaces: [], layouts: {} });
 
   it('a second service on the same provider reuses the existing account', () => {
     const c = freshConfig();

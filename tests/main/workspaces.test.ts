@@ -5,6 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
+import type { Config, ServiceInstance } from '@shared/types';
 import {
   createWorkspace,
   deleteWorkspace,
@@ -36,13 +37,13 @@ describe("create and rename", () => {
     const c = config(ws('w1', 'a'));
     const id = createWorkspace(c, 'Work');
     assert.equal(c.workspaces.length, 2);
-    assert.deepEqual(c.workspaces.find((w) => w.id === id).items, []);
+    assert.deepEqual(c.workspaces.find((w) => w.id === id)!.items, []);
   });
 
   it('a blank name falls back rather than creating an unlabelled workspace', () => {
     const c = config(ws('w1', 'a'));
     const id = createWorkspace(c, '   ');
-    assert.equal(c.workspaces.find((w) => w.id === id).name, 'Workspace');
+    assert.equal(c.workspaces.find((w) => w.id === id)!.name, 'Workspace');
   });
 
   it('renaming trims, and a blank rename is ignored', () => {
@@ -108,7 +109,8 @@ describe("ordering and the safety net", () => {
 
   it('rehomeUnreachable rescues a service present in no workspace at all', () => {
     const c = config(ws('w1', 'a'));
-    c.services.push({ id: 'stranded' });
+    // rehomeUnreachable only matches on id; the rest of ServiceInstance is irrelevant here.
+    c.services.push({ id: 'stranded' } as unknown as ServiceInstance);
     const rescued = rehomeUnreachable(c);
     assert.deepEqual(rescued, ['stranded']);
     assert.ok(reachable(c).has('stranded'));

@@ -233,26 +233,21 @@ Kept for context on where the remaining gaps sit. Full reasoning in
 
 ---
 
-## 10. Typechecking the tests — partially done
+## 10. Typechecking the tests — done
 
-`npm run typecheck:tests` runs `tsconfig.test.json`, which extends the root config but relaxes
-`noUncheckedIndexedAccess` and `noImplicitAny`. Both are right for `src/` and pure friction in
-tests: `panes[0]!.id` on an empty array should fail as a *test*, not as a compile error, and
-threading assertions through every fixture obscures what each case asserts.
+`npm run check` now runs `tsc` over `tests/` as well, via `tsconfig.test.json`. That config extends
+the root one and relaxes exactly two rules: `noUncheckedIndexedAccess` and `noImplicitAny`. Both are
+right for `src/` and pure friction in tests — `panes[0]!.id` on an empty array should fail as a
+*test*, not as a compile error. Everything else stays strict, which is the point: what this catches
+is drift between a test and the code it tests.
 
-**Not yet wired into `npm run check`: 54 errors remain** (down from 193). All are inline object
-literals standing in for a full `Config` or a `WebContents` — deliberately partial fixtures, where
-spelling out every field would bury what each case is about.
+193 errors → 0. Most were literal widening in fixtures ported from the untyped `.mjs` suites, and
+the rest were `.find()` results and partial stand-ins for `Config` or `WebContents`.
 
-They need a typed fixture helper per file, written by hand. Two attempts to do it with a regex
-produced unbalanced parens that broke a working suite, which is its own small lesson: a codemod is
-right for a uniform transformation and wrong for one that needs to understand nesting.
-
-What this exercise was actually worth: it found that `migrateV1`'s signature was **a lie**. It
-declared its input as full `ServiceInstance`s, but v1 data has no `accountId` — creating it is the
-function's entire job — and pre-2.0 data has no `zoom`, `hibernate` or `notifications` either. The
-type asserted they were present, so nothing forced a caller to supply them and nothing filled them
-in. That's the root of A11, and it's now `StoredService`, which says what's actually true.
+Worth recording *how*: two attempts to clear them with a regex produced unbalanced parens that broke
+a working suite. What worked was a script driven by **tsc's own line and column numbers** — the
+compiler already knows exactly where the problem is, so there's no pattern to get wrong. The last
+two dozen were done by hand.
 
 ---
 

@@ -20,7 +20,8 @@ const { addService, loadConfig, makeCustomInstance, makeInstance } = await impor
 
 
 const config = loadConfig();
-const partitionOf = (svc) => config.accounts.find((a) => a.id === svc.accountId).partition;
+const partitionOf = (svc: { accountId: string } | undefined) =>
+  config.accounts.find((a) => a.id === svc!.accountId)!.partition;
 
 describe("adding a catalog service", () => {
 
@@ -34,14 +35,14 @@ describe("adding a catalog service", () => {
   it('adding Drive reuses the existing Google account — no second sign-in', () => {
     const gmail = config.services.find((s) => s.catalogId === 'gmail');
     const drive = addService(config, makeInstance(config, 'gdrive'));
-    assert.equal(drive.accountId, gmail.accountId);
+    assert.equal(drive.accountId, gmail!.accountId);
     assert.equal(partitionOf(drive), partitionOf(gmail));
   });
 
   it('the new service lands in the active workspace — otherwise it renders nowhere', () => {
     const drive = config.services.find((s) => s.catalogId === 'gdrive');
     const workspace = config.workspaces.find((w) => w.id === config.activeWorkspaceId);
-    const inTree = workspace.items.some((i) => i.kind === 'service' && i.id === drive.id);
+    const inTree = workspace!.items.some((i) => i.kind === 'service' && i.id === drive!.id);
     assert.ok(inTree, 'missing from the active workspace rail tree');
   });
 });
@@ -51,14 +52,14 @@ describe("adding a second account", () => {
   it('a second Gmail gets its own account AND its own partition', () => {
     const first = config.services.find((s) => s.catalogId === 'gmail');
     const second = addService(config, makeInstance(config, 'gmail', { forceNewAccount: true }));
-    assert.notEqual(second.accountId, first.accountId);
+    assert.notEqual(second.accountId, first!.accountId);
     assert.notEqual(partitionOf(second), partitionOf(first), 'two mailboxes need two cookie jars');
   });
 
   it('the second Gmail does not disturb Calendar, which still rides the first login', () => {
     const gcal = config.services.find((s) => s.catalogId === 'gcal');
     const firstGmail = config.services.find((s) => s.catalogId === 'gmail');
-    assert.equal(gcal.accountId, firstGmail.accountId);
+    assert.equal(gcal!.accountId, firstGmail!.accountId);
   });
 });
 
@@ -76,7 +77,7 @@ describe("adding a custom connection", () => {
 
   it('its allowlist is the exact host — never a guessed registrable domain', () => {
     const svc = config.services.find((s) => s.name === 'Grafana');
-    assert.deepEqual(svc.allowedHosts, ['grafana.example.com']);
+    assert.deepEqual(svc!.allowedHosts, ['grafana.example.com']);
   });
 
   it('a multi-part TLD does not open the allowlist to the whole suffix', () => {
@@ -89,7 +90,7 @@ describe("adding a custom connection", () => {
 
   it('a custom connection gets an isolated account of its own', () => {
     const svc = config.services.find((s) => s.name === 'Grafana');
-    const partitions = config.services.filter((s) => s.id !== svc.id).map(partitionOf);
+    const partitions = config.services.filter((s) => s.id !== svc!.id).map(partitionOf);
     assert.ok(!partitions.includes(partitionOf(svc)));
   });
 

@@ -21,6 +21,14 @@ type AnyContents = WebContents;
 
 // Minimal stand-in for a WebContents: attachShortcuts only ever calls .on('before-input-event').
 class FakeContents extends EventEmitter {
+  /**
+   * `attachShortcuts` only ever calls `.on('before-input-event')`, so a full `WebContents` is not
+   * needed — but the signature asks for one. Cast here rather than at each call site.
+   */
+  get asContents(): AnyContents {
+    return this as unknown as AnyContents;
+  }
+
   press(input: Partial<Input>) {
     const event = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
     this.emit('before-input-event', event, input);
@@ -28,7 +36,8 @@ class FakeContents extends EventEmitter {
   }
 }
 
-const key = (k, mods = {}) => ({ type: 'keyDown' as const, key: k, meta: true, alt: false, ...mods });
+const key = (k: string, mods: Partial<Input> = {}) =>
+  ({ type: 'keyDown', key: k, meta: true, alt: false, ...mods }) as Input;
 
 describe("listener registration", () => {
 
@@ -40,7 +49,7 @@ describe("listener registration", () => {
     const sink = (c: Command) => (seen.push(c), true);
 
     // The old bug: openService re-attached on every focus.
-    for (let i = 0; i < 5; i++) attachShortcuts(wc as unknown as AnyContents, sink);
+    for (let i = 0; i < 5; i++) attachShortcuts(wc.asContents, sink);
 
     wc.press(key('\\'));
     assert.equal(seen.length, 1, `expected 1 command, got ${seen.length}`);
@@ -51,8 +60,8 @@ describe("listener registration", () => {
     const a = new FakeContents();
     const b = new FakeContents();
     const seen: Command[] = [];
-    attachShortcuts(a, (c) => (seen.push(c), true));
-    attachShortcuts(b, (c) => (seen.push(c), true));
+    attachShortcuts(a.asContents, (c) => (seen.push(c), true));
+    attachShortcuts(b.asContents, (c) => (seen.push(c), true));
     a.press(key('k'));
     b.press(key('k'));
     assert.equal(seen.length, 2);
@@ -60,19 +69,19 @@ describe("listener registration", () => {
 
   it('a chord the sink handled is preventDefault-ed so the page never sees it', () => {
     const wc = new FakeContents();
-    attachShortcuts(wc, accept);
+    attachShortcuts(wc.asContents, accept);
     assert.equal(wc.press(key('k')).defaultPrevented, true);
   });
 
   it('an unrecognised chord passes through to the page', () => {
     const wc = new FakeContents();
-    attachShortcuts(wc, accept);
+    attachShortcuts(wc.asContents, accept);
     assert.equal(wc.press(key('j')).defaultPrevented, false);
   });
 
   it('a chord the sink DECLINED passes through — Escape must still close a web app dialog', () => {
     const wc = new FakeContents();
-    attachShortcuts(wc, () => false); // e.g. Escape while no overlay is open
+    attachShortcuts(wc.asContents, () => false); // e.g. Escape while no overlay is open
     const event = wc.press({ type: 'keyDown' as const, key: 'Escape', meta: false, alt: false });
     assert.equal(event.defaultPrevented, false);
   });
