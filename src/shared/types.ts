@@ -3,8 +3,13 @@ export interface CatalogEntry {
   id: string;
   name: string;
   url: string;
-  /** dashboard-icons slug, vendored into assets/icons/. See scripts/fetch-icons.mjs. */
-  icon: string;
+  /**
+   * dashboard-icons slug, vendored into assets/icons/. See scripts/fetch-icons.mjs.
+   *
+   * Optional: not every service has a logo upstream, and omitting the field is honest where
+   * declaring a slug that 404s is indistinguishable from a typo. `initials` covers it.
+   */
+  icon?: string;
   /** Last-resort fallback when there's no vendored logo and no captured favicon yet. */
   initials: string;
   /** Brand hex. Lifted for dark backgrounds at render time — see renderer/accent.ts. */

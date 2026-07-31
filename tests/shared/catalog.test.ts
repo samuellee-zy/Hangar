@@ -38,16 +38,27 @@ describe('identity', () => {
 describe('icons', () => {
   const dir = path.resolve('assets/icons');
 
-  it('every icon slug resolves to a vendored file', () => {
-    // A typo here is invisible: the tile silently falls back to initials.
+  it('every DECLARED icon slug resolves to a vendored file', () => {
+    // A typo is otherwise invisible: the tile silently falls back to initials, which is also the
+    // legitimate no-icon behaviour, so the two are indistinguishable at runtime. Entries with no
+    // icon at all are fine — what must not happen is declaring one that isn't there.
     for (const e of catalog) {
+      if (!e.icon) continue;
       expect(fs.existsSync(path.join(dir, `${e.icon}.svg`)), `${e.id} → ${e.icon}.svg`).toBe(true);
+    }
+  });
+
+  it('an entry without an icon still has initials to fall back to', () => {
+    for (const e of catalog) {
+      if (!e.icon) expect(e.initials, e.id).toBeTruthy();
     }
   });
 
   it('slugs are safe to interpolate into a path', () => {
     // icons.ts builds a filesystem path from this. Anything that could climb out is a traversal.
-    for (const e of catalog) expect(e.icon, e.id).toMatch(/^[a-z0-9-]+$/);
+    for (const e of catalog) {
+      if (e.icon) expect(e.icon, e.id).toMatch(/^[a-z0-9-]+$/);
+    }
   });
 });
 

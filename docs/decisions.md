@@ -896,3 +896,27 @@ login, so they pass on a machine that has never opened Gmail.
 `injectPush` and `serviceCount` stay on `AppWindow` — they were probe scaffolding, and they're now
 test seams. `__hangarShell` is published only when `HANGAR_USER_DATA` is set, so a normal run never
 exposes an internal handle.
+
+## 73. The catalog invariant that matters isn't the one that's easy to test
+
+`catalog.test.ts` asserts every entry allows its own URL. Expanding from 9 to 37 entries caught one
+failure that way — Jira pointed at `www.atlassian.com/software/jira`, a marketing page whose host
+wasn't allowlisted.
+
+But that check is **static**, and the failure mode it can't see is a *redirect*. So every URL was
+also fetched and its **final** host compared against the allowlist. That found four more, including
+one in the code that had already shipped:
+
+- **Notion has moved from `.so` to `.com`.** The existing entry's allowlist covered only `notion.so`,
+  so the redirect was treated as an external navigation and opened in Safari. Live, in a service in
+  daily use.
+- **Signed out, every Google Workspace app redirects to `workspace.google.com`** — so the very first
+  load, before you have a session, bounced out of the app. The same trap as the `/u/0/` marketing
+  redirect in decisions #2, in a different disguise.
+
+403s and 406s from a plain `fetch` are bot-blocking, not misconfiguration, and are ignored.
+
+The general point: an allowlist is a claim about where a service will *send* you, and only following
+the redirect tests that claim. `Monday` also ships with no `icon` at all rather than a slug that
+404s — `initials` is the designed fallback, and a declared-but-missing slug is indistinguishable
+from a typo.
