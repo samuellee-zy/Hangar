@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { catalog } from '@shared/catalog';
 import { brightenForDark } from './accent';
 import { fuzzy } from './fuzzy';
+import { useFocusTrap } from './useFocusTrap';
 import { useShellState } from './useShellState';
 
 /**
@@ -14,6 +15,7 @@ import { useShellState } from './useShellState';
  * wrong mailbox or makes you sign in again for no reason.
  */
 export function AddConnection() {
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const state = useShellState();
   const [query, setQuery] = useState('');
   const [customOpen, setCustomOpen] = useState(false);
@@ -31,7 +33,17 @@ export function AddConnection() {
 
   return (
     <div className="scrim" onClick={() => window.hangar.send({ type: 'close-overlay' })}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="sheet"
+        // A real dialog: `aria-modal` tells a screen reader the rest of the view is inert, and the
+        // trap makes that true for the keyboard too. The overlay is its own WebContentsView, so
+        // tabbing out of it lands on nothing at all rather than on a page behind.
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add a connection"
+        ref={trapRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           autoFocus
           className="palette-input"

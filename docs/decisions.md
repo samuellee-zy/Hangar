@@ -831,3 +831,45 @@ folder or reordering its members can carry one tile's DOM state onto another.
 
 Keyed inside `renderService` rather than at each call site, since the fragment is what needs the key
 and only one of the two call sites is a list.
+
+## 69. The rail is buttons, not a tree — deliberately
+
+The obvious accessibility fix for a rail of services and folders is `role="tree"` with `treeitem`
+children. It was written, and then reverted.
+
+A tree **promises arrow-key navigation with a roving tabindex**, and we don't implement that —
+dnd-kit already owns the arrows for moving a lifted tile. Telling a screen-reader user "this is a
+tree, use the arrows" and then ignoring the arrows is worse than a plain run of buttons that Tab
+through correctly. ARIA roles are a contract about behaviour, not a vocabulary for describing
+appearance.
+
+So: native buttons, `aria-current` on the focused service, `aria-expanded` on folders, and a
+labelled `role="group"` around a folder's members to convey the nesting. State that matters — asleep,
+unread — goes in the accessible *name*, because `title` is announced inconsistently and only after
+a delay.
+
+Unread changes get one `polite` live region for the whole rail rather than `aria-live` per badge:
+per-badge would announce every service's count on any change, and `polite` waits for a pause rather
+than cutting across what you're reading.
+
+## 70. The overlay needs a focus trap more than a web page would
+
+It's its own `WebContentsView`. Tabbing past the last control doesn't move focus to a page behind —
+there is no page behind. Focus goes somewhere with no visual representation at all and the user is
+simply stuck.
+
+The trap also restores focus on close, because the view is *removed* from the window rather than
+hidden (decisions #15), so whatever had focus is genuinely gone.
+
+## 71. A focus-trap test that passes without the trap
+
+Both trap tests initially passed with the trap disabled. Two separate reasons, and both are general:
+
+1. **jsdom had nothing focusable outside the dialog**, so `dialog.contains(activeElement)` was
+   trivially true. The escape hatch has to exist for closing it to mean anything — the tests now
+   render bait buttons either side.
+2. **Asserting only after the last press.** With a three-element focus cycle, twelve tabs land back
+   where they started whether or not a trap exists. The tests now assert after *every* press.
+
+Same discipline as #53, where three dependency-cruiser rules reported a clean graph while looking at
+nothing: **if a test is meant to prove something, break the thing and watch it fail.**

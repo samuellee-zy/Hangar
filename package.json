@@ -2,7 +2,7 @@
   "name": "hangar",
   "productName": "Hangar",
   "version": "0.1.0",
-  "description": "A unified workspace for web apps \u2014 one window, isolated sessions, no subscription.",
+  "description": "A unified workspace for web apps — one window, isolated sessions, no subscription.",
   "main": "out/main/index.js",
   "private": true,
   "scripts": {
@@ -22,6 +22,9 @@
     "dist:signed": "npm run build && npm run icon && electron-builder --mac"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

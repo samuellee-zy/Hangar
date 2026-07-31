@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fuzzy } from './fuzzy';
+import { useFocusTrap } from './useFocusTrap';
 import { useShellState } from './useShellState';
 
 /**
@@ -16,6 +17,7 @@ export function Palette() {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   // OverlayRoot remounts on every open via key={mode}, so state resets itself — only focus needs
   // doing here.
@@ -71,7 +73,17 @@ export function Palette() {
   return (
     // Clicking the scrim closes — the overlay is removed from the view tree, restoring clicks.
     <div className="scrim" onClick={() => window.hangar.send({ type: 'close-overlay' })}>
-      <div className="palette" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="palette"
+        // A real dialog: `aria-modal` tells a screen reader the rest of the view is inert, and the
+        // trap makes that true for the keyboard too. The overlay is its own WebContentsView, so
+        // tabbing out of it lands on nothing at all rather than on a page behind.
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        ref={trapRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           ref={inputRef}
           className="palette-input"

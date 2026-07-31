@@ -23,6 +23,16 @@ export function FolderTile({
   return (
     <button
       className={`rail-item rail-folder${folder.collapsed ? '' : ' is-open'}`}
+      // `aria-expanded` works on a plain button and is the one piece of state a folder has that a
+      // service doesn't — without it a collapsed folder is indistinguishable from an empty one.
+      aria-expanded={!folder.collapsed}
+      aria-label={[
+        folder.name,
+        `${members.length} service${members.length === 1 ? '' : 's'}`,
+        unread > 0 ? `${unread} unread` : null,
+      ]
+        .filter(Boolean)
+        .join(', ')}
       title={`${folder.name} — ${members.length} service${members.length === 1 ? '' : 's'}`}
       onClick={onToggle}
       onContextMenu={(e) => {
@@ -37,7 +47,11 @@ export function FolderTile({
         ))}
         {members.length === 0 && <span className="folder-empty">·</span>}
       </span>
-      {unread > 0 && <span className="rail-badge">{unread}</span>}
+      {unread > 0 && (
+        <span className="rail-badge" aria-hidden="true">
+          {unread}
+        </span>
+      )}
     </button>
   );
 }

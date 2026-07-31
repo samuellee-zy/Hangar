@@ -864,3 +864,30 @@ kbd {
   background: var(--tile);
   color: var(--fg);
 }
+
+/*
+ * Available to screen readers, invisible on screen.
+ *
+ * `display: none` and `visibility: hidden` both remove an element from the accessibility tree, so
+ * neither works for a live region — the announcement simply never happens. This is the clip-path
+ * technique, which keeps the element rendered at 1px and in the tree.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Anything focused by keyboard gets a visible ring. Several controls previously relied on the
+   browser default, which the custom backgrounds here render nearly invisible. */
+:focus-visible {
+  outline: 2px solid var(--focus, #6ea8fe);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

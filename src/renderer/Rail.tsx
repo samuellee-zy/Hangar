@@ -25,6 +25,7 @@ export function Rail() {
   // Top and bottom lay the rail out as a row; the tile treatment is otherwise identical.
   const horizontal = railPosition === 'top' || railPosition === 'bottom';
   const byId = new Map(state.services.map((s) => [s.id, s]));
+  const totalUnread = state.services.reduce((sum, s) => sum + s.unread, 0);
   const send = window.hangar.send;
 
   const renderService = (svc: ServiceView, nested = false) => {
@@ -47,6 +48,23 @@ export function Rail() {
       <React.Fragment key={svc.id}>
         <button
           className={classes}
+          // Deliberately left as a native <button>, NOT role="treeitem".
+          //
+          // A tree promises arrow-key navigation with a roving tabindex, and we don't implement
+          // that — dnd-kit already owns the arrows for moving a lifted tile. Announcing "tree, use
+          // arrows" to a screen-reader user and then ignoring the arrows is worse than a plain run
+          // of buttons that Tab through correctly. Structure is conveyed by the labelled group
+          // around folder members instead.
+          aria-current={svc.id === focusedServiceId ? 'true' : undefined}
+          // The tooltip is not an accessible name — `title` is announced inconsistently and only
+          // after a delay. State that matters (asleep, unread) belongs in the name itself.
+          aria-label={[
+            svc.name,
+            svc.sleeping ? 'asleep' : null,
+            svc.unread > 0 ? `${svc.unread} unread` : null,
+          ]
+            .filter(Boolean)
+            .join(', ')}
           // Identity lives in the accent and the icon; the tile surface carries state only.
           style={{ ['--accent' as string]: brightenForDark(svc.color) }}
           title={`${svc.name}${svc.sleeping ? ' (asleep)' : ''}`}
@@ -64,7 +82,13 @@ export function Rail() {
           }
         >
           <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} />
-          {svc.unread > 0 && <span className="rail-badge">{svc.unread}</span>}
+          {/* aria-hidden: the count is already in the tile's accessible name, and announcing it
+              twice is worse than once. The live region below handles the *change*. */}
+          {svc.unread > 0 && (
+            <span className="rail-badge" aria-hidden="true">
+              {svc.unread}
+            </span>
+          )}
         </button>
         {showLabels && !compactRail && !horizontal && (
           <span className="rail-label">{svc.name}</span>
@@ -98,7 +122,7 @@ export function Rail() {
         horizontal={horizontal}
         onReorder={(itemIds) => send({ type: 'reorder-items', itemIds })}
       >
-        <nav className="rail-items">
+        <nav className="rail-items" aria-label="Services">
           {state.railItems.map((item) => {
             if (item.kind === 'service') {
               const svc = byId.get(item.id);
@@ -128,7 +152,13 @@ export function Rail() {
                       onToggle={() => send({ type: 'toggle-folder', folderId: item.id })}
                       onContextMenu={() => send({ type: 'show-folder-menu', folderId: item.id })}
                     />
-                    {!item.collapsed && members.map((svc) => renderService(svc, true))}
+                    {!item.collapsed && (
+                      // `group` is what makes the members read as *inside* the folder rather than
+                      // as siblings that happen to follow it.
+                      <div role="group" aria-label={item.name}>
+                        {members.map((svc) => renderService(svc, true))}
+                      </div>
+                    )}
                   </div>
                 )}
               </SortableTile>
@@ -136,6 +166,15 @@ export function Rail() {
           })}
         </nav>
       </SortableRailList>
+
+      {/*
+        One polite live region for the whole rail rather than aria-live on each badge. Per-badge
+        would announce every service's count on any change, and `polite` waits for a pause instead
+        of interrupting — a message arriving should not cut across what you're reading.
+      */}
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {totalUnread > 0 ? `${totalUnread} unread` : ''}
+      </span>
 
       <div className="rail-footer">
         <button
