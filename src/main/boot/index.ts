@@ -163,6 +163,93 @@ app.whenReady().then(() => {
   });
 });
 
+// --- session durability --------------------------------------------------------------------
+// Session cookies never reach disk, so without this a restart signs you out of anything that
+// doesn't issue a persistent cookie. See the Phase 0 findings in persist-cookies.ts.
+
+/**
+ * How long to extend a partition's session cookies by, or 0 to leave them alone.
+ *
+ * Several services can share one partition, so the *shortest* TTL wins — if any service in the
+ * group opts out, the whole jar opts out. `sessionNotPersistable` forces 0: Phase 0 proved that
+ * promoting Salesforce's `sid` achieves nothing because the org invalidates it server-side, so
+ * extending it is pure downside.
+ */
+function ttlForPartition(partition: string): number {
+  const services = loadConfig().services.filter((svc) => partitionFor(svc) === partition);
+  if (services.length === 0) return DEFAULT_COOKIE_TTL_DAYS;
+
+  return services.reduce((shortest, svc) => {
+    const entry = catalogById(svc.catalogId);
+    const ttl = entry?.sessionNotPersistable ? 0 : svc.cookieTtlDays ?? DEFAULT_COOKIE_TTL_DAYS;
+    return Math.min(shortest, ttl);
+  }, Number.POSITIVE_INFINITY);
+}
+
+async function persistAll(): Promise<void> {
+  const needed = new Set(loadConfig().services.map(partitionFor));
+  for (const partition of pruneSessions(needed)) {
+    console.log(`[session] released ${partition} — no service uses it`);
+  }
+
+  for (const [partition, ses] of allLiveSessions()) {
+    const ttlDays = ttlForPartition(partition);
+    if (ttlDays > 0) await promoteSessionCookies(ses, { label: partition, ttlDays });
+    await flushStorage(ses);
+  }
+}
+
+setInterval(() => void persistAll(), 60_000);
+
+// Hibernation sweep. Frequent enough that a 1-minute timeout behaves as advertised, cheap enough
+// that it doesn't matter — the decision is pure arithmetic over a handful of services.
+setInterval(() => shell?.hibernateIdle(), 30_000);
+
+// --- power ------------------------------------------------------------------------------------
+// A closing lid is an unclean exit as far as unwritten session cookies are concerned, and views
+// that slept through it hold stale content and often a dead socket.
+
+let suspendedAt: number | null = null;
+
+powerMonitor.on('suspend', () => {
+  suspendedAt = Date.now();
+  console.log('[power] suspending — flushing sessions');
+  void persistAll();
+});
+
+powerMonitor.on('resume', () => {
+  const suspendedFor = suspendedAt ? Date.now() - suspendedAt : 0;
+  suspendedAt = null;
+  console.log(`[power] resumed after ${Math.round(suspendedFor / 1000)}s`);
+  shell?.refreshAfterWake(suspendedFor);
+});
+
+app.on('before-quit', (event) => {
+  if (isQuitting()) return;
+  event.preventDefault();
+
+  if (loadConfig().preferences.behaviour.confirmQuit) {
+    const { response } = { response: dialog.showMessageBoxSync({
+      type: 'question',
+      buttons: ['Quit', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'Quit Hangar?',
+    }) };
+    // Cancelling must leave the app fully usable — no half-quit state.
+    if (response !== 0) return;
+  }
+
+  // Tells the window's close handler this is a real quit, not a close-to-tray.
+  beginQuit();
+  releaseGlobalShortcut();
+  // persistAll MUST finish before anything tears down sessions. It promotes session cookies to
+  // persistent ones, which is the whole reason you stay signed in across a restart — disposing
+  // first would sign the user out of everything, the exact failure Phase 1 exists to prevent.
+  void persistAll()
+    .catch((err) => console.error('[quit] cookie promotion failed:', err))
+    .finally(() => app.quit());
+});
 
 // macOS convention: closing the window doesn't quit. Also avoids Electron's default
 // "last window closed → quit", which fires when panes are torn down during a relayout.

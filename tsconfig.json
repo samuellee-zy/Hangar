@@ -6,6 +6,13 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "strict": true,
+    // The actual root cause of the Phase 7 P0: a python slice deleted the entire application
+    // lifecycle block — persistAll, both background loops, powerMonitor, before-quit — and left
+    // ELEVEN imports referenced only by their own import statement. tsc passed, 347 unit tests
+    // passed, dependency-cruiser passed, 12 Playwright tests passed. Dead code that large should
+    // be a build failure, not something an audit has to notice weeks later.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

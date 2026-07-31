@@ -1,12 +1,11 @@
 import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import { catalog, catalogById } from '@shared/catalog';
-import { createAccount, migrateV1, resolveAccount } from '@core/services/accounts';
+import { createAccount, resolveAccount } from '@core/services/accounts';
 import { findQuarantined, pathsFor, readWithRecovery, writeAtomic } from '@core/config/store';
 import { migrateConfig } from '@core/config/migrate';
 import { withDefaults } from '@core/config/preferences';
-import type { Config, RailItem, ServiceInstance } from '@shared/types';
+import type { Config, ServiceInstance } from '@shared/types';
 
 // Plain JSON in userData. No cloud account, no telemetry, no server-side copy of your service
 // list — which is one of the things that pushed us off Rambox in the first place.

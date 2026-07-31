@@ -1071,3 +1071,45 @@ reconcile, so the divergence is set up with the app closed — which is also the
 two machines don't edit simultaneously. And `await`ing inside `app.evaluate` while `onApplied` tears
 down and rebuilds every pane holds the call open past Playwright's timeout; dispatch and poll the
 file instead.
+
+## 84. A slice deleted the whole application lifecycle, and everything stayed green
+
+Commit `c02cd4b` removed the `HANGAR_PROBE` diagnostic with a python slice from the probe's first
+line to the `window-all-closed` comment. Everything between went too:
+
+```
+ttlForPartition · persistAll · setInterval(persistAll, 60s) · setInterval(hibernateIdle, 30s)
+powerMonitor suspend/resume · before-quit → confirmQuit, beginQuit(), await persistAll()
+```
+
+The commit message reported "474 → 171 lines" as an achievement.
+
+**Five daily-use failures, and the first is the app's entire premise:**
+
+1. **Signed out of everything on every launch.** Session cookies are in-memory in Chromium;
+   `promoteSessionCookies` at quit is why Phase 1 exists. Uncalled, every relaunch is a full round
+   of re-auth — which reads as "Electron can't hold a Google session" rather than as a bug.
+2. **The app could not be quit with close-to-tray on.** `beginQuit()` never ran, so `isQuitting()`
+   was permanently false and the `close` handler `preventDefault()`ed forever. Force Quit only, and
+   macOS logout would hang.
+3. **Hibernation never ran.** A live Settings control wired to nothing.
+4. **No wake refresh** after a lid close.
+5. **`pruneSessions` never ran.**
+
+**Why nothing caught it.** `tsc` was strict but not `noUnusedLocals`, so eleven imports referenced
+only by their own import statement were fine. 347 unit tests passed — they cover pure functions, and
+an uncalled function is still a correct function. `dependency-cruiser` passed — the imports still
+existed. Twelve Playwright tests passed — **they boot, assert, and exit; none of them ever quits.**
+
+Three fixes, in order of importance:
+
+- `noUnusedLocals` + `noUnusedParameters`. This is the root cause and it is one line. It immediately
+  found five more dead imports left over from the restructure.
+- An E2E test that sets a session cookie, quits *properly*, relaunches against the same profile and
+  asserts the cookie is both present and now persistent. Verified by re-deleting `before-quit` and
+  watching it fail.
+- The block restored verbatim from `c02cd4b~1`.
+
+The general lesson is about what a test suite's *shape* can see. Ours was pure-function unit tests
+plus boot-assert-exit E2E. Between them they cannot observe an uncalled function, a timer that never
+fires, or anything that happens at shutdown — which is precisely the region that was deleted.

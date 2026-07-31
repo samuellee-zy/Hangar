@@ -55,9 +55,7 @@ import {
   createFolder,
   deleteFolder,
   findFolder,
-  flattenServiceIds,
   moveToFolder,
-  pruneMissing,
   reorderItems,
 } from '@core/workspace/folders';
 import { findOrphanPartitions } from '@core/runtime/permissions';
