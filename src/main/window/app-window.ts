@@ -443,20 +443,6 @@ export class AppWindow {
         console.error(`[partitions] could not delete ${name}:`, err);
       }
     }
-    this.configSync = new ConfigSync({
-      repoPath: () => loadConfig().preferences.sync.repoPath.trim() || null,
-      read: () => loadConfig(),
-      write: (next) => saveConfig(next),
-      onApplied: () => {
-        // A synced config can rename, add or remove services, so the panes have to be rebuilt
-        // rather than merely re-rendered.
-        this.restoreLayout();
-        this.relayout();
-        this.sync();
-      },
-      log: (message) => console.log(`[sync] ${message}`),
-    });
-    void this.configSync.pull();
 
     this.scanOrphanPartitions();
     this.sync();
