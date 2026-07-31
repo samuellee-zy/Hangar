@@ -24,7 +24,7 @@ const config = (...workspaces) => ({
   layouts: {},
   accounts: [],
   preferences: {},
-});
+}) as unknown as Config;
 
 const ws = (id, ...ids) => ({ id, name: id, items: ids.map(svc) });
 const reachable = (c) =>

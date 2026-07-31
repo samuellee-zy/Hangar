@@ -80,7 +80,7 @@ describe("replay suppression", () => {
   });
 
   it('the list is capped and trims oldest-first', () => {
-    let seen = [];
+    let seen: string[] = [];
     for (let i = 0; i < PERSISTENT_ID_CAP + 10; i++) seen = dedupePersistentIds(seen, `id-${i}`, PERSISTENT_ID_CAP).seen;
     assert.equal(seen.length, PERSISTENT_ID_CAP);
     assert.equal(seen.at(-1), `id-${PERSISTENT_ID_CAP + 9}`);
@@ -101,8 +101,8 @@ describe("payload extraction — the shape is site-defined, so this is all defen
 
   it('a top-level payload, which is what most service workers actually send', () => {
     const out = extractNotification({ title: 'Ada', body: 'ping', tag: 'dm-1' }, 'Slack');
-    assert.equal(out.title, 'Ada');
-    assert.equal(out.tag, 'dm-1');
+    assert.equal(out!.title, 'Ada');
+    assert.equal(out!.tag, 'dm-1');
   });
 
   it('a JSON string nested under data.notification', () => {
@@ -110,24 +110,24 @@ describe("payload extraction — the shape is site-defined, so this is all defen
       { data: { notification: JSON.stringify({ title: 'Ada', body: 'ping' }) } },
       'Slack'
     );
-    assert.equal(out.title, 'Ada');
+    assert.equal(out!.title, 'Ada');
   });
 
   it('alternative field names sites actually use', () => {
-    assert.equal(extractNotification({ subject: 'Re: budget' }, 'Gmail').title, 'Re: budget');
-    assert.equal(extractNotification({ title: 'x', message: 'hi' }, 'Gmail').body, 'hi');
-    assert.equal(extractNotification({ title: 'x', alert: 'hi' }, 'Gmail').body, 'hi');
+    assert.equal(extractNotification({ subject: 'Re: budget' }, 'Gmail')!.title, 'Re: budget');
+    assert.equal(extractNotification({ title: 'x', message: 'hi' }, 'Gmail')!.body, 'hi');
+    assert.equal(extractNotification({ title: 'x', alert: 'hi' }, 'Gmail')!.body, 'hi');
   });
 
   it('A BODY WITH NO TITLE STILL GETS THE SERVICE NAME — otherwise you cannot tell which Slack', () => {
     const out = extractNotification({ body: 'ping' }, 'Slack (work)');
-    assert.equal(out.title, 'Slack (work)');
-    assert.equal(out.body, 'ping');
+    assert.equal(out!.title, 'Slack (work)');
+    assert.equal(out!.body, 'ping');
   });
 
   it('a click target is picked up under any of its three common names', () => {
-    assert.equal(extractNotification({ title: 't', url: '/a' }, 'S').url, '/a');
-    assert.equal(extractNotification({ title: 't', click_action: '/b' }, 'S').url, '/b');
+    assert.equal(extractNotification({ title: 't', url: '/a' }, 'S')!.url, '/a');
+    assert.equal(extractNotification({ title: 't', click_action: '/b' }, 'S')!.url, '/b');
   });
 
   it('an unreadable payload returns null rather than an empty banner', () => {
@@ -140,7 +140,7 @@ describe("payload extraction — the shape is site-defined, so this is all defen
 
   it('malformed JSON under data.notification falls through instead of throwing', () => {
     const out = extractNotification({ data: { notification: '{oh no', title: 'fallback' } }, 'S');
-    assert.equal(out.title, 'fallback');
+    assert.equal(out!.title, 'fallback');
   });
 });
 

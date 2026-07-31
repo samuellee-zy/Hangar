@@ -240,8 +240,13 @@ Kept for context on where the remaining gaps sit. Full reasoning in
 tests: `panes[0]!.id` on an empty array should fail as a *test*, not as a compile error, and
 threading assertions through every fixture obscures what each case asserts.
 
-**It is not yet wired into `npm run check`, because 86 errors remain.** They're fixture annotations
-in individual suites, not defects — mechanical to clear, worth doing, not urgent.
+**Not yet wired into `npm run check`: 54 errors remain** (down from 193). All are inline object
+literals standing in for a full `Config` or a `WebContents` — deliberately partial fixtures, where
+spelling out every field would bury what each case is about.
+
+They need a typed fixture helper per file, written by hand. Two attempts to do it with a regex
+produced unbalanced parens that broke a working suite, which is its own small lesson: a codemod is
+right for a uniform transformation and wrong for one that needs to understand nesting.
 
 What this exercise was actually worth: it found that `migrateV1`'s signature was **a lie**. It
 declared its input as full `ServiceInstance`s, but v1 data has no `accountId` — creating it is the

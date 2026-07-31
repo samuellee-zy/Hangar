@@ -8,11 +8,20 @@ import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { attachShortcuts, translate } from '@main/window/shortcuts';
+import type { Command } from '@shared/types';
+import type { Input, WebContents } from 'electron';
+
+/**
+ * The fixtures below are deliberately partial — a `FakeContents` is not a `WebContents`, and a
+ * `key()` is not a full Electron `Input`. Casting at the helper rather than at each call site puts
+ * the "this is a stand-in" claim in one place.
+ */
+type AnyContents = WebContents;
 
 
 // Minimal stand-in for a WebContents: attachShortcuts only ever calls .on('before-input-event').
 class FakeContents extends EventEmitter {
-  press(input) {
+  press(input: Partial<Input>) {
     const event = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
     this.emit('before-input-event', event, input);
     return event;
@@ -27,11 +36,11 @@ describe("listener registration", () => {
 
   it('attaching repeatedly to the same contents dispatches a command exactly once', () => {
     const wc = new FakeContents();
-    const seen = [];
-    const sink = (c) => (seen.push(c), true);
+    const seen: Command[] = [];
+    const sink = (c: Command) => (seen.push(c), true);
 
     // The old bug: openService re-attached on every focus.
-    for (let i = 0; i < 5; i++) attachShortcuts(wc, sink);
+    for (let i = 0; i < 5; i++) attachShortcuts(wc as unknown as AnyContents, sink);
 
     wc.press(key('\\'));
     assert.equal(seen.length, 1, `expected 1 command, got ${seen.length}`);
@@ -41,7 +50,7 @@ describe("listener registration", () => {
   it('separate contents each get their own listener', () => {
     const a = new FakeContents();
     const b = new FakeContents();
-    const seen = [];
+    const seen: Command[] = [];
     attachShortcuts(a, (c) => (seen.push(c), true));
     attachShortcuts(b, (c) => (seen.push(c), true));
     a.press(key('k'));
@@ -72,20 +81,20 @@ describe("listener registration", () => {
 describe("chord translation", () => {
 
   it('bare keys and keyUp are ignored', () => {
-    assert.equal(translate({ type: 'keyDown' as const, key: 'k', meta: false, alt: false }), null);
-    assert.equal(translate({ type: 'keyUp' as const, key: 'k', meta: true, alt: false }), null);
+    assert.equal(translate({ type: 'keyDown' as const, key: 'k', meta: false, alt: false } as Input), null);
+    assert.equal(translate({ type: 'keyUp' as const, key: 'k', meta: true, alt: false } as Input), null);
   });
 
   it('bare Escape closes the overlay — bound everywhere, not just on the overlay itself', () => {
     // Binding this only to the overlay's contents left a blank overlay unclosable, because
     // before-input-event only fires for whichever contents holds focus.
-    assert.deepEqual(translate({ type: 'keyDown' as const, key: 'Escape', meta: false, alt: false }), {
+    assert.deepEqual(translate({ type: 'keyDown' as const, key: 'Escape', meta: false, alt: false } as Input), {
       type: 'close-overlay',
     });
   });
 
   it('modified Escape is left alone', () => {
-    assert.equal(translate({ type: 'keyDown' as const, key: 'Escape', meta: true, alt: false }), null);
+    assert.equal(translate({ type: 'keyDown' as const, key: 'Escape', meta: true, alt: false } as Input), null);
   });
 
   it('⌘1..9 and ⌘⌥1..9 resolve to different commands', () => {
@@ -111,7 +120,7 @@ describe("chord translation", () => {
 // Seven of translate()'s fifteen chord branches had no test. Added alongside the Phase 3.5
 // affordances but never asserted, so a stray edit to the key list would go unnoticed.
 describe('the affordance chords', () => {
-  const chord = (key, over = {}) => translate({ type: 'keyDown' as const, key, meta: true, ...over });
+  const chord = (key, over = {}) => translate({ type: 'keyDown' as const, key, meta: true, ...over } as Input);
 
   it('⌘K opens the palette and ⌘F the find bar', () => {
     assert.deepEqual(chord('k'), { type: 'open-palette' });
@@ -131,16 +140,16 @@ describe('the affordance chords', () => {
   });
 
   it('⌘⌥0 is not a workspace — workspaces are 1-9 and there is no zeroth', () => {
-    assert.equal(translate({ type: 'keyDown' as const, key: '0', meta: true, alt: true }), null);
+    assert.equal(translate({ type: 'keyDown' as const, key: '0', meta: true, alt: true } as Input), null);
   });
 
   it('a bare key with no modifier is never a command', () => {
     for (const key of ['f', 'p', 'k', '0', '\\']) {
-      assert.equal(translate({ type: 'keyDown' as const, key }), null, key);
+      assert.equal(translate({ type: 'keyDown' as const, key } as Input), null, key);
     }
   });
 
   it('keyUp is ignored — only keyDown dispatches', () => {
-    assert.equal(translate({ type: 'keyUp' as const, key: 'f', meta: true }), null);
+    assert.equal(translate({ type: 'keyUp' as const, key: 'f', meta: true } as Input), null);
   });
 });
