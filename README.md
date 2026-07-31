@@ -66,7 +66,7 @@ default: copy/paste, open-link-in-browser, and spelling suggestions.
 
 ## Testing
 
-**253 tests under Vitest**, plus `dependency-cruiser` enforcing the module boundaries on every run.
+**327 tests under Vitest, plus 8 Playwright end-to-end tests**, plus `dependency-cruiser` enforcing the module boundaries on every run.
 
 The architecture is what makes this possible: `src/core/` is pure — no Electron, no React — so its
 logic runs under plain node with no window. That isn't a convention any more; `npm run check` fails
@@ -92,18 +92,17 @@ it ([decisions #53](docs/decisions.md)).
 | `accent` | Contrast lifting, and that no input can produce invalid CSS |
 | `catalog` | Data invariants: unique ids, icon files exist, every entry allows its own URL |
 
-`HANGAR_PROBE=1` covers what unit tests structurally can't — it drives the real app and reports what
-actually happened:
-
-```
-[probe] hibernated push to "Calendar": sleeping=true, unread 1 -> 2 (badge 2)
-[probe] after close: shell=null (disposed)
-[probe] teardown: views 1->1, show-window ok, settings ok
+```bash
+npm run test:e2e
 ```
 
-It exists because renderer and lifecycle failures are invisible from the terminal
-([decisions #14](docs/decisions.md)). Its weakness is that it logs rather than fails — promoting it
-to Playwright is the top item in [the backlog](docs/backlog.md#5-testing-gaps).
+Eight Playwright tests cover what unit tests structurally can't: real windows, real
+`WebContentsView` hit-testing, the preload's main-world patches, and process lifecycle — a
+hibernated service receiving a push, ⌘W then reopening, a truncated config being quarantined.
+
+Each was verified by **reintroducing the bug it guards** and confirming it failed. Every run gets
+its own `userData` and a local fixture server, so they touch nothing real and pass on a machine
+that has never opened Gmail.
 
 ## Docs
 
@@ -117,7 +116,7 @@ to Playwright is the top item in [the backlog](docs/backlog.md#5-testing-gaps).
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
-| [decisions.md](docs/decisions.md) | **63 findings that cost real time. Read before changing behaviour.** |
+| [decisions.md](docs/decisions.md) | **77 findings that cost real time. Read before changing behaviour.** |
 
 ## Status
 

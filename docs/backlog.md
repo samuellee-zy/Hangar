@@ -4,7 +4,7 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after **Phase 4** (audit, modularity, tests). 262 automated tests, enforced module
+Last updated after **Phase 5** (renderer audit, accessibility, E2E, catalog, sync). 327 unit tests plus 8 Playwright end-to-end tests, enforced module
 boundaries, a packaged DMG verified end to end, and every shipped control does something.
 
 Phase 4 closed everything in the old §1.4 and most of §2 — including a P0 that destroyed the config
@@ -253,3 +253,27 @@ declared its input as full `ServiceInstance`s, but v1 data has no `accountId` �
 function's entire job — and pre-2.0 data has no `zoom`, `hibernate` or `notifications` either. The
 type asserted they were present, so nothing forced a caller to supply them and nothing filled them
 in. That's the root of A11, and it's now `StoredService`, which says what's actually true.
+
+---
+
+## 11. What Phase 5 closed
+
+| | |
+| --- | --- |
+| **Renderer audit** | Never done before. Five bugs, worst of which: **drag was broken on two of the four rail positions** — the axis modifier was hardcoded vertical while top/bottom rails run as a row. |
+| **Accessibility** | Was 2 `aria-label`s and zero roles. Now a focus trap with restore, dialog semantics, `aria-expanded`, labelled groups, a live region, and a visible focus ring. Deliberately *not* `role="tree"` — see [decisions #69](decisions.md). |
+| **E2E** | 8 Playwright tests replacing ~300 lines of `console.log` probe. Each verified by reintroducing its bug. |
+| **Catalog** | 9 → 37 services. Exposed a live bug: **Notion moved from `.so` to `.com`** and the shipped allowlist didn't cover the redirect, so it opened in Safari. |
+| **Config sync** | Git-backed, allowlist of what travels, conflicts never auto-resolved. Three bugs found only by testing two real clones. |
+| **Reset to defaults** | Per section and globally. |
+
+### Still open
+
+- **54 test-fixture type errors** (§10) — needs a hand-written fixture helper per file.
+- **`app-window.ts` is ~1,450 lines.** Its pure logic is extracted and tested; the Electron-coupled
+  half still needs a real window, which is what the E2E suite now covers.
+- **Per-service injected JS for unread** — title patterns cover the services that show a count in
+  the title; injected DOM queries would reach the ones that don't.
+- **V8 snapshots** — measure first; startup may already be fine.
+- **Signing** — ruled out. Note that Homebrew ends support for casks failing Gatekeeper on
+  **1 Sept 2026**, so a cask is no longer a signing-free distribution route.
