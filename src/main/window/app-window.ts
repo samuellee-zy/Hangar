@@ -21,6 +21,7 @@ import {
   updateConfig,
   updateConfigReturning,
   quarantinedConfigs,
+  onConfigSaved,
   saveConfig,
 } from '@main/platform/config';
 import {
@@ -78,6 +79,7 @@ import {
   resolveCommand,
 } from '@core/shell-state';
 import { ConfigSync } from '@main/features/sync';
+import { readSyncBase, writeSyncBase } from '@main/platform/sync-base';
 import { PushManager } from '@main/features/push-manager';
 import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import type {
@@ -235,19 +237,33 @@ export class AppWindow {
     });
 
     this.configSync = new ConfigSync({
-      repoPath: () => loadConfig().preferences.sync.repoPath.trim() || null,
+      // Optional-chained: a config from before this preference existed has no `sync` section, and
+      // reading through it unguarded threw inside a `void`-ed promise where nothing surfaced it.
+      repoPath: () => loadConfig().preferences.sync?.repoPath.trim() || null,
       read: () => loadConfig(),
-      write: (next) => saveConfig(next),
+      // `sync: false` — this write comes *from* sync, and the default hook would feed it back.
+      write: (next) => saveConfig(next, { sync: false }),
+      readBase: () => readSyncBase(),
+      writeBase: (text) => writeSyncBase(text),
       onApplied: () => {
-        // A synced config can rename, add or remove services, so the panes have to be rebuilt
-        // rather than merely re-rendered.
+        // Mirrors `import-config` exactly. Calling `restoreLayout()` without clearing first
+        // appends to the existing panes — `Layout.add` never dedupes — so two panes became four,
+        // each service shown twice, and `saveLayout()` made it stick.
+        for (const [serviceId] of [...this.services.all()]) this.sleep(serviceId);
+        this.layout.panes = [];
+        this.layout.focusedPaneId = null;
         this.restoreLayout();
         this.relayout();
         this.sync();
       },
+      onStatusChange: () => this.sync(),
       log: (message) => console.log(`[sync] ${message}`),
     });
-    void this.configSync.pull();
+
+    // The single funnel: every config write schedules a reconcile. Sync previously fired only from
+    // `set-preference`, so adding a service or a workspace never travelled.
+    onConfigSaved(() => this.configSync.schedule());
+    void this.configSync.reconcile();
 
     this.scanOrphanPartitions();
     this.restoreLayout();
@@ -742,7 +758,11 @@ export class AppWindow {
       }
 
       case 'sync-now':
-        void this.configSync.pull().then(() => this.configSync.push()).then(() => this.sync());
+        void this.configSync.reconcile();
+        break;
+
+      case 'resolve-sync':
+        void this.configSync.resolve(command.winner);
         break;
 
       case 'reset-preferences': {
@@ -977,7 +997,6 @@ export class AppWindow {
         // Renderers read `prefers-color-scheme`, which Electron drives from themeSource.
         if (after !== before) nativeTheme.themeSource = after;
         this.applyPreferenceEffect(command.path);
-        this.configSync.schedulePush();
         // Appearance changes affect pane geometry, so relayout before telling anyone.
         this.relayout();
         break;

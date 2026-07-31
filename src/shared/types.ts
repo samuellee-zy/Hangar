@@ -308,6 +308,8 @@ export type Command =
   /** Reveal a file in Finder. Used for quarantined config copies, which are otherwise unfindable. */
   | { type: 'reveal-path'; path: string }
   | { type: 'sync-now' }
+  /** Explicit conflict resolution. Each direction discards something, so it is never automatic. */
+  | { type: 'resolve-sync'; winner: 'local' | 'remote' }
   | { type: 'reset-preferences'; section?: string }
   | { type: 'open-find' }
   | { type: 'close-find' }

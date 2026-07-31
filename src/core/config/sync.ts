@@ -46,13 +46,79 @@ export const PORTABLE_KEYS = [
  */
 export const LOCAL_ONLY_KEYS = ['pushRegistrations', 'window', 'layouts'] as const;
 
+/**
+ * Preferences that must not travel, even though `preferences` as a whole does.
+ *
+ * Top-level exclusion isn't enough — most of `preferences` is genuinely portable, and a handful of
+ * leaves inside it are not:
+ *
+ * | Path | Why |
+ * | --- | --- |
+ * | `notifications.firebase` | **A credential.** Syncing it commits an API key into a git repo — wrong even in a private one, and a leak if the repo is public. This is the one that matters. |
+ * | `sync.repoPath` | An absolute local path. The second machine adopts the first's, it doesn't exist there, and sync reports `unavailable` — the transport config travelling over the transport and killing it. |
+ * | `network.proxy` | A work proxy on a laptop should not follow you home. |
+ * | `downloads.folder` | An absolute local path. |
+ * | `notifications.dndUntil` | A timestamp. Transient state, not a preference. |
+ * | `behaviour.launchAtLogin` | Per-machine by nature: laptop yes, desktop no. |
+ *
+ * `notifications.push` *does* travel. Without credentials the second machine shows the toggle as
+ * pending with "Fill in the Firebase project below first", which is honest.
+ */
+export const LOCAL_PREFERENCE_PATHS = [
+  'notifications.firebase',
+  'notifications.dndUntil',
+  'sync.repoPath',
+  'network.proxy',
+  'downloads.folder',
+  'behaviour.launchAtLogin',
+] as const;
+
 export type PortableConfig = Pick<Config, (typeof PORTABLE_KEYS)[number]>;
 
-/** The half of a config that travels. */
+function getPath(root: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((node, key) => {
+    if (!node || typeof node !== 'object') return undefined;
+    return (node as Record<string, unknown>)[key];
+  }, root);
+}
+
+/** Sets `path` on a structurally-cloned copy. Never mutates the input. */
+function withPath(root: unknown, path: string, value: unknown): unknown {
+  const keys = path.split('.');
+  const clone = structuredClone(root) as Record<string, unknown>;
+  let node = clone;
+  for (const key of keys.slice(0, -1)) {
+    const next = node[key];
+    if (!next || typeof next !== 'object') return clone;
+    node = next as Record<string, unknown>;
+  }
+  const leaf = keys[keys.length - 1]!;
+  if (value === undefined) delete node[leaf];
+  else node[leaf] = value;
+  return clone;
+}
+
+/** The half of a config that travels, with machine-local preference leaves removed. */
 export function portable(config: Config): PortableConfig {
   const out = {} as Record<string, unknown>;
   for (const key of PORTABLE_KEYS) out[key] = config[key];
-  return out as PortableConfig;
+  // Stripped rather than blanked: a key present but empty would overwrite the other machine's
+  // value with nothing, which for `sync.repoPath` disables sync there just as effectively.
+  let result: unknown = structuredClone(out);
+  for (const path of LOCAL_PREFERENCE_PATHS) {
+    result = withPath(result, `preferences.${path}`, undefined);
+  }
+  return result as PortableConfig;
+}
+
+/** Puts this machine's own values back over an incoming config. */
+export function restoreLocalPreferences(incoming: PortableConfig, local: Config): PortableConfig {
+  let result: unknown = structuredClone(incoming);
+  for (const path of LOCAL_PREFERENCE_PATHS) {
+    const mine = getPath(local.preferences, path);
+    result = withPath(result, `preferences.${path}`, mine);
+  }
+  return result as PortableConfig;
 }
 
 /**
@@ -90,6 +156,70 @@ export function serialise(config: Config): string {
 /** Whether the portable half differs — the only thing worth a commit. */
 export function hasDiverged(a: Config, b: Config): boolean {
   return serialise(a) !== serialise(b);
+}
+
+/**
+ * What a reconcile should do, decided against the last-synced base.
+ *
+ * Without a base there is no way to tell "the remote is newer" from "I have local changes that
+ * never pushed" — and `applyIncoming` replacing the portable half wholesale meant the second case
+ * silently deleted them. That was a data-loss path reachable on a single machine.
+ */
+export type SyncAction =
+  | { kind: 'up-to-date' }
+  | { kind: 'apply-remote' }
+  | { kind: 'push-local' }
+  | { kind: 'conflict'; detail: string };
+
+/**
+ * The three-way decision.
+ *
+ * | local vs base | remote vs base | Action |
+ * | --- | --- | --- |
+ * | same | changed | the remote moved — apply it |
+ * | changed | same | we moved — push |
+ * | changed | changed | both moved — refuse |
+ * | same | same | nothing to do |
+ *
+ * **A missing base** is every existing install's starting state, and it means we genuinely cannot
+ * tell who is ahead. If the two sides are already identical, adopt that as the base silently. If
+ * they differ, refuse and make the user choose — guessing here is the whole bug.
+ */
+export function decideSync(args: {
+  local: string;
+  remote: string | null;
+  base: string | null;
+}): SyncAction {
+  const { local, remote, base } = args;
+
+  // No config in the repo — either never seeded, or someone deleted it. Push either way: doing
+  // nothing because `local === base` would leave the repo permanently empty while sync reported
+  // success.
+  if (remote === null) return { kind: 'push-local' };
+
+  if (base === null) {
+    if (local === remote) return { kind: 'up-to-date' };
+    return {
+      kind: 'conflict',
+      detail:
+        'no record of a previous sync on this machine, and the two copies differ — choose which ' +
+        'one to keep',
+    };
+  }
+
+  const localMoved = local !== base;
+  const remoteMoved = remote !== base;
+
+  if (!localMoved && !remoteMoved) return { kind: 'up-to-date' };
+  if (!localMoved && remoteMoved) return { kind: 'apply-remote' };
+  if (localMoved && !remoteMoved) return { kind: 'push-local' };
+
+  // Both moved. Identical outcomes are not a conflict — two machines can make the same edit.
+  if (local === remote) return { kind: 'up-to-date' };
+  return {
+    kind: 'conflict',
+    detail: 'this machine and the repo have both changed since the last sync',
+  };
 }
 
 /**

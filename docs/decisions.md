@@ -979,3 +979,61 @@ Phase 2 fixed `merge` copying arrays when falling back to a default. It didn't c
 first `push` to it would mutate the defaults for the rest of the process.
 
 Found by a test asserting two independent resets don't affect each other.
+
+## 78. Sync needs a last-synced base, or it cannot tell "behind" from "ahead"
+
+`applyIncoming` replaced the portable half with whatever was in the repo, every time. With no record
+of what was last synced there is no way to distinguish "the remote is newer" from "I have local
+changes that never pushed" — and since `schedulePush` fired only from `set-preference`, the second
+was the *common* case.
+
+Reachable on one machine: add a service, quit before the debounce, relaunch. The pull found the repo
+unchanged and overwrote your services with the older copy. Account row gone, partition orphaned, one
+console line.
+
+`sync-base.json` in `userData` — deliberately not in `Config`, or it would sync itself — makes pull a
+three-way decision. A missing base means we genuinely cannot tell, so it refuses unless both sides
+already agree, which is correct and one-time.
+
+Verified end to end: add a service, quit inside the debounce, relaunch — the service survives *and*
+reaches the repo, because local was ahead so it pushed instead of pulling.
+
+## 79. A credential was being committed to a git repo
+
+`PORTABLE_KEYS` included `preferences` wholesale, and `preferences.notifications.firebase` holds an
+API key. Every sync wrote it into the user's dotfiles repo — wrong even when that repo is private,
+and a leak when it isn't.
+
+Top-level exclusion wasn't enough: most of `preferences` is genuinely portable and a handful of
+leaves inside it are not. `LOCAL_PREFERENCE_PATHS` now strips six, and the reasoning differs for
+each — a credential, two absolute paths, a network-specific proxy, a transient timestamp, and one
+that is simply per-machine. Pinned by a test asserting the serialised output contains neither the
+key nor the string `apiKey`.
+
+`sync.repoPath` was the funniest of them: the transport's own configuration travelling over the
+transport, so the second machine adopted a path that didn't exist there and killed its own sync.
+
+## 80. Splitting sync into pull and push was the mistake
+
+Three bugs — pull and push racing over `index.lock`, a debounced push dropped and never re-armed,
+and committing before fetching so the commit could never fast-forward — were one problem wearing
+three hats: two independent entry points driving git in the same worktree.
+
+Patching them separately would also have reintroduced #78, because fetching before a commit pulls in
+a remote config the push then overwrites.
+
+One `reconcile()` — fetch, decide, act — behind one mutex, with a re-run flag so a request arriving
+mid-run is deferred rather than dropped.
+
+## 81. Automated git must not prompt, and must not commit your work
+
+Three ways the first version could hang or do damage in a repo the user actually works in:
+
+- **`git commit` with no pathspec commits the entire index.** The Settings placeholder is literally
+  `~/code/dotfiles`. Stage a half-finished change, toggle a preference, and Hangar commits and
+  pushes your work-in-progress under its own message. `--only -- <file>` fixes it.
+- **A credential prompt blocks on stdin** until the 30-second timeout and surfaces as an opaque
+  failure. `GIT_TERMINAL_PROMPT=0` and the `ASKPASS` variables make it fail immediately with a
+  readable reason.
+- **The user's pre-commit hooks run.** A lint hook in their dotfiles repo should not be able to
+  break config sync when we only touch our own file. `--no-verify`.

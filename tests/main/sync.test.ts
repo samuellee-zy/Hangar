@@ -14,6 +14,8 @@ import {
   PORTABLE_KEYS,
   serialise,
   validateIncoming,
+  decideSync,
+  restoreLocalPreferences,
 } from '@core/config/sync';
 import { DEFAULT_PREFERENCES } from '@core/config/preferences';
 import type { Config } from '@shared/types';
@@ -168,5 +170,120 @@ describe('validating what arrived', () => {
   it('rejects a missing accounts array rather than treating it as empty', () => {
     const noAccounts = { ...portable(config()), accounts: undefined } as never;
     expect(validateIncoming(noAccounts, local).ok).toBe(false);
+  });
+});
+
+// A2 — the P0. Without a last-synced base there is no way to tell "the remote is newer" from
+// "I have local changes that never pushed", and the old code assumed the former every time.
+describe('the three-way decision', () => {
+  const decide = (local: string, remote: string | null, base: string | null) =>
+    decideSync({ local, remote, base });
+
+  it('nothing changed on either side', () => {
+    expect(decide('A', 'A', 'A')).toEqual({ kind: 'up-to-date' });
+  });
+
+  it('the remote moved and we did not — apply it', () => {
+    expect(decide('A', 'B', 'A')).toEqual({ kind: 'apply-remote' });
+  });
+
+  it('WE MOVED AND THE REMOTE DID NOT — push, do not overwrite ourselves', () => {
+    // This is the data-loss case. Add a service, quit before the debounce fires, relaunch: local
+    // is ahead of both base and remote, and the old code applied the remote over it.
+    expect(decide('B', 'A', 'A')).toEqual({ kind: 'push-local' });
+  });
+
+  it('both moved differently — refuse and report', () => {
+    const action = decide('B', 'C', 'A');
+    expect(action.kind).toBe('conflict');
+  });
+
+  it('both moved to the SAME thing is not a conflict', () => {
+    // Two machines can legitimately make the same edit. Refusing here would be noise.
+    expect(decide('B', 'B', 'A')).toEqual({ kind: 'up-to-date' });
+  });
+
+  it('an empty repo is seeded from this machine', () => {
+    expect(decide('A', null, null)).toEqual({ kind: 'push-local' });
+  });
+
+  it('an empty repo with a base means the repo was emptied — still push', () => {
+    expect(decide('A', null, 'A')).toEqual({ kind: 'push-local' });
+  });
+});
+
+describe('a missing base', () => {
+  // Every install that already had sync configured starts here, and so does anyone who deletes the
+  // sidecar. We genuinely cannot tell who is ahead.
+  it('adopts silently when the two sides already agree', () => {
+    expect(decideSync({ local: 'A', remote: 'A', base: null })).toEqual({ kind: 'up-to-date' });
+  });
+
+  it('REFUSES when they differ, rather than guessing', () => {
+    const action = decideSync({ local: 'A', remote: 'B', base: null });
+    expect(action.kind).toBe('conflict');
+    if (action.kind === 'conflict') expect(action.detail).toMatch(/previous sync/);
+  });
+});
+
+describe('machine-local preferences never travel', () => {
+  const withPrefs = (over: Record<string, unknown>) =>
+    config({ preferences: { ...DEFAULT_PREFERENCES, ...over } as never });
+
+  it('THE FIREBASE CREDENTIAL IS STRIPPED — it must never reach a git repo', () => {
+    // An API key committed to a dotfiles repo is wrong even when the repo is private, and a leak
+    // when it isn't.
+    const local = withPrefs({
+      notifications: { ...DEFAULT_PREFERENCES.notifications, firebase: { projectId: 'p', appId: 'a', apiKey: 'SECRET', messagingSenderId: 'm' } },
+    });
+    expect(serialise(local)).not.toContain('SECRET');
+    expect(serialise(local)).not.toContain('apiKey');
+  });
+
+  it('the sync repo path is stripped — otherwise the transport kills itself', () => {
+    const local = withPrefs({ sync: { repoPath: '/Users/alice/dotfiles' } });
+    expect(serialise(local)).not.toContain('/Users/alice');
+  });
+
+  it('the proxy, downloads folder, dndUntil and launchAtLogin are stripped', () => {
+    const local = withPrefs({
+      network: { proxy: { mode: 'http' as const, host: 'work-proxy.internal', port: 8080 } },
+      downloads: { folder: '/Users/alice/Downloads', askWhereToSave: false, openOnComplete: false },
+    });
+    const out = serialise(local);
+    expect(out).not.toContain('work-proxy.internal');
+    expect(out).not.toContain('/Users/alice/Downloads');
+    expect(out).not.toContain('dndUntil');
+    expect(out).not.toContain('launchAtLogin');
+  });
+
+  it('portable preferences still travel', () => {
+    const out = serialise(config());
+    expect(out).toContain('railPosition');
+    expect(out).toContain('hibernateAfterMinutes');
+    // `push` travels even though the credentials don't — the other machine shows it as pending.
+    expect(out).toContain('"push"');
+  });
+
+  it('CHANGING A LOCAL-ONLY PREFERENCE IS NOT A DIVERGENCE', () => {
+    // Otherwise setting a proxy on one machine would commit and push on every launch.
+    const a = withPrefs({ network: { proxy: { mode: 'http' as const, host: 'x', port: 1 } } });
+    const b = withPrefs({ network: { proxy: { mode: 'none' as const, host: '', port: 0 } } });
+    expect(hasDiverged(a, b)).toBe(false);
+  });
+
+  it('restoreLocalPreferences puts this machine values back over an incoming config', () => {
+    const local = withPrefs({ sync: { repoPath: '/mine' } });
+    const incoming = portable(withPrefs({ sync: { repoPath: '/theirs' } }));
+    const restored = restoreLocalPreferences(incoming, local);
+    expect(restored.preferences.sync.repoPath).toBe('/mine');
+  });
+
+  it('neither helper mutates its input', () => {
+    const local = withPrefs({ sync: { repoPath: '/mine' } });
+    const before = JSON.stringify(local);
+    portable(local);
+    restoreLocalPreferences(portable(local), local);
+    expect(JSON.stringify(local)).toBe(before);
   });
 });

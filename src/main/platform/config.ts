@@ -142,26 +142,49 @@ export function loadConfig(): Config {
 
   if (!raw) {
     cached = defaultConfig();
-    saveConfig(cached);
+    saveConfig(cached, { sync: false });
     return cached;
   }
 
   try {
     cached = migrateConfig(raw);
-    if ((raw as { version?: number }).version !== 4) saveConfig(cached);
+    if ((raw as { version?: number }).version !== 4) saveConfig(cached, { sync: false });
   } catch (err) {
     // Migration failed on structurally-valid JSON. The file itself is intact and already
     // quarantine-free, so start from defaults but leave the original alone for inspection.
     console.error('[config] could not migrate; starting from defaults:', err);
     cached = defaultConfig();
-    saveConfig(cached);
+    saveConfig(cached, { sync: false });
   }
   return cached;
 }
 
-export function saveConfig(next: Config): void {
+/**
+ * Notified after any config write that should propagate — config sync subscribes.
+ *
+ * Hooking `saveConfig` rather than each command is what makes it impossible to forget: sync
+ * previously fired only from `set-preference`, so adding a service, creating a workspace and every
+ * folder operation changed the config and never synced it.
+ */
+let onSaved: (() => void) | null = null;
+export function onConfigSaved(listener: () => void): void {
+  onSaved = listener;
+}
+
+/**
+ * `sync: false` for writes that must NOT propagate. Two callers need it:
+ *
+ *  - `loadConfig`'s own three writes (defaults, post-migration, migration failure), which happen
+ *    before there is anything to sync with and would fire during boot;
+ *  - config sync's own write, which would otherwise feed itself.
+ *
+ * Default-on is deliberate. A spurious notification is a no-op when the content hasn't changed; a
+ * missed one is silent data loss.
+ */
+export function saveConfig(next: Config, { sync = true }: { sync?: boolean } = {}): void {
   cached = next;
   writeAtomic(configPaths(), JSON.stringify(next, null, 2));
+  if (sync) onSaved?.();
 }
 
 export function updateConfig(mutate: (c: Config) => void): Config {
