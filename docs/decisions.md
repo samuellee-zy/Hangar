@@ -873,3 +873,26 @@ Both trap tests initially passed with the trap disabled. Two separate reasons, a
 
 Same discipline as #53, where three dependency-cruiser rules reported a clean graph while looking at
 nothing: **if a test is meant to prove something, break the thing and watch it fail.**
+
+## 72. Playwright replaces the probe, because a diagnostic can't fail a build
+
+`HANGAR_PROBE` drove the real app and reported with `console.log`. It found genuine bugs — the
+isolated-world trap, the stale picker snapshot — but only ever told a *human* something was wrong,
+and only if they read the output. Roughly 300 lines of it lived in `boot/index.ts`, shipping in
+production builds.
+
+Eight Playwright tests now cover the same ground and either pass or stop the run. `boot/index.ts`
+drops from 474 lines to 171.
+
+**Each test was verified by reintroducing the bug it guards.** Putting back the `!runtime` check in
+`handleNotification` and the `length === 0` check in the config guard failed exactly the two tests
+that should have failed, and nothing else. A test suite that has never been seen to fail is a suite
+of unknown value — the same reasoning as #53 and #71.
+
+Two things make them deterministic: `HANGAR_USER_DATA` gives every run its own profile, so a test
+can't touch the real config or sign anything out; and a local fixture server means no network and no
+login, so they pass on a machine that has never opened Gmail.
+
+`injectPush` and `serviceCount` stay on `AppWindow` — they were probe scaffolding, and they're now
+test seams. `__hangarShell` is published only when `HANGAR_USER_DATA` is set, so a normal run never
+exposes an internal handle.

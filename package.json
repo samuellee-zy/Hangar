@@ -2,7 +2,7 @@
   "name": "hangar",
   "productName": "Hangar",
   "version": "0.1.0",
-  "description": "A unified workspace for web apps — one window, isolated sessions, no subscription.",
+  "description": "A unified workspace for web apps \u2014 one window, isolated sessions, no subscription.",
   "main": "out/main/index.js",
   "private": true,
   "scripts": {
@@ -19,9 +19,11 @@
     "icons": "node scripts/fetch-icons.mjs",
     "icon": "electron scripts/make-icon.mjs",
     "dist": "npm run build && npm run icon && electron-builder --mac -c.mac.identity=null",
-    "dist:signed": "npm run build && npm run icon && electron-builder --mac"
+    "dist:signed": "npm run build && npm run icon && electron-builder --mac",
+    "test:e2e": "npm run build && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

@@ -15,3 +15,7 @@ out-check/
 build/icon.icns
 build/icon.png
 build/icon.iconset/
+
+# Playwright
+test-results/
+playwright-report/

@@ -1174,18 +1174,18 @@ export class AppWindow {
   }
 
   /**
-   * Feeds a synthetic push through the real delivery path. Diagnostic only.
+   * Feeds a synthetic push through the real delivery path. Used by the E2E suite.
    *
-   * Exists because A1 shipped unverified: testing delivery looked like it needed a Firebase project
-   * and a real message, so it was skipped. It doesn't — `handlePushMessage` receives an already
-   * decrypted payload, so injecting one covers everything downstream of decryption, which is where
-   * the bug was.
+   * Exists because A1 shipped unverified: testing delivery looked like it needed a Firebase
+   * project and a real message, so it was skipped. It doesn't — `handlePushMessage` receives an
+   * already decrypted payload, so injecting one covers everything downstream of decryption, which
+   * is exactly where the bug was. Verified by reintroducing the bug and watching the test fail.
    */
   injectPush(serviceId: string, payload: { title: string; body: string }): void {
     this.handlePushMessage(serviceId, payload);
   }
 
-  /** Live service views. Diagnostic only — the teardown probe uses it to detect leaked views. */
+  /** Live service views. Used by the E2E teardown test to detect leaked views. */
   get serviceCount(): number {
     return this.services.all().size;
   }
