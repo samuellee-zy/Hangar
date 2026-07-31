@@ -7,9 +7,10 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { restrictToHorizontalAxis, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import {
   SortableContext,
+  horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
@@ -36,13 +37,42 @@ import type { ReactNode } from 'react';
 
 const ACTIVATION_DISTANCE = 5; // px — below this a drag is treated as a click
 
+/**
+ * Moves `from` to `to`, matching dnd-kit's own `arrayMove` semantics.
+ *
+ * Extracted so it can be tested without a DOM. The order of operations is easy to get wrong: the
+ * removal happens first, which shifts every later index down by one, so `to` is interpreted
+ * against the *already-shortened* array. That happens to be the behaviour dnd-kit expects — but
+ * only by construction, not by accident, so it's pinned by a test.
+ */
+export function reorder(ids: string[], activeId: string, overId: string): string[] | null {
+  const from = ids.indexOf(activeId);
+  const to = ids.indexOf(overId);
+  // An id that isn't in the list means the rail changed underneath the drag — a service removed
+  // from another surface, say. Dropping the reorder is safer than reordering the wrong thing.
+  if (from === -1 || to === -1 || from === to) return null;
+  const next = [...ids];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
 export function SortableRailList({
   ids,
   onReorder,
+  horizontal = false,
   children,
 }: {
   ids: string[];
   onReorder: (ids: string[]) => void;
+  /**
+   * The rail runs as a row on the top and bottom edges.
+   *
+   * This used to be hardcoded vertical — both the axis modifier and the sorting strategy — so with
+   * the rail on top or bottom, **drag was simply broken**: the modifier clamped movement to an axis
+   * the tiles didn't lie on, and `closestCenter` ranked candidates by a vertical distance that was
+   * always zero. Two of the four rail positions the app advertises.
+   */
+  horizontal?: boolean;
   children: ReactNode;
 }) {
   const sensors = useSensors(
@@ -53,23 +83,22 @@ export function SortableRailList({
   );
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
-    const from = ids.indexOf(String(active.id));
-    const to = ids.indexOf(String(over.id));
-    if (from === -1 || to === -1) return;
-    const next = [...ids];
-    next.splice(to, 0, ...next.splice(from, 1));
-    onReorder(next);
+    if (!over) return;
+    const next = reorder(ids, String(active.id), String(over.id));
+    if (next) onReorder(next);
   };
 
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      modifiers={[restrictToVerticalAxis]}
+      modifiers={[horizontal ? restrictToHorizontalAxis : restrictToVerticalAxis]}
       onDragEnd={onDragEnd}
     >
-      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+      <SortableContext
+        items={ids}
+        strategy={horizontal ? horizontalListSortingStrategy : verticalListSortingStrategy}
+      >
         {children}
       </SortableContext>
     </DndContext>
@@ -96,8 +125,13 @@ export function SortableTile({
   // activation, so a keyboard user could never simply open a service. Pointer listeners stay;
   // keyboard dragging moves behind ⌃Space, leaving Space/Enter to activate as normal.
   const { onKeyDown, ...pointerListeners } = listeners ?? {};
+  // `attributes` carries role="button" and tabIndex=0. Spread onto the wrapper — which contains a
+  // real <button> — that nests one interactive element inside another: a screen reader announces a
+  // button inside a button, and there are two tab stops for one tile. Keep the drag semantics
+  // (`aria-roledescription`, `aria-describedby`) and drop the ones that duplicate the child.
+  const { role: _role, tabIndex: _tabIndex, ...dragAttributes } = attributes;
   const handleProps = {
-    ...attributes,
+    ...dragAttributes,
     ...pointerListeners,
     onKeyDown: (event: React.KeyboardEvent) => {
       if (event.ctrlKey && event.key === ' ') onKeyDown?.(event);

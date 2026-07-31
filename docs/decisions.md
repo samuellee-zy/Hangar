@@ -791,3 +791,43 @@ know.
 `\+?` in the pattern is load-bearing: without it "(99+) Slack" fails to match and a *busy* Slack
 reports zero. Caught by a test asserting each catalog pattern against the titles its service
 actually produces.
+
+## 65. Drag was broken on two of the four rail positions
+
+`SortableRailList` hardcoded `restrictToVerticalAxis` and `verticalListSortingStrategy`. The rail
+runs as a *row* on the top and bottom edges, so with either selected the modifier clamped movement
+to an axis the tiles didn't lie on, and `closestCenter` ranked candidates by a vertical distance
+that was always zero. Reordering simply didn't work, on half the layouts the app advertises.
+
+Both now follow the orientation the rail is already computing for its own class names.
+
+Found by reading the file rather than by using it — which is the argument for auditing the renderer
+at all. Everything Phase 4 found was main-process, and that said nothing about this side except
+that nobody had looked.
+
+## 66. dnd-kit's `attributes` nest a button inside a button
+
+`useSortable().attributes` carries `role="button"` and `tabIndex={0}`, and they were spread onto the
+wrapper `div` — which contains the tile's real `<button>`. That's one interactive element inside
+another: a screen reader announces a button inside a button, and each tile takes two tab stops.
+
+The drag-specific attributes (`aria-roledescription`, `aria-describedby`) are kept, because those
+are what make the keyboard drag announce itself. Only the two that duplicate the child are dropped.
+
+## 67. Pull-then-subscribe needs a guard against its own pull
+
+`useShellState` and `OverlayRoot` both fetch once and then subscribe — the fix for the blank-overlay
+bug in #13. But the fetch is *async* and the subscription isn't, so a broadcast landing while the
+fetch is in flight is then overwritten by the snapshot the fetch started with. `sync()` fires on
+every mutation, so the window is small and entirely real.
+
+Once anything has been pushed, the initial fetch is stale by definition and is dropped.
+
+## 68. A keyless fragment in a mapped list
+
+`Rail.renderService` returns a fragment — a button plus an optional label — and mapping it over a
+folder's members produced a list with no keys. React then reconciles by index, so collapsing a
+folder or reordering its members can carry one tile's DOM state onto another.
+
+Keyed inside `renderService` rather than at each call site, since the fragment is what needs the key
+and only one of the two call sites is a list.

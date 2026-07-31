@@ -32,6 +32,12 @@ export function Palette() {
     return [...services, ...workspaces];
   }, [state, query]);
 
+  // Narrowing the query shrinks `results`, but `index` stayed where it was — pointing past the
+  // end, so the highlight vanished and Enter silently did nothing. Clamp whenever the list changes.
+  useEffect(() => {
+    setIndex((i) => Math.min(i, Math.max(0, results.length - 1)));
+  }, [results.length]);
+
   const run = (i: number, newPane: boolean) => {
     const item = results[i];
     if (!item) return;

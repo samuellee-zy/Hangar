@@ -18,8 +18,25 @@ export function OverlayRoot() {
     // Pull first: on the very first open the view is still loading when main pushes the mode, so
     // the message lands nowhere and the overlay renders blank while still eating every click.
     // Subscribing afterwards covers switching mode while already open.
-    void window.hangar.getOverlayOpen().then((o: OverlayOpen | null) => o && setOpen(o));
-    return window.hangar.onOverlayOpen(setOpen);
+    // Same race as useShellState: the pull is async, the subscription isn't, so a mode pushed
+    // while the fetch is in flight would be overwritten by the mode it started with — reopening
+    // the picker as the palette, or vice versa.
+    let pushed = false;
+    let live = true;
+
+    void window.hangar.getOverlayOpen().then((o: OverlayOpen | null) => {
+      if (o && live && !pushed) setOpen(o);
+    });
+
+    const unsubscribe = window.hangar.onOverlayOpen((o: OverlayOpen) => {
+      pushed = true;
+      setOpen(o);
+    });
+
+    return () => {
+      live = false;
+      unsubscribe();
+    };
   }, []);
 
   if (!open) return null;

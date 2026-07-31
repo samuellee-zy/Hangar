@@ -1,3 +1,4 @@
+import React from 'react';
 import { brightenForDark } from './accent';
 import { FolderTile } from './FolderTile';
 import { ServiceIcon } from './ServiceIcon';
@@ -27,6 +28,9 @@ export function Rail() {
   const send = window.hangar.send;
 
   const renderService = (svc: ServiceView, nested = false) => {
+    // Keyed here rather than at each call site: this returns a fragment, and mapping it over a
+    // folder's members produced a keyless list — React then reconciles by index, so collapsing a
+    // folder or reordering its members could carry one tile's DOM state onto another.
     const classes = [
       'rail-item',
       nested ? 'is-nested' : '',
@@ -40,7 +44,7 @@ export function Rail() {
       .join(' ');
 
     return (
-      <>
+      <React.Fragment key={svc.id}>
         <button
           className={classes}
           // Identity lives in the accent and the icon; the tile surface carries state only.
@@ -65,7 +69,7 @@ export function Rail() {
         {showLabels && !compactRail && !horizontal && (
           <span className="rail-label">{svc.name}</span>
         )}
-      </>
+      </React.Fragment>
     );
   };
 
@@ -91,6 +95,7 @@ export function Rail() {
 
       <SortableRailList
         ids={state.railItems.map((i) => i.id)}
+        horizontal={horizontal}
         onReorder={(itemIds) => send({ type: 'reorder-items', itemIds })}
       >
         <nav className="rail-items">
