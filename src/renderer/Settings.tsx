@@ -544,7 +544,7 @@ export function Settings() {
           <li className="pref">
             <span className="pref-label">
               <span className="pref-name">Sync now</span>
-              <span className="pref-note">Pull, then push if anything changed</span>
+              <span className="pref-note">Fetch, then push or pull depending on which side moved</span>
             </span>
             <button
               disabled={!sync.repoPath.trim()}
@@ -554,12 +554,58 @@ export function Settings() {
             </button>
           </li>
         </ul>
+
+        {/*
+          Only rendered on a conflict. Detecting one and offering nothing leaves the user stuck
+          forever, so both directions are explicit and each button names what it throws away —
+          Hangar will not guess which machine's edit to keep, because a wrong guess can cost an
+          account-to-partition mapping and sign you out of something you never touched.
+        */}
+        {state.syncStatus.state === 'conflict' && (
+          <>
+            <h3>Resolve the conflict</h3>
+            <p className="hint">
+              This machine and the repo have both changed since they last agreed. Nothing has been
+              modified. Pick which copy to keep — <b>the other one is discarded.</b>
+            </p>
+            <ul className="rows">
+              <li className="pref">
+                <span className="pref-label">
+                  <span className="pref-name">Keep this machine's</span>
+                  <span className="pref-note">Overwrites the repo. Discards what the other machine changed.</span>
+                </span>
+                <button
+                  className="danger"
+                  onClick={() => window.hangar.send({ type: 'resolve-sync', winner: 'local' })}
+                >
+                  Keep local
+                </button>
+              </li>
+              <li className="pref">
+                <span className="pref-label">
+                  <span className="pref-name">Keep the repo's</span>
+                  <span className="pref-note">Overwrites this machine. Discards changes made here since the last sync.</span>
+                </span>
+                <button
+                  className="danger"
+                  onClick={() => window.hangar.send({ type: 'resolve-sync', winner: 'remote' })}
+                >
+                  Keep repo
+                </button>
+              </li>
+            </ul>
+          </>
+        )}
       </section>
 
       <section>
         <h2>Reset</h2>
         <p className="hint">
           Restores defaults. Only preferences — your services, accounts and sessions are untouched.
+          {' '}
+          <b>Reset all leaves the sync repository and your Firebase credentials alone</b>, since
+          those are things you fetched from elsewhere rather than settings. Reset those sections
+          individually if you do want them cleared.
         </p>
         <ul className="rows">
           {(['appearance', 'behaviour', 'notifications', 'network', 'downloads'] as const).map(

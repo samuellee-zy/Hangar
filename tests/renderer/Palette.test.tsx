@@ -36,6 +36,7 @@ const state = (over: Partial<ShellState> = {}): ShellState =>
     preferences: DEFAULT_PREFERENCES,
     orphanPartitions: [],
     quarantinedConfigs: [],
+    syncStatus: { state: 'off' },
     accounts: [],
     workspaces: [{ id: 'w1', name: 'Work', items: [] }],
     panes: [],

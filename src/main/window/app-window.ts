@@ -772,11 +772,7 @@ export class AppWindow {
         updateConfig((c) => {
           c.preferences = resetPreferences(c.preferences, command.section);
         });
-        // Every effect, not just the changed key: a reset can move the rail, retheme the window
-        // and re-register the global shortcut all at once.
-        this.applySystemPreferences();
-        this.applyTray(loadConfig().preferences);
-        nativeTheme.themeSource = loadConfig().preferences.appearance.theme;
+        this.applyAllPreferenceEffects();
         this.relayout();
         this.sync();
         break;
@@ -1201,6 +1197,31 @@ export class AppWindow {
    * size re-registered the global shortcut and kicked off an unawaited proxy fan-out across every
    * session — harmless today, but exactly the shape that produces a race later.
    */
+  /**
+   * Every preference effect at once, for a reset.
+   *
+   * Previously reset called `applySystemPreferences()`, which covers the login item, proxy,
+   * shortcut and tray — but *not* the two branches `applyPreferenceEffect` has for push and
+   * spellcheck. So resetting with push enabled left the FCM sockets open while Settings reported
+   * push off, and live sessions kept the old spellcheck languages until restart.
+   *
+   * Driven off the same per-key function rather than duplicating it, so a branch added there can't
+   * be forgotten here.
+   */
+  private applyAllPreferenceEffects(): void {
+    for (const path of [
+      'behaviour.launchAtLogin',
+      'network.proxy',
+      'behaviour.globalShortcut',
+      'appearance.showTrayIcon',
+      'notifications.push',
+      'behaviour.spellcheckLanguages',
+    ]) {
+      this.applyPreferenceEffect(path);
+    }
+    nativeTheme.themeSource = loadConfig().preferences.appearance.theme;
+  }
+
   private applyPreferenceEffect(path: string): void {
     const prefs = loadConfig().preferences;
     if (path === 'behaviour.launchAtLogin' || path === 'behaviour.startHidden') {

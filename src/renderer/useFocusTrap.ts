@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Keeps Tab inside a dialog, and puts focus back where it came from on close.
+ * Keeps Tab inside a dialog.
  *
- * Without a trap, tabbing past the last control in the palette moves focus to nothing visible —
- * the overlay is its own `WebContentsView`, so there is no surrounding page to land on. The user
- * is simply stuck with no way to see where focus went.
+ * Without it, tabbing past the last control moves focus to nothing visible — the overlay is its own
+ * `WebContentsView`, so there is no surrounding page to land on and the user is stuck with no way
+ * to see where focus went.
  *
- * Restoring matters as much: the overlay view is *removed* from the window on close, not hidden,
- * so whatever had focus is gone and focus falls back to the document body unless we put it back.
+ * **Restoration is deliberately not here.** An earlier version tried, and couldn't work: it captured
+ * `document.activeElement` inside `useEffect`, which runs *after* commit, and `AddConnection`'s
+ * input has `autoFocus` applied *during* commit — so it captured an element inside the dialog. It
+ * was also redundant, because `close-overlay` in the main process already calls `focusActivePane()`.
+ * Focus restoration crosses a `WebContentsView` boundary, so main is the only place that can do it.
  */
 export function useFocusTrap<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -16,8 +19,6 @@ export function useFocusTrap<T extends HTMLElement>() {
   useEffect(() => {
     const container = ref.current;
     if (!container) return;
-
-    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     const focusable = () =>
       [
@@ -45,14 +46,7 @@ export function useFocusTrap<T extends HTMLElement>() {
     };
 
     container.addEventListener('keydown', onKeyDown);
-    return () => {
-      container.removeEventListener('keydown', onKeyDown);
-      // Only if focus is still somewhere in here — if the user has already moved on, yanking it
-      // back is worse than leaving it.
-      if (previouslyFocused && container.contains(document.activeElement)) {
-        previouslyFocused.focus?.();
-      }
-    };
+    return () => container.removeEventListener('keydown', onKeyDown);
   }, []);
 
   return ref;

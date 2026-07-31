@@ -84,12 +84,22 @@ export function AddConnection() {
                     )
                   }
                 >
-                  <img
-                    className="grid-icon"
-                    src={`hangar-catalog://${entry.icon}`}
-                    alt=""
-                    onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
-                  />
+                  {/*
+                    Guarded: `icon` is optional, and an entry without one requested
+                    `hangar-catalog://undefined`, which 404s and left a blank gap. Unlike the rail's
+                    ServiceIcon this grid has no fallback of its own, so the "initials covers it"
+                    reasoning behind making `icon` optional didn't actually hold here.
+                  */}
+                  {entry.icon ? (
+                    <img
+                      className="grid-icon"
+                      src={`hangar-catalog://${entry.icon}`}
+                      alt=""
+                      onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+                    />
+                  ) : (
+                    <span className="grid-icon grid-initials">{entry.initials}</span>
+                  )}
                   <span className="grid-name">{entry.name}</span>
                   <span className="grid-sub">
                     {isAdded

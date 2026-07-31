@@ -40,6 +40,7 @@ function state(over: Partial<ShellState> = {}): ShellState {
     preferences: DEFAULT_PREFERENCES,
     orphanPartitions: [],
     quarantinedConfigs: [],
+    syncStatus: { state: 'off' },
     accounts: [],
     workspaces: [],
     panes: [{ id: 'p1', serviceId: services[0]!.id }],

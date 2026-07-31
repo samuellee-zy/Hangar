@@ -172,3 +172,41 @@ describe('reset to defaults', () => {
     assert.deepEqual(b.behaviour.spellcheckLanguages, ['en-US']);
   });
 });
+
+describe('what a full reset preserves', () => {
+  it('KEEPS the sync repo path — Reset all must not silently disable sync', () => {
+    // The UI omits `sync` from the per-section list, then Reset all wiped it anyway under a hint
+    // promising only preferences were affected.
+    const p = fresh();
+    setPreference(p, 'sync.repoPath', '/Users/me/dotfiles');
+    setPreference(p, 'appearance.railPosition', 'right');
+
+    const next = resetPreferences(p);
+    assert.equal(next.sync.repoPath, '/Users/me/dotfiles');
+    assert.equal(next.appearance.railPosition, 'left', 'everything else still resets');
+  });
+
+  it('KEEPS the Firebase credentials — retyping them means a trip to a console', () => {
+    const p = fresh();
+    setPreference(p, 'notifications.firebase.apiKey', 'AIza-secret');
+    setPreference(p, 'notifications.sound', false);
+
+    const next = resetPreferences(p);
+    assert.equal(next.notifications.firebase.apiKey, 'AIza-secret');
+    assert.equal(next.notifications.sound, true, 'the rest of notifications still resets');
+  });
+
+  it('but a SECTION reset still clears them — that path is explicit', () => {
+    const p = fresh();
+    setPreference(p, 'notifications.firebase.apiKey', 'AIza-secret');
+    assert.equal(resetPreferences(p, 'notifications').notifications.firebase.apiKey, '');
+  });
+
+  it('preserved values are copies, not references into the previous object', () => {
+    const p = fresh();
+    setPreference(p, 'notifications.firebase.apiKey', 'k');
+    const next = resetPreferences(p);
+    next.notifications.firebase.apiKey = 'changed';
+    assert.equal(p.notifications.firebase.apiKey, 'k');
+  });
+});

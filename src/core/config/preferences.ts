@@ -130,8 +130,30 @@ export function setPreference(prefs: Preferences, path: string, value: unknown):
  * everything — this arrives over IPC, and "reset the wrong thing" is a worse failure than
  * "reset nothing".
  */
+/**
+ * Preserved by a *full* reset, because they aren't settings — they're values fetched from
+ * somewhere else and re-entering them means going back to a console or a filesystem.
+ *
+ * "Reset all" wiping `sync.repoPath` silently disabled sync under a hint promising only preferences
+ * were affected; wiping the Firebase block meant a trip to the Firebase console to retype four
+ * fields. Both remain reachable through their own section reset, which is explicit.
+ */
+const PRESERVED_ON_FULL_RESET = ['sync', 'notifications.firebase'] as const;
+
 export function resetPreferences(current: Preferences, section?: string): Preferences {
-  if (!section) return withDefaults(undefined);
+  if (!section) {
+    const next = withDefaults(undefined) as unknown as Record<string, unknown>;
+    const from = current as unknown as Record<string, unknown>;
+    for (const path of PRESERVED_ON_FULL_RESET) {
+      const [head, leaf] = path.split('.') as [string, string | undefined];
+      if (!leaf) next[head] = structuredClone(from[head]);
+      else {
+        const branch = next[head] as Record<string, unknown>;
+        branch[leaf] = structuredClone((from[head] as Record<string, unknown>)[leaf]);
+      }
+    }
+    return next as unknown as Preferences;
+  }
   if (!(section in DEFAULT_PREFERENCES)) return current;
   const key = section as keyof Preferences;
   // Through `merge` rather than a raw spread, so the result is a fresh object and can't alias
