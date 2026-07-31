@@ -17,7 +17,7 @@ export function Settings() {
   const labelFor = (accountId: string) =>
     state.accounts.find((a) => a.id === accountId)?.label ?? 'unknown';
 
-  const { appearance, behaviour, notifications, network, downloads } = state.preferences;
+  const { appearance, behaviour, notifications, network, downloads, sync } = state.preferences;
 
   // Mirrors main/push.ts. Duplicated rather than imported because the renderer bundle shouldn't
   // pull in a main-process module — the two are four field names long and tested on the main side.
@@ -523,6 +523,77 @@ export function Settings() {
       </section>
 
       <section>
+        <h2>Sync</h2>
+        <p className="hint">
+          Keeps your services, accounts and preferences in step across machines through a git repo
+          you control. Point this at a local clone; Hangar pulls on launch and commits when
+          something changes.
+          {' '}
+          <b>Sessions do not sync</b> — cookie jars stay on the machine that created them, so a
+          second machine gets your setup and asks you to sign in. Window size and pane layouts stay
+          local too, because they're shaped to a particular screen.
+        </p>
+        <ul className="rows">
+          <Text
+            name="Repository path"
+            note={syncNote(state.syncStatus)}
+            path="sync.repoPath"
+            value={sync.repoPath}
+            placeholder="~/code/dotfiles"
+          />
+          <li className="pref">
+            <span className="pref-label">
+              <span className="pref-name">Sync now</span>
+              <span className="pref-note">Pull, then push if anything changed</span>
+            </span>
+            <button
+              disabled={!sync.repoPath.trim()}
+              onClick={() => window.hangar.send({ type: 'sync-now' })}
+            >
+              Sync
+            </button>
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Reset</h2>
+        <p className="hint">
+          Restores defaults. Only preferences — your services, accounts and sessions are untouched.
+        </p>
+        <ul className="rows">
+          {(['appearance', 'behaviour', 'notifications', 'network', 'downloads'] as const).map(
+            (section) => (
+              <li className="pref" key={section}>
+                <span className="pref-label">
+                  <span className="pref-name" style={{ textTransform: 'capitalize' }}>
+                    {section}
+                  </span>
+                </span>
+                <button
+                  onClick={() => window.hangar.send({ type: 'reset-preferences', section })}
+                >
+                  Reset
+                </button>
+              </li>
+            )
+          )}
+          <li className="pref">
+            <span className="pref-label">
+              <span className="pref-name">Everything</span>
+              <span className="pref-note">All preferences at once</span>
+            </span>
+            <button
+              className="danger"
+              onClick={() => window.hangar.send({ type: 'reset-preferences' })}
+            >
+              Reset all
+            </button>
+          </li>
+        </ul>
+      </section>
+
+      <section>
         <h2>About</h2>
         <p className="hint">
           Config lives at <code>~/Library/Application Support/Hangar/config.json</code>. No cloud
@@ -533,4 +604,24 @@ export function Settings() {
       </section>
     </div>
   );
+}
+
+/** Turns the sync state into something worth reading. An opaque "error" helps nobody. */
+function syncNote(status: import('@shared/types').SyncStatus): string {
+  switch (status.state) {
+    case 'off':
+      return 'Empty disables sync';
+    case 'unavailable':
+      return status.reason;
+    case 'conflict':
+      // Deliberately not auto-merged: guessing which machine's rename to keep can cost an
+      // account-to-partition mapping, which signs you out of something you never touched.
+      return `Diverged — resolve in the repo, then Sync. ${status.detail}`;
+    case 'error':
+      return status.detail;
+    case 'idle':
+      return status.lastSync
+        ? `Last synced ${new Date(status.lastSync).toLocaleTimeString()}`
+        : 'Ready';
+  }
 }

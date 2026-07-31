@@ -4,7 +4,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { DEFAULT_PREFERENCES, setPreference, withDefaults } from '@core/config/preferences';
+import { DEFAULT_PREFERENCES, resetPreferences, setPreference, withDefaults } from '@core/config/preferences';
 
 
 const fresh = () => withDefaults(undefined);
@@ -125,5 +125,50 @@ describe('deep paths — three levels, all reachable from Settings', () => {
     const p = fresh();
     assert.equal(setPreference(p, 'network.proxy.username', 'admin'), false);
     assert.equal(setPreference(p, 'notifications.firebase.secret', 'x'), false);
+  });
+});
+
+describe('reset to defaults', () => {
+  it('resets one section and leaves the others alone', () => {
+    const p = fresh();
+    setPreference(p, 'appearance.railPosition', 'right');
+    setPreference(p, 'behaviour.confirmQuit', true);
+
+    const next = resetPreferences(p, 'appearance');
+    assert.equal(next.appearance.railPosition, 'left');
+    assert.equal(next.behaviour.confirmQuit, true, 'behaviour must survive an appearance reset');
+  });
+
+  it('resets everything when given no section', () => {
+    const p = fresh();
+    setPreference(p, 'appearance.railPosition', 'bottom');
+    setPreference(p, 'behaviour.confirmQuit', true);
+
+    const next = resetPreferences(p);
+    assert.equal(next.appearance.railPosition, 'left');
+    assert.equal(next.behaviour.confirmQuit, false);
+  });
+
+  it('AN UNKNOWN SECTION CHANGES NOTHING — it must not reset everything', () => {
+    // This arrives over IPC. Falling through to a full reset on a typo'd section would be a far
+    // worse failure than doing nothing.
+    const p = fresh();
+    setPreference(p, 'appearance.railPosition', 'top');
+    assert.equal(resetPreferences(p, 'nonsense').appearance.railPosition, 'top');
+  });
+
+  it('never returns a value aliasing DEFAULT_PREFERENCES', () => {
+    // The Phase 2 bug: returning the shared constant meant the first edit afterwards mutated the
+    // defaults for the rest of the process.
+    const next = resetPreferences(fresh());
+    next.appearance.railSize = 999;
+    assert.equal(DEFAULT_PREFERENCES.appearance.railSize, 72);
+  });
+
+  it('a reset section is deep-copied, not shared', () => {
+    const a = resetPreferences(fresh(), 'behaviour');
+    const b = resetPreferences(fresh(), 'behaviour');
+    a.behaviour.spellcheckLanguages.push('fr');
+    assert.deepEqual(b.behaviour.spellcheckLanguages, ['en-US']);
   });
 });

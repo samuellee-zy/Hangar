@@ -7,6 +7,7 @@ import type {
   ServiceInstance,
   ServiceView,
   ShellState,
+  SyncStatus,
   Workspace,
 } from '@shared/types';
 
@@ -63,6 +64,7 @@ export interface ProjectionInput {
   focusedPaneId: string | null;
   orphanPartitions: string[];
   quarantinedConfigs: string[];
+  syncStatus: SyncStatus;
   flashServiceId?: string | null;
 }
 
@@ -77,6 +79,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     preferences: config.preferences,
     orphanPartitions: input.orphanPartitions,
     quarantinedConfigs: input.quarantinedConfigs,
+    syncStatus: input.syncStatus,
     allServices: config.services,
     flashServiceId: input.flashServiceId,
     services: activeServicesOf(config, config.activeWorkspaceId).map((svc): ServiceView => {

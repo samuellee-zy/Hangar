@@ -920,3 +920,62 @@ The general point: an allowlist is a claim about where a service will *send* you
 the redirect tests that claim. `Monday` also ships with no `icon` at all rather than a slug that
 404s — `initials` is the designed fallback, and a declared-but-missing slug is indistinguishable
 from a typo.
+
+## 74. Config sync is an allowlist, and refuses rather than merges
+
+Git-backed: a repo you control, pulled on launch, committed when the portable half changes. No
+server, no account, and you get history and a real conflict model for free.
+
+**An allowlist, not a blocklist.** A blocklist means every field added later syncs by default and
+someone has to remember to exclude it — which is exactly how a machine-local secret ends up in a
+shared repo. Three fields are explicitly local, and each would break something:
+
+- `pushRegistrations` — an FCM registration is bound to one receiver. Two machines holding the same
+  endpoint means both are wrong and neither gets the notification.
+- `window` — describes this machine's display; `restoreBounds` would strand the window offscreen.
+- `layouts` — a 4-pane split from a 32" monitor is unusable on a laptop.
+
+Cookie jars aren't in `Config` at all, so the second machine gets your setup and asks you to sign
+in. That's correct, and Settings says so rather than letting it look like a failure.
+
+**Conflicts are never resolved automatically.** A merge guessing which machine's rename to keep can
+cost an account-to-partition mapping, which signs you out of something you never touched. `--ff-only`,
+then stop and report.
+
+## 75. Three sync bugs only a two-machine test could find
+
+The unit tests (18 of them) all passed while the feature didn't work. Each of these needed two real
+clones of a real repo:
+
+1. **A brand-new empty repo read as a conflict.** `git pull` on a repo with no commits fails with
+   "no such ref was fetched" — and that's the *normal* starting state. It also blocked the first
+   push that would have seeded it.
+2. **Asking the wrong repo whether it had commits.** The fix for (1) checked the *local* clone, but
+   a clone taken before the other machine's first push is locally empty while the remote is not —
+   the ordinary state of the second machine you set up. It skipped the pull, tried to seed, and had
+   the push rejected.
+3. **`@{upstream}` doesn't exist on a clone of an empty repo.** No tracking configuration is written
+   when there's no branch to track, so the upstream check silently found nothing. `FETCH_HEAD` is
+   written by the fetch itself and doesn't depend on that config.
+
+Unborn HEAD is now handled by adopting the remote wholesale rather than merging — `merge` refuses it
+as "unrelated histories", and there are no local commits to lose.
+
+## 76. `JSON.stringify(x, keys, 2)` sorts nothing
+
+The second argument is a key **allowlist applied at every level**, not a sort order. Passing the
+top-level keys to get stable output silently stripped every nested object's contents — so
+`hasDiverged` compared two configs with all their preferences removed, and **a changed preference
+didn't register as a change at all.**
+
+Caught by a test asserting that it did. Stable output now comes from recursively sorting keys before
+stringifying; arrays keep their order, because for `services` and rail items position *is* the data.
+
+## 77. The array-aliasing fix covered one direction only
+
+Phase 2 fixed `merge` copying arrays when falling back to a default. It didn't copy them on the way
+*in* — so passing `DEFAULT_PREFERENCES.behaviour` **as** the stored value, which is exactly what
+`resetPreferences` does, produced a result sharing `spellcheckLanguages` with the constant. The
+first `push` to it would mutate the defaults for the rest of the process.
+
+Found by a test asserting two independent resets don't affect each other.

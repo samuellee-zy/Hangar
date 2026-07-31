@@ -42,6 +42,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     firebase: { projectId: '', appId: '', apiKey: '', messagingSenderId: '' },
   },
   network: { proxy: { mode: 'system', host: '', port: 0 } },
+  sync: { repoPath: '' },
   downloads: { folder: null, askWhereToSave: false, openOnComplete: false },
 };
 
@@ -68,7 +69,13 @@ function merge<T>(defaults: T, stored: unknown): T {
       // Arrays are copied too, or a default like ['en-US'] would be shared and mutable.
       out[key] = Array.isArray(fallback) ? [...fallback] : fallback;
     } else {
-      out[key] = value;
+      // Copied on the way IN as well, not just when falling back to a default.
+      //
+      // The Phase 2 fix covered the default path only, which left a second way to alias the same
+      // array: pass `DEFAULT_PREFERENCES.behaviour` *as* the stored value — exactly what
+      // `resetPreferences` does — and the result shares `spellcheckLanguages` with the constant.
+      // The first push to it then mutates the defaults for the rest of the process.
+      out[key] = Array.isArray(value) ? [...value] : value;
     }
   }
   return out as T;
@@ -114,4 +121,20 @@ export function setPreference(prefs: Preferences, path: string, value: unknown):
 
   target[leaf] = value;
   return true;
+}
+
+/**
+ * Restores defaults, for one section or all of them.
+ *
+ * An unknown section returns the preferences unchanged rather than throwing or resetting
+ * everything — this arrives over IPC, and "reset the wrong thing" is a worse failure than
+ * "reset nothing".
+ */
+export function resetPreferences(current: Preferences, section?: string): Preferences {
+  if (!section) return withDefaults(undefined);
+  if (!(section in DEFAULT_PREFERENCES)) return current;
+  const key = section as keyof Preferences;
+  // Through `merge` rather than a raw spread, so the result is a fresh object and can't alias
+  // DEFAULT_PREFERENCES — the bug that once let one install's setting leak process-wide.
+  return withDefaults({ ...current, [key]: DEFAULT_PREFERENCES[key] });
 }

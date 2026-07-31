@@ -196,8 +196,21 @@ export interface Preferences {
     firebase: { projectId: string; appId: string; apiKey: string; messagingSenderId: string };
   };
   network: { proxy: ProxyConfig };
+  /**
+   * Git-backed config sync. `repoPath` is a local clone you control; empty disables it.
+   * See core/config/sync.ts for what travels and what deliberately doesn't.
+   */
+  sync: { repoPath: string };
   downloads: { folder: string | null; askWhereToSave: boolean; openOnComplete: boolean };
 }
+
+/** Mirrors core/config/sync.ts. Declared here because ShellState crosses the IPC boundary. */
+export type SyncStatus =
+  | { state: 'off' }
+  | { state: 'unavailable'; reason: string }
+  | { state: 'idle'; lastSync: number | null }
+  | { state: 'conflict'; detail: string }
+  | { state: 'error'; detail: string };
 
 export interface Config {
   version: 4;
@@ -249,6 +262,8 @@ export interface ShellState {
    * record of a setup that couldn't be loaded — until now nothing ever mentioned them again.
    */
   quarantinedConfigs: string[];
+  /** Config sync state, so Settings can report it rather than leaving the user guessing. */
+  syncStatus: SyncStatus;
   /** So the picker can offer "open with Google (work)" vs "add another account". */
   accounts: Account[];
   workspaces: Workspace[];
@@ -292,6 +307,8 @@ export type Command =
   | { type: 'purge-orphan-partitions' }
   /** Reveal a file in Finder. Used for quarantined config copies, which are otherwise unfindable. */
   | { type: 'reveal-path'; path: string }
+  | { type: 'sync-now' }
+  | { type: 'reset-preferences'; section?: string }
   | { type: 'open-find' }
   | { type: 'close-find' }
   | { type: 'find'; query: string; forward?: boolean; findNext?: boolean }

@@ -21,6 +21,7 @@ import {
   updateConfig,
   updateConfigReturning,
   quarantinedConfigs,
+  saveConfig,
 } from '@main/platform/config';
 import {
   Layout,
@@ -59,7 +60,7 @@ import {
   reorderItems,
 } from '@core/workspace/folders';
 import { findOrphanPartitions } from '@core/runtime/permissions';
-import { setPreference } from '@core/config/preferences';
+import { resetPreferences, setPreference } from '@core/config/preferences';
 import {
   createWorkspace,
   deleteWorkspace,
@@ -76,6 +77,7 @@ import {
   removeServiceFromConfig,
   resolveCommand,
 } from '@core/shell-state';
+import { ConfigSync } from '@main/features/sync';
 import { PushManager } from '@main/features/push-manager';
 import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import type {
@@ -146,6 +148,14 @@ export class AppWindow {
    * that opens before anything can display a message just drops it.
    */
   private push: PushManager;
+
+  /**
+   * Git-backed config sync. Inert until `sync.repoPath` is set.
+   *
+   * Named `configSync` because `sync()` is already the state broadcaster — two very different
+   * things that would otherwise share a name on the same object.
+   */
+  private configSync: ConfigSync;
 
   constructor() {
     this.win = new BaseWindow({
@@ -223,6 +233,21 @@ export class AppWindow {
       deliver: (serviceId, message) => this.handlePushMessage(serviceId, message),
       log: (message) => console.log(`[push] ${message}`),
     });
+
+    this.configSync = new ConfigSync({
+      repoPath: () => loadConfig().preferences.sync.repoPath.trim() || null,
+      read: () => loadConfig(),
+      write: (next) => saveConfig(next),
+      onApplied: () => {
+        // A synced config can rename, add or remove services, so the panes have to be rebuilt
+        // rather than merely re-rendered.
+        this.restoreLayout();
+        this.relayout();
+        this.sync();
+      },
+      log: (message) => console.log(`[sync] ${message}`),
+    });
+    void this.configSync.pull();
 
     this.scanOrphanPartitions();
     this.restoreLayout();
@@ -334,6 +359,7 @@ export class AppWindow {
       focusedPaneId: this.layout.focusedPaneId,
       orphanPartitions: this.orphanPartitions,
       quarantinedConfigs: quarantinedConfigs(),
+      syncStatus: this.configSync.current(),
       flashServiceId: this.flashServiceId,
     });
   }
@@ -417,6 +443,21 @@ export class AppWindow {
         console.error(`[partitions] could not delete ${name}:`, err);
       }
     }
+    this.configSync = new ConfigSync({
+      repoPath: () => loadConfig().preferences.sync.repoPath.trim() || null,
+      read: () => loadConfig(),
+      write: (next) => saveConfig(next),
+      onApplied: () => {
+        // A synced config can rename, add or remove services, so the panes have to be rebuilt
+        // rather than merely re-rendered.
+        this.restoreLayout();
+        this.relayout();
+        this.sync();
+      },
+      log: (message) => console.log(`[sync] ${message}`),
+    });
+    void this.configSync.pull();
+
     this.scanOrphanPartitions();
     this.sync();
   }
@@ -714,6 +755,27 @@ export class AppWindow {
         break;
       }
 
+      case 'sync-now':
+        void this.configSync.pull().then(() => this.configSync.push()).then(() => this.sync());
+        break;
+
+      case 'reset-preferences': {
+        // Per section or wholesale. Until now a bad rail position or zoom was only recoverable by
+        // hand-editing config.json — which for a setting that can make the window unusable is not
+        // a recovery path at all.
+        updateConfig((c) => {
+          c.preferences = resetPreferences(c.preferences, command.section);
+        });
+        // Every effect, not just the changed key: a reset can move the rail, retheme the window
+        // and re-register the global shortcut all at once.
+        this.applySystemPreferences();
+        this.applyTray(loadConfig().preferences);
+        nativeTheme.themeSource = loadConfig().preferences.appearance.theme;
+        this.relayout();
+        this.sync();
+        break;
+      }
+
       case 'reveal-path':
         // Restricted to paths we actually surfaced. The renderer is a separate process and this is
         // an IPC boundary — an arbitrary path from a message would be a way to probe the disk.
@@ -929,6 +991,7 @@ export class AppWindow {
         // Renderers read `prefers-color-scheme`, which Electron drives from themeSource.
         if (after !== before) nativeTheme.themeSource = after;
         this.applyPreferenceEffect(command.path);
+        this.configSync.schedulePush();
         // Appearance changes affect pane geometry, so relayout before telling anyone.
         this.relayout();
         break;
