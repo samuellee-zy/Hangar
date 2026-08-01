@@ -63,17 +63,149 @@ export const LOCAL_ONLY_KEYS = ['pushRegistrations', 'window', 'layouts'] as con
  *
  * `notifications.push` *does* travel. Without credentials the second machine shows the toggle as
  * pending with "Fill in the Firebase project below first", which is honest.
+ *
+ * `sync.allowPublicRepo` is local for the same reason as `repoPath`: it's an override about one
+ * particular repo on one particular machine. Travelling, it would silently pre-authorise a repo the
+ * other machine never looked at — and writing "yes, I know this is public" *into* the public repo is
+ * its own small absurdity.
  */
 export const LOCAL_PREFERENCE_PATHS = [
   'notifications.firebase',
   'notifications.dndUntil',
   'sync.repoPath',
+  'sync.allowPublicRepo',
   'network.proxy',
   'downloads.folder',
   'behaviour.launchAtLogin',
 ] as const;
 
 export type PortableConfig = Pick<Config, (typeof PORTABLE_KEYS)[number]>;
+
+/* ------------------------------------------------------------------------------------------------
+ * Refusing to write your config into a repo the whole world can read.
+ *
+ * The synced file carries no credentials — `LOCAL_PREFERENCE_PATHS` above strips them, with a test
+ * asserting the output contains neither the Firebase key nor the string `apiKey`. It is still not
+ * *public-safe*: account labels are usually email addresses, and custom connection URLs are
+ * plausibly internal hostnames.
+ *
+ * ## The first design of this guard was backwards
+ *
+ * It refused any remote on github.com, gitlab.com or bitbucket.org — which is precisely where a
+ * private dotfiles repo lives. It would have fired on the correct, common case, and the override
+ * would have been switched on permanently within a day. A guard that trains you to disable it is
+ * worse than no guard.
+ *
+ * The host list survived, with the opposite job. It no longer marks where sync is *forbidden*; it
+ * marks where an unauthenticated 200 can be *believed*.
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Hosts where an anonymous HTTP 200 really does mean "anyone on the internet can read this".
+ *
+ * A self-hosted forge is deliberately absent. Probing `git.internal.example` from a laptop on the
+ * corporate VPN can easily answer 200 for a repo no outsider can reach, and refusing to sync to your
+ * own company's private git server would be a false positive of exactly the kind that gets a guard
+ * switched off.
+ *
+ * Verified against all four: a public repo answers 200, and a nonexistent one answers 404 (403 on
+ * GitLab). Only 200 is load-bearing, so the difference doesn't matter.
+ */
+export const PUBLIC_FORGES = ['github.com', 'gitlab.com', 'bitbucket.org', 'codeberg.org'] as const;
+
+/** A git remote reduced to the two things needed to build a web URL for it. */
+export interface RemoteRef {
+  host: string;
+  /** Repo path with no leading slash and no `.git`. Keeps nested GitLab groups intact. */
+  path: string;
+}
+
+function asRef(host: string, rawPath: string): RemoteRef | null {
+  const path = rawPath
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
+  if (!host || !path) return null;
+  return { host: host.toLowerCase(), path };
+}
+
+/**
+ * Parses the output of `git remote get-url origin`.
+ *
+ * Two syntaxes, because git accepts both and people use both:
+ *
+ * | Form | Example |
+ * | --- | --- |
+ * | scp-like | `git@github.com:owner/repo.git` |
+ * | URL | `https://github.com/owner/repo.git`, `ssh://git@github.com/owner/repo` |
+ *
+ * Returns null for anything without a network host — a plain local path, a relative path, a
+ * `file://` URL. Those cannot be probed and are not the risk this guards against.
+ */
+export function parseRemote(url: string): RemoteRef | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  // scp-like: [user@]host:path. The negative lookahead on `/` is what keeps `https://…` out — its
+  // colon *is* followed by slashes, so only the URL branch below can claim it.
+  const scp = /^(?:[^@/]+@)?([^:/]+):(?!\/)(.+)$/.exec(trimmed);
+  if (scp) return asRef(scp[1]!, scp[2]!);
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!['ssh:', 'git:', 'http:', 'https:'].includes(parsed.protocol)) return null;
+    return asRef(parsed.hostname, parsed.pathname);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The URL to probe, or null when probing this host would tell us nothing.
+ *
+ * Null is not "assume private" — it's "don't ask the question", which lands on the same permissive
+ * answer by a different route.
+ */
+export function probeUrlFor(ref: RemoteRef): string | null {
+  if (!(PUBLIC_FORGES as readonly string[]).includes(ref.host)) return null;
+  return `https://${ref.host}/${ref.path}`;
+}
+
+export type RepoVisibility = 'public' | 'unknown';
+
+/**
+ * The verdict table. Decisive in exactly one direction.
+ *
+ * | Response | Meaning | Verdict |
+ * | --- | --- | --- |
+ * | 200 | anyone can read it | `public` |
+ * | 404 | private **or** nonexistent — indistinguishable by design, deliberately, so that probing cannot enumerate private repos | `unknown` |
+ * | anything else, or no response at all | offline, DNS failure, rate limit, a forge having a bad day | `unknown` |
+ */
+export function visibilityFromStatus(status: number | null): RepoVisibility {
+  return status === 200 ? 'public' : 'unknown';
+}
+
+/**
+ * Whether to refuse, and what to say. Null means proceed.
+ *
+ * **Fails open on purpose.** Every uncertain answer allows the sync. The risk being weighed is
+ * publishing your own service list to your own repo — something you configured and can see in
+ * Settings — against sync silently breaking every time you open the laptop on a train. The second is
+ * worse, and it's the one that erodes trust in the feature.
+ */
+export function publicRepoRefusal(args: {
+  visibility: RepoVisibility;
+  allowPublicRepo: boolean;
+  probeUrl: string;
+}): string | null {
+  if (args.visibility !== 'public' || args.allowPublicRepo) return null;
+  return (
+    `${args.probeUrl} is readable by anyone, and the synced file lists your services, ` +
+    'account labels and any custom URLs. Credentials are never written to it. ' +
+    'Use a private repo, or allow this one below.'
+  );
+}
 
 function getPath(root: unknown, path: string): unknown {
   return path.split('.').reduce<unknown>((node, key) => {

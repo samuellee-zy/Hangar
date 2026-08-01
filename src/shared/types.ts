@@ -199,8 +199,11 @@ export interface Preferences {
   /**
    * Git-backed config sync. `repoPath` is a local clone you control; empty disables it.
    * See core/config/sync.ts for what travels and what deliberately doesn't.
+   *
+   * `allowPublicRepo` overrides the refusal to sync into a repo that answers an anonymous request
+   * with 200 — off by default, and only ever consulted when the probe was decisive.
    */
-  sync: { repoPath: string };
+  sync: { repoPath: string; allowPublicRepo: boolean };
   downloads: { folder: string | null; askWhereToSave: boolean; openOnComplete: boolean };
 }
 

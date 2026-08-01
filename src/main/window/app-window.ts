@@ -238,6 +238,9 @@ export class AppWindow {
       // Optional-chained: a config from before this preference existed has no `sync` section, and
       // reading through it unguarded threw inside a `void`-ed promise where nothing surfaced it.
       repoPath: () => loadConfig().preferences.sync?.repoPath.trim() || null,
+      // Same optional chain, same reason: a config predating this preference has no `sync` section.
+      // Defaulting to false is the safe direction — the guard stays on.
+      allowPublicRepo: () => loadConfig().preferences.sync?.allowPublicRepo ?? false,
       read: () => loadConfig(),
       // `sync: false` — this write comes *from* sync, and the default hook would feed it back.
       write: (next) => saveConfig(next, { sync: false }),

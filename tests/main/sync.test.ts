@@ -16,6 +16,11 @@ import {
   validateIncoming,
   decideSync,
   restoreLocalPreferences,
+  parseRemote,
+  probeUrlFor,
+  publicRepoRefusal,
+  PUBLIC_FORGES,
+  visibilityFromStatus,
 } from '@core/config/sync';
 import { DEFAULT_PREFERENCES } from '@core/config/preferences';
 import type { Config } from '@shared/types';
@@ -311,5 +316,124 @@ describe('resolving a conflict by choosing the base', () => {
     const keepLocal = decideSync({ local: LOCAL, remote: REMOTE, base: REMOTE }).kind;
     const keepRemote = decideSync({ local: LOCAL, remote: REMOTE, base: LOCAL }).kind;
     expect(keepLocal).not.toBe(keepRemote);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Refusing to sync into a world-readable repo.
+//
+// The first design of this guard refused any remote on github.com/gitlab.com/bitbucket.org, which
+// is where private dotfiles repos live — it would have fired on the correct case and been switched
+// off within a day. The host list survives with the opposite job: marking where an anonymous 200 is
+// worth believing. These tests exist mostly to keep it that way round.
+// ---------------------------------------------------------------------------------------------
+
+describe('parsing a git remote', () => {
+  it.each([
+    ['git@github.com:owner/repo.git', 'github.com', 'owner/repo'],
+    ['git@github.com:owner/repo', 'github.com', 'owner/repo'],
+    ['https://github.com/owner/repo.git', 'github.com', 'owner/repo'],
+    ['https://github.com/owner/repo', 'github.com', 'owner/repo'],
+    ['https://user@github.com/owner/repo.git', 'github.com', 'owner/repo'],
+    ['ssh://git@github.com/owner/repo.git', 'github.com', 'owner/repo'],
+    ['git://github.com/owner/repo.git', 'github.com', 'owner/repo'],
+    // Nested GitLab groups: the whole path is the repo, so it can't be split into owner + name.
+    ['git@gitlab.com:group/sub/repo.git', 'gitlab.com', 'group/sub/repo'],
+    // Case and stray whitespace — `git remote get-url` output arrives with a trailing newline.
+    ['  https://GitHub.com/Owner/Repo.git\n', 'github.com', 'Owner/Repo'],
+  ])('%s', (url, host, path) => {
+    expect(parseRemote(url)).toEqual({ host, path });
+  });
+
+  it.each([
+    ['/Users/sam/dotfiles', 'an absolute local path'],
+    ['../dotfiles', 'a relative path'],
+    ['file:///Users/sam/dotfiles', 'a file URL'],
+    ['', 'empty'],
+    ['   ', 'whitespace'],
+  ])('%s is not probeable (%s)', (url) => {
+    expect(parseRemote(url)).toBeNull();
+  });
+
+  it('an https URL is not mistaken for scp-like syntax, despite containing a colon', () => {
+    // The scp branch runs first and `https://host/path` has a colon. Without the lookahead it
+    // would parse as host="https", path="//github.com/owner/repo" — and then probe nothing.
+    expect(parseRemote('https://github.com/owner/repo')?.host).toBe('github.com');
+  });
+});
+
+describe('choosing whether the probe is worth running', () => {
+  it.each(PUBLIC_FORGES)('%s is probed', (host) => {
+    expect(probeUrlFor({ host, path: 'owner/repo' })).toBe(`https://${host}/owner/repo`);
+  });
+
+  it('a self-hosted forge is NOT probed', () => {
+    // The false positive that would kill this feature: an internal GitLab answers 200 to a laptop
+    // on the VPN for a repo no outsider can reach. Refusing to sync to your own company's private
+    // git server is exactly the kind of wrongness that gets a guard disabled permanently.
+    expect(probeUrlFor({ host: 'git.internal.example', path: 'team/dotfiles' })).toBeNull();
+  });
+
+  it('a lookalike host is not probed', () => {
+    expect(probeUrlFor({ host: 'github.com.evil.test', path: 'owner/repo' })).toBeNull();
+  });
+});
+
+describe('the verdict table', () => {
+  it('200 is the ONLY response that means public', () => {
+    expect(visibilityFromStatus(200)).toBe('public');
+  });
+
+  const notPublic: [number | null, string][] = [
+    [404, 'private or nonexistent — GitHub refuses to distinguish them, by design'],
+    [403, 'what GitLab returns for a nonexistent project'],
+    [429, 'rate limited'],
+    [500, 'the forge is having a bad day'],
+    [301, 'a redirect that fetch did not follow'],
+    [null, 'offline, DNS failure, or the probe timed out'],
+  ];
+  it.each(notPublic)('%s does not mean public (%s)', (status, _why) => {
+    expect(visibilityFromStatus(status)).toBe('unknown');
+  });
+});
+
+describe('the refusal', () => {
+  const url = 'https://github.com/owner/repo';
+
+  it('refuses a confirmed-public repo, and names it', () => {
+    const refusal = publicRepoRefusal({ visibility: 'public', allowPublicRepo: false, probeUrl: url });
+    expect(refusal).toContain(url);
+    // Says what is at stake, and what isn't — a warning that overstates gets ignored.
+    expect(refusal).toContain('account labels');
+    expect(refusal).toContain('Credentials are never written');
+  });
+
+  it('the override allows it', () => {
+    expect(
+      publicRepoRefusal({ visibility: 'public', allowPublicRepo: true, probeUrl: url })
+    ).toBeNull();
+  });
+
+  it('FAILS OPEN — anything short of a confirmed 200 syncs', () => {
+    // Deliberate. Publishing your own service list to your own repo is a risk you configured and
+    // can see; sync silently breaking every time you open the laptop on a train is worse, and is
+    // what actually erodes trust in the feature.
+    expect(
+      publicRepoRefusal({ visibility: 'unknown', allowPublicRepo: false, probeUrl: url })
+    ).toBeNull();
+  });
+});
+
+describe('the override does not travel', () => {
+  it('allowPublicRepo is stripped from the synced file', () => {
+    const withOverride = config({
+      preferences: {
+        ...DEFAULT_PREFERENCES,
+        sync: { repoPath: '/somewhere', allowPublicRepo: true },
+      },
+    });
+    // Writing "yes, I know this is public" into the public repo would be its own small absurdity,
+    // and on the second machine it would pre-authorise a repo that machine never looked at.
+    expect(serialise(withOverride)).not.toContain('allowPublicRepo');
   });
 });

@@ -42,7 +42,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     firebase: { projectId: '', appId: '', apiKey: '', messagingSenderId: '' },
   },
   network: { proxy: { mode: 'system', host: '', port: 0 } },
-  sync: { repoPath: '' },
+  sync: { repoPath: '', allowPublicRepo: false },
   downloads: { folder: null, askWhereToSave: false, openOnComplete: false },
 };
 
