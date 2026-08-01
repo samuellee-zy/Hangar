@@ -37,8 +37,22 @@ jobs:
       - run: npm ci
 
       # typecheck (app + tests), the 350 vitest unit tests, and the dependency-cruiser boundary
-      # rules between core/, main/ and shared/.
+      # rules between core/, main/ and shared/. None of this needs the Electron binary.
       - run: npm run check
+
+      # ~180 MB, and it does not change between runs of the same Electron version.
+      - name: Cache the Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # Electron 43 has no postinstall — it ships an explicit `install-electron` bin instead, so a
+      # clean `npm ci` leaves node_modules/electron with no binary and no path.txt. Running the
+      # `electron` CLI downloads on demand, but Playwright's `_electron.launch` resolves through
+      # path.txt and would fail before anything triggered that. Hence an explicit, idempotent step.
+      - name: Download the Electron binary
+        run: npx install-electron
 
       # Builds into out/ first — the Playwright harness launches out/main/index.js directly, so
       # without the build it would fail on a missing file rather than on anything real.
