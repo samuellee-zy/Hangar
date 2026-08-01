@@ -1,0 +1,62 @@
+name: CI
+
+# Branch protection on `main` requires the `check` job below, so this file is what makes
+# "require a pull request" mean something rather than being pure ceremony.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # macos-latest, not ubuntu. Hangar is a macOS app, and the E2E suite launches a real Electron
+    # binary — on Linux that needs a virtual display and would be testing a platform nobody runs.
+    # Free for public repos, so the 10x macOS minute multiplier doesn't apply.
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # 24 is the active LTS. Local development is on 26; if that divergence ever matters this
+          # becomes a matrix, but one slow macOS job is the right default for a solo project.
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # typecheck (app + tests), the 350 vitest unit tests, and the dependency-cruiser boundary
+      # rules between core/, main/ and shared/.
+      - run: npm run check
+
+      # Builds into out/ first — the Playwright harness launches out/main/index.js directly, so
+      # without the build it would fail on a missing file rather than on anything real.
+      #
+      # These cover what unit tests structurally cannot see: an uncalled function, a timer that
+      # never fires, and shutdown. The worst bug this project has shipped lived in exactly that
+      # gap and passed every unit test.
+      - run: npm run test:e2e
+
+      # trace: 'retain-on-failure' means this only has content when something broke, which is the
+      # only time anyone wants to download it.
+      - name: Upload Playwright trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

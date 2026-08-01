@@ -135,3 +135,13 @@ preferences system with a Settings window, rail placement on any edge, theming, 
   overlay the panes, and it's added first so it sits underneath.
 - **The integration tiers** — session-borrowed endpoints, Web Push, service APIs. The thing that
   motivated the tiered design in the first place.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
+One exception: the service icons under `assets/icons/` are vendored from
+[dashboard-icons](https://github.com/homarr-labs/dashboard-icons) under Apache-2.0 and are **not**
+covered by that grant. Brand marks remain the property of their respective owners. The attribution
+lives in [assets/icons/NOTICE](assets/icons/NOTICE) and ships inside the packaged app — the
+`extraResources` filter in `electron-builder.yml` explicitly lets `NOTICE` through for that reason.

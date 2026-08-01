@@ -1,0 +1,6 @@
+# Every path, one owner. Combined with `require_code_owner_reviews` in the branch protection on
+# `main`, this means a pull request needs a review from @samuellee-zy specifically — not from
+# whoever happens to be around.
+#
+# `enforce_admins` is deliberately false, so the owner can still push to `main` directly.
+* @samuellee-zy
