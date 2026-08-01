@@ -36,13 +36,13 @@ jobs:
 
       - run: npm ci
 
-      # typecheck (app + tests), the 350 vitest unit tests, and the dependency-cruiser boundary
-      # rules between core/, main/ and shared/. None of this needs the Electron binary.
+      # typecheck (app + tests), the vitest unit suite, and the dependency-cruiser boundary rules
+      # between core/, main/ and shared/. None of this needs the Electron binary.
       - run: npm run check
 
       # ~180 MB, and it does not change between runs of the same Electron version.
       - name: Cache the Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
