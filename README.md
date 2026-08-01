@@ -1,5 +1,8 @@
 # Hangar
 
+[![CI](https://github.com/samuellee-zy/Hangar/actions/workflows/ci.yml/badge.svg)](https://github.com/samuellee-zy/Hangar/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A unified workspace for web apps on macOS — one window, isolated sessions per account, no
 subscription and no cloud account. Built as a replacement for Rambox, whose workspaces, multi-login,
 unlimited instances and custom apps all sit behind a paid tier.
@@ -7,22 +10,37 @@ unlimited instances and custom apps all sit behind a paid tier.
 Your configuration lives in `~/Library/Application Support/Hangar/config.json` and nowhere else.
 No telemetry, no server-side copy of your service list.
 
+**Who it's for:** anyone who keeps eight browser tabs permanently open for work, wants two Gmail
+accounts signed in at once without a second browser profile, and would rather not rent that. It is a
+personal project shared publicly, not a product — see [Status](#status) for what isn't built.
+
 ## Quickstart
+
+Requires macOS and Node 22.12+ (CI runs 24).
 
 ```bash
 npm install
 ```
 
-**Then run Electron's postinstall by hand.** npm 11's `allow-scripts` gate silently skips it, and
-without the binary `electron-vite preview` fails with a bare "Electron uninstall":
+**Then fetch the Electron binary.** Electron 43 has no postinstall — it ships an explicit
+`install-electron` bin instead — so a fresh install leaves `node_modules/electron` with no binary
+and no `path.txt`. Running the `electron` CLI downloads on demand, but anything that resolves the
+path first (Playwright's `_electron.launch`, `electron-vite preview`) fails before that happens:
 
 ```bash
-node node_modules/electron/install.js
+npx install-electron
 ```
 
 ```bash
 npm run build && npm start
 ```
+
+### Running an unsigned build
+
+There is no Developer ID certificate, so `npm run dist` produces an unsigned, un-notarised DMG.
+macOS will refuse to open it on a double-click. Right-click the app → **Open** → **Open**, once;
+after that it launches normally. Worth knowing that Homebrew stops accepting casks that fail
+Gatekeeper on **1 September 2026**, so distribution beyond "build it yourself" would need signing.
 
 ## What it does
 
@@ -62,11 +80,13 @@ default: copy/paste, open-link-in-browser, and spelling suggestions.
 | `npm run dev` | electron-vite dev server with HMR |
 | `npm start` | Build and run the production bundle |
 | `npm run check` | Typecheck plus every logic check |
+| `npm run test:e2e` | Build, then the Playwright suite against a real Electron |
+| `npm run dist` | Unsigned DMG into `dist/` |
 | `npm run icons` | Re-vendor catalog icons from dashboard-icons |
 
 ## Testing
 
-**327 tests under Vitest, plus 8 Playwright end-to-end tests**, plus `dependency-cruiser` enforcing the module boundaries on every run.
+**350 tests under Vitest, plus 15 Playwright end-to-end tests**, plus `dependency-cruiser` enforcing the module boundaries on every run.
 
 The architecture is what makes this possible: `src/core/` is pure — no Electron, no React — so its
 logic runs under plain node with no window. That isn't a convention any more; `npm run check` fails
@@ -96,7 +116,7 @@ it ([decisions #53](docs/decisions.md)).
 npm run test:e2e
 ```
 
-Eight Playwright tests cover what unit tests structurally can't: real windows, real
+The Playwright tests cover what unit tests structurally can't: real windows, real
 `WebContentsView` hit-testing, the preload's main-world patches, and process lifecycle — a
 hibernated service receiving a push, ⌘W then reopening, a truncated config being quarantined.
 
@@ -116,7 +136,7 @@ that has never opened Gmail.
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
-| [decisions.md](docs/decisions.md) | **77 findings that cost real time. Read before changing behaviour.** |
+| [decisions.md](docs/decisions.md) | **84 findings that cost real time. Start here.** |
 
 ## Status
 
@@ -135,6 +155,18 @@ preferences system with a Settings window, rail placement on any edge, theming, 
   overlay the panes, and it's added first so it sits underneath.
 - **The integration tiers** — session-borrowed endpoints, Web Push, service APIs. The thing that
   motivated the tiered design in the first place.
+
+## Contributing
+
+`main` is protected: it requires a pull request, one code-owner approval, and a green CI run
+(`npm run check` plus the E2E suite on macOS). Fork, branch, open a PR.
+
+Before changing behaviour, read [decisions.md](docs/decisions.md). It is 84 entries of things that
+looked correct, passed their tests, and were wrong anyway — a duplicated block that fired a full
+sync on an unrelated click, a "Keep repo" button that did the opposite of its label, three
+dependency rules that silently matched nothing. The recurring lesson is that **verification has to
+be adversarial**: if you add a guard, break the thing it guards and watch it fail. Several guards
+here were found to be inert exactly that way, after months of passing.
 
 ## Licence
 
