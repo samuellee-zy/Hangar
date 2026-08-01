@@ -50,7 +50,15 @@
     "react-dom": "^19.0.0"
   },
   "author": {
-    "name": "Hangar"
+    "name": "Samuel Lee"
   },
-  "homepage": "https://github.com/samuel/hangar"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samuellee-zy/Hangar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/samuellee-zy/Hangar/issues"
+  },
+  "homepage": "https://github.com/samuellee-zy/Hangar#readme"
 }

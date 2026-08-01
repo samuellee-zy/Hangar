@@ -1,7 +1,8 @@
 # Packaging. See docs/packaging.md for the reasoning and the known gaps.
 appId: com.hangar.desktop
 productName: Hangar
-copyright: Hangar
+# Shown in Get Info on the packaged .app. Kept in step with LICENSE.
+copyright: Copyright © 2026 Samuel Lee. MIT licensed.
 
 directories:
   buildResources: build
