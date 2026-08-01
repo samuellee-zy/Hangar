@@ -1113,3 +1113,50 @@ Three fixes, in order of importance:
 The general lesson is about what a test suite's *shape* can see. Ours was pure-function unit tests
 plus boot-assert-exit E2E. Between them they cannot observe an uncalled function, a timer that never
 fires, or anything that happens at shutdown — which is precisely the region that was deleted.
+
+## 85. A public-repo guard whose first design was engineered to be disabled
+
+Config sync writes `hangar.config.json` into a repo you nominate. Credentials never travel — the
+`LOCAL_PREFERENCE_PATHS` allowlist strips the Firebase key, with a test asserting the output contains
+neither the value nor the string `apiKey`. But the file still carries service names, account labels
+(usually addresses) and custom connection URLs, so writing it into a *public* repo is a leak of
+topology even though it isn't a leak of secrets.
+
+The first design refused any remote on `github.com`, `gitlab.com` or `bitbucket.org`.
+
+That is exactly wrong, and it took writing it down to see why: **those hosts are where private
+dotfiles repos live.** The guard would have fired on the correct, common case. The override toggle
+next to it would have been switched on within a day and never switched off, and every genuinely
+public repo afterwards would have synced without complaint. A guard that trains you to disable it is
+worse than no guard, because it also buys you the feeling of having one.
+
+The rewrite makes an unauthenticated `HEAD` request to the repo's web URL. Verified against four
+forges: a public repo answers 200, a nonexistent one answers 404 (403 on GitLab). Only 200 is
+load-bearing, because **404 means private *or* nonexistent and GitHub refuses to distinguish them** —
+deliberately, so that probing cannot enumerate private repos. So the guard is decisive in exactly one
+direction and fails open in every other, including offline.
+
+The host list survived with the opposite job. It no longer marks where sync is *forbidden*; it marks
+where an anonymous 200 can be *believed*. A self-hosted forge is deliberately absent — an internal
+GitLab will happily answer 200 to a laptop on the VPN for a repo no outsider can reach, and refusing
+to sync to your own company's git server is the same false positive in new clothes.
+
+Two smaller things that would each have been a bug:
+
+- **`fetch`, not `net.fetch`.** Electron's main process has both: the global is Node's, and
+  `net.fetch` goes through the Chromium stack. The probe must be anonymous, and a session-backed
+  request would attach whatever GitHub cookies your own browsing has left behind — turning "the
+  public can read this" into "I can read this", which is true of every private repo you own.
+- **`git remote get-url` applies `insteadOf` rewrites.** Discovered while trying to use that for a
+  hermetic test, where it was an obstacle. In production it is correct and worth keeping: if you
+  rewrite `https://github.com/` to a local mirror, the guard should judge where the data actually
+  goes.
+
+**On verifying it.** The pure half — URL parsing, the verdict table, the refusal — was mutation
+tested: five deliberate breaks, all five caught. But none of those tests can see whether the probe is
+*called*, and this project has already shipped a function with zero call sites (entry 84), a
+duplicated block, and three dependency rules that silently matched nothing. So the guard also has an
+integration test that runs the real `ConfigSync` against a real temp git repo with `fetch` stubbed —
+hermetic, no network — and it was verified by deleting the probe's only call site, leaving
+`probeVisibility()` perfectly correct and never invoked. Six of its ten tests failed. That is the
+test earning its place.

@@ -86,7 +86,7 @@ default: copy/paste, open-link-in-browser, and spelling suggestions.
 
 ## Testing
 
-**350 tests under Vitest, plus 15 Playwright end-to-end tests**, plus `dependency-cruiser` enforcing the module boundaries on every run.
+**392 tests under Vitest, plus 15 Playwright end-to-end tests**, plus `dependency-cruiser` enforcing the module boundaries on every run.
 
 The architecture is what makes this possible: `src/core/` is pure — no Electron, no React — so its
 logic runs under plain node with no window. That isn't a convention any more; `npm run check` fails
@@ -136,7 +136,7 @@ that has never opened Gmail.
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
-| [decisions.md](docs/decisions.md) | **84 findings that cost real time. Start here.** |
+| [decisions.md](docs/decisions.md) | **85 findings that cost real time. Start here.** |
 
 ## Status
 
@@ -161,7 +161,7 @@ preferences system with a Settings window, rail placement on any edge, theming, 
 `main` is protected: it requires a pull request, one code-owner approval, and a green CI run
 (`npm run check` plus the E2E suite on macOS). Fork, branch, open a PR.
 
-Before changing behaviour, read [decisions.md](docs/decisions.md). It is 84 entries of things that
+Before changing behaviour, read [decisions.md](docs/decisions.md). It is 85 entries of things that
 looked correct, passed their tests, and were wrong anyway — a duplicated block that fired a full
 sync on an unrelated click, a "Keep repo" button that did the opposite of its label, three
 dependency rules that silently matched nothing. The recurring lesson is that **verification has to

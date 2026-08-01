@@ -85,6 +85,44 @@ Proxy: `system` · `none` · `http` · `socks4` · `socks5`, applied to every li
 Downloads: target folder, ask-where-to-save, open-on-complete. Attached per session, since each
 service has its own.
 
+## Sync
+
+Config sync over a git repo you control. `sync.repoPath` points at a local clone; empty disables
+it. What travels and what doesn't is decided in `core/config/sync.ts` and documented there — the
+short version is an **allowlist**, so a field added later does not sync until someone says so.
+
+| Setting | Notes |
+| --- | --- |
+| Repository path | A local clone. Hangar writes `hangar.config.json` into it, commits with `--only` so it can never sweep up your unrelated work, and pushes |
+| Allow a public repository | Off by default. See below |
+
+**The public-repo guard.** Before every reconcile, Hangar reads `git remote get-url origin` and — if
+the host is one of `github.com`, `gitlab.com`, `bitbucket.org` or `codeberg.org` — makes one
+anonymous `HEAD` request to the repo's web URL. A **200 means anyone can read it**, and sync refuses
+with a reason naming the repo. The synced file carries no credentials, but it does carry service
+names, account labels (usually addresses) and any custom connection URLs.
+
+Three things about the design are deliberate:
+
+- **It fails open.** 404 is *private or nonexistent* — GitHub refuses to distinguish them, precisely
+  so that probing can't enumerate private repos — and every other outcome (offline, DNS failure,
+  rate limit, timeout) also allows the sync. Publishing your own service list to your own repo is a
+  risk you configured and can see; sync breaking on a train is the failure that gets a feature
+  switched off for good.
+- **The host list marks where a 200 can be believed, not where sync is forbidden.** The first draft
+  had it the other way round and refused every repo on github.com — which is where private dotfiles
+  repos live. A self-hosted forge is deliberately absent: an internal GitLab will answer 200 to a
+  laptop on the VPN for a repo no outsider can reach.
+- **The request is Node's `fetch`, not Electron's `net.fetch`.** It has to be anonymous. Going
+  through a session would attach whatever GitHub cookies your browsing has left behind, turning
+  "the public can read this" into "I can read this" — true of every private repo you own.
+
+The probe is cached per URL: a `public` verdict forever, anything else for ten minutes, so a
+debounced reconcile isn't a request per keystroke.
+
+`allowPublicRepo` is machine-local and never syncs, for the same reason `repoPath` doesn't — and
+because writing "yes, I know this is public" *into* the public repo would be its own small absurdity.
+
 ## Per-service
 
 Separate from global preferences and stored on the `ServiceInstance`:

@@ -541,6 +541,12 @@ export function Settings() {
             value={sync.repoPath}
             placeholder="~/code/dotfiles"
           />
+          <Toggle
+            name="Allow a public repository"
+            note="Off by default. Hangar refuses to sync into a repo that answers an anonymous request, because the file lists your services, account labels and any custom URLs — no credentials, but not for strangers."
+            path="sync.allowPublicRepo"
+            value={sync.allowPublicRepo}
+          />
           <li className="pref">
             <span className="pref-label">
               <span className="pref-name">Sync now</span>

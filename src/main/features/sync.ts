@@ -6,10 +6,15 @@ import { promisify } from 'node:util';
 import {
   applyIncoming,
   decideSync,
+  parseRemote,
+  probeUrlFor,
+  publicRepoRefusal,
   restoreLocalPreferences,
   serialise,
   validateIncoming,
+  visibilityFromStatus,
   type PortableConfig,
+  type RepoVisibility,
   type SyncStatus,
 } from '@core/config/sync';
 import { migrateConfig } from '@core/config/migrate';
@@ -55,8 +60,22 @@ const NON_INTERACTIVE = {
   SSH_ASKPASS_REQUIRE: 'never',
 };
 
+/**
+ * How long a non-`public` verdict is trusted before re-probing.
+ *
+ * `public` is cached forever — a repo does not quietly become private, and if it does, the answer
+ * only gets safer. Everything else is provisional: it's mostly "we were offline", and caching that
+ * permanently would mean one flight turns the guard off for the rest of the process.
+ */
+const VISIBILITY_TTL_MS = 10 * 60 * 1_000;
+
+/** How long to wait for the probe. Short: it sits in front of every reconcile. */
+const PROBE_TIMEOUT_MS = 5_000;
+
 export interface SyncDeps {
   repoPath: () => string | null;
+  /** `preferences.sync.allowPublicRepo` — the override for a repo that probes as world-readable. */
+  allowPublicRepo: () => boolean;
   read: () => Config;
   write: (config: Config) => void;
   /** The last-synced snapshot, persisted outside `Config` so it can't sync itself. */
@@ -75,6 +94,8 @@ export class ConfigSync {
   private running = false;
   /** Set when a request arrives mid-run, so it isn't silently dropped. */
   private rerun = false;
+  /** Probe results by web URL, so a reconcile every few seconds isn't a request every few seconds. */
+  private visibility = new Map<string, { verdict: RepoVisibility; at: number }>();
 
   constructor(private deps: SyncDeps) {}
 
@@ -315,7 +336,75 @@ export class ConfigSync {
       });
       return null;
     }
+
+    // Last, because it's the only check that touches the network. Placed in `ready()` rather than in
+    // `once()` so it also covers `resolve('local')`, which pushes — a guard that only watches the
+    // ordinary path is not a guard.
+    const probe = await this.probeVisibility(repo);
+    if (probe) {
+      const refusal = publicRepoRefusal({
+        visibility: probe.verdict,
+        allowPublicRepo: this.deps.allowPublicRepo(),
+        probeUrl: probe.url,
+      });
+      if (refusal) {
+        this.set({ state: 'unavailable', reason: refusal });
+        return null;
+      }
+    }
+
     return repo;
+  }
+
+  /**
+   * Asks the internet whether this repo's origin is world-readable.
+   *
+   * Returns null when there is no question to ask — no origin, a local path, a host where the answer
+   * would not be trustworthy. `core/config/sync.ts` holds the parsing and the verdict table; this is
+   * only the request and the cache.
+   *
+   * `fetch` here is Node's, not Chromium's — Electron exposes the Chromium stack separately as
+   * `net.fetch`. That distinction is the point: this must be an *anonymous* request, and going
+   * through a session would attach whatever GitHub cookies the user's own browsing has left behind,
+   * turning "the public can read this" into "I can read this", which is true of every private repo
+   * you own.
+   */
+  private async probeVisibility(repo: string): Promise<{ verdict: RepoVisibility; url: string } | null> {
+    let url: string;
+    try {
+      const { stdout } = await this.git(repo, ['remote', 'get-url', 'origin']);
+      const ref = parseRemote(stdout);
+      if (!ref) return null;
+      const candidate = probeUrlFor(ref);
+      if (!candidate) return null;
+      url = candidate;
+    } catch {
+      // No origin at all: a purely local repo, which nobody else can read.
+      return null;
+    }
+
+    const cached = this.visibility.get(url);
+    if (cached && (cached.verdict === 'public' || Date.now() - cached.at < VISIBILITY_TTL_MS)) {
+      return { verdict: cached.verdict, url };
+    }
+
+    let status: number | null = null;
+    try {
+      // HEAD, because only the status code matters and these pages are not small.
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      status = response.status;
+    } catch {
+      // Offline, DNS failure, timeout. `visibilityFromStatus(null)` is 'unknown', which allows.
+      status = null;
+    }
+
+    const verdict = visibilityFromStatus(status);
+    this.visibility.set(url, { verdict, at: Date.now() });
+    return { verdict, url };
   }
 
   private async hasLocalHead(repo: string): Promise<boolean> {
