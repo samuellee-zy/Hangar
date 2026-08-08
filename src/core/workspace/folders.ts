@@ -77,12 +77,82 @@ export function deleteFolder(workspace: Workspace, folderId: string): void {
   );
 }
 
-/** Reorders top-level items. Ids the renderer didn't know about are appended, never dropped. */
-export function reorderItems(workspace: Workspace, itemIds: string[]): void {
-  const byId = new Map(workspace.items.map((item) => [item.id, item]));
-  const ordered = itemIds.map((id) => byId.get(id)).filter((i): i is RailItem => Boolean(i));
-  const seen = new Set(ordered.map((i) => i.id));
-  workspace.items = [...ordered, ...workspace.items.filter((i) => !seen.has(i.id))];
+/** Where an id currently sits in the tree. `null` for an id the tree has never heard of. */
+type Spot =
+  | { level: 'top'; index: number }
+  | { level: 'folder'; folderId: string; index: number };
+
+function spotOf(workspace: Workspace, id: string): Spot | null {
+  const top = workspace.items.findIndex((item) => item.id === id);
+  if (top !== -1) return { level: 'top', index: top };
+  for (const item of workspace.items) {
+    if (item.kind !== 'folder') continue;
+    const index = item.serviceIds.indexOf(id);
+    if (index !== -1) return { level: 'folder', folderId: item.id, index };
+  }
+  return null;
+}
+
+/**
+ * Puts `activeId` where `overId` is — the one operation the rail's drag performs, for reordering
+ * and for filing into a folder alike.
+ *
+ * **The destination is decided by what was dropped on, not by where that lands in the list.** The
+ * rail draws folder members inline, so the flattened order is ambiguous in exactly one place: a
+ * service between the last member of a folder and the next top-level tile could mean either, and a
+ * column of 48px icons has nowhere to show an indent guide saying which. Reading the drop target
+ * instead makes the gesture describable in one sentence — drop *on a folder* to file it there, drop
+ * *on a tile* to sit beside it — with no ambiguity to resolve.
+ *
+ * Index semantics match dnd-kit's `arrayMove`, which is what the drag animation has already shown
+ * the user: the target index is taken before the removal, so it is interpreted against the
+ * already-shortened list.
+ */
+export function moveItemTo(workspace: Workspace, activeId: string, overId: string): void {
+  if (activeId === overId) return;
+  const from = spotOf(workspace, activeId);
+  const to = spotOf(workspace, overId);
+  if (!from || !to) return;
+
+  const active = from.level === 'top' ? workspace.items[from.index] : undefined;
+
+  // Folders never nest. Dropped anywhere, a folder lands at the top level — beside the *folder*
+  // when the pointer was over one of its members, because that is where it can actually be seen.
+  if (active?.kind === 'folder') {
+    const index =
+      to.level === 'top' ? to.index : workspace.items.findIndex((i) => i.id === to.folderId);
+    if (index === -1) return;
+    const [moved] = workspace.items.splice(from.index, 1);
+    if (moved) workspace.items.splice(index, 0, moved);
+    return;
+  }
+
+  const over = to.level === 'top' ? workspace.items[to.index] : undefined;
+  const target: Spot =
+    over?.kind === 'folder'
+      ? // Onto a folder tile: file it there. Appending rather than inserting because a collapsed
+        // folder shows no members to aim between, and this gesture has to mean the same thing
+        // whether the folder is open or shut.
+        { level: 'folder', folderId: over.id, index: over.serviceIds.length }
+      : to;
+
+  detach(workspace, activeId);
+
+  if (target.level === 'top') {
+    workspace.items.splice(Math.min(target.index, workspace.items.length), 0, {
+      kind: 'service',
+      id: activeId,
+    });
+    return;
+  }
+
+  const folder = findFolder(workspace, target.folderId);
+  // The folder was deleted between the render and the drop. Top level, rather than nowhere.
+  if (!folder) {
+    workspace.items.push({ kind: 'service', id: activeId });
+    return;
+  }
+  folder.serviceIds.splice(Math.min(target.index, folder.serviceIds.length), 0, activeId);
 }
 
 /** Drops references to services that no longer exist, from both levels. */

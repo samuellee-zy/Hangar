@@ -1,11 +1,18 @@
 import path from 'node:path';
-import { WebContentsView } from 'electron';
-import { resolveUrl } from '@shared/catalog';
+import { nativeTheme, WebContentsView } from 'electron';
+import { isOrphaned, resolveUrl } from '@shared/catalog';
 import { loadConfig } from '@main/platform/config';
 import { captureFavicon } from '@main/features/icons';
-import { decideFailure, errorPageHtml, shouldRecoverFromCrash } from '@core/runtime/recovery';
+import { creditSuspendedTime } from '@core/runtime/hibernate';
+import {
+  decideFailure,
+  errorPageHtml,
+  orphanPageHtml,
+  shouldRecoverFromCrash,
+} from '@core/runtime/recovery';
 import { attachNavigationGuards, partitionFor, sessionFor } from '@main/platform/session';
 import { attachShortcuts, type CommandSink } from '@main/window/shortcuts';
+import type { KeyContext } from '@core/keyboard/keymap';
 import type { ServiceInstance } from '@shared/types';
 
 /**
@@ -25,12 +32,31 @@ export interface ServiceRuntime {
 
 const preloadPath = () => path.join(__dirname, '../preload/service.cjs');
 
+/**
+ * Where a service's view should start.
+ *
+ * Normally the service. When its catalog entry has gone, an explanation instead of the
+ * `about:blank` `resolveUrl` otherwise falls back to — that pane can never load anything, since
+ * with no allowlist to check `isAllowedHost` refuses every navigation, so a blank page is a dead
+ * end the user has no way to read. Shared with the retry path so both agree.
+ */
+export const startPageFor = (svc: ServiceInstance): string =>
+  isOrphaned(svc)
+    ? orphanPageHtml({ serviceName: svc.name, catalogId: svc.catalogId })
+    : resolveUrl(svc);
+
 export class ServiceManager {
   private runtimes = new Map<string, ServiceRuntime>();
 
   constructor(
     private onChange: () => void,
     private onCommand: CommandSink,
+    /**
+     * The keymap in force for one service — the shared bindings, minus the chords that service
+     * keeps for itself. Resolved per keystroke by the window, which owns the config; a value
+     * captured here would go stale the moment a binding or a passthrough list changed.
+     */
+    private keyContext: (serviceId: string) => KeyContext,
     /** Lets the window attach the web context menu without ServiceManager knowing about menus. */
     private onViewCreated: (wc: Electron.WebContents) => void,
     /** Search results are reported by the searched contents, but rendered by the find bar. */
@@ -72,6 +98,11 @@ export class ServiceManager {
       },
     });
 
+    // Waking a hibernated service rebuilds the view from nothing, and Chromium paints an unstyled
+    // view white — a full-pane white flash on every wake, including in dark mode. Matching the
+    // app's own background makes the gap read as "loading" rather than as something breaking.
+    view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1b1b1f' : '#f4f4f6');
+
     const runtime: ServiceRuntime = {
       view,
       loading: true,
@@ -82,7 +113,7 @@ export class ServiceManager {
 
     attachNavigationGuards(view.webContents, svc, partition);
     // Bound here, once per view, rather than on the focus path — see attachShortcuts.
-    attachShortcuts(view.webContents, this.onCommand);
+    attachShortcuts(view.webContents, this.onCommand, () => this.keyContext(svc.id));
     // No-op for services with a vendored logo; only custom connections need this.
     captureFavicon(view.webContents, svc, ses);
     this.onViewCreated(view.webContents);
@@ -96,8 +127,6 @@ export class ServiceManager {
       this.onChange();
     });
 
-    // A load that actually succeeded clears the backoff, so an outage earlier in the session
-    // doesn't make the next unrelated blip give up immediately.
     view.webContents.on('found-in-page', (_e, result) => {
       this.onFoundInPage(result.activeMatchOrdinal, result.matches);
     });
@@ -106,8 +135,23 @@ export class ServiceManager {
     // when a message arrives.
     view.webContents.on('page-title-updated', (_e, title) => this.onTitle(svc.id, title));
 
+    // One handler, because there was briefly a second one further down doing the zoom half. Both
+    // ran, so the effect was right and the cost was a duplicated listener per view; the
+    // `page-title-updated` beside it was duplicated the same way and was pure waste.
     view.webContents.on('did-finish-load', () => {
+      // A load that actually succeeded clears the backoff, so an outage earlier in the session
+      // doesn't make the next unrelated blip give up immediately.
       runtime.failures = 0;
+
+      // Applied on every load, not once before the first navigation. Chromium's zoom level is
+      // per-origin and resets on a cross-origin navigation, so a factor set on the empty
+      // about:blank contents never survived to the real page — which read as "zoom resets itself"
+      // after every reload and every wake from hibernation.
+      //
+      // Re-read from config rather than closing over `svc`: the instance captured when the view was
+      // created is stale after a zoom change.
+      const current = loadConfig().services.find((entry) => entry.id === svc.id);
+      if (current) view.webContents.setZoomFactor(current.zoom);
     });
 
     view.webContents.on('did-fail-load', (_e, errorCode, errorDescription, url, isMainFrame) => {
@@ -151,19 +195,7 @@ export class ServiceManager {
       }
     });
 
-    // Applied on every load, not once before the first navigation. Chromium's zoom level is
-    // per-origin and resets on a cross-origin navigation, so a factor set on the empty
-    // about:blank contents never survived to the real page — which read as "zoom resets itself"
-    // after every reload and every wake from hibernation.
-    // Fires on every SPA title change, not just navigation — which is exactly what a chat app does
-    // when a message arrives.
-    view.webContents.on('page-title-updated', (_e, title) => this.onTitle(svc.id, title));
-
-    view.webContents.on('did-finish-load', () => {
-      const current = loadConfig().services.find((entry) => entry.id === svc.id);
-      if (current) view.webContents.setZoomFactor(current.zoom);
-    });
-    void view.webContents.loadURL(resolveUrl(svc));
+    void view.webContents.loadURL(startPageFor(svc));
 
     return runtime;
   }
@@ -172,6 +204,15 @@ export class ServiceManager {
   markActive(serviceId: string): void {
     const runtime = this.runtimes.get(serviceId);
     if (runtime) runtime.lastActiveAt = Date.now();
+  }
+
+  /** Time off screen shouldn't include time the machine was asleep. See `creditSuspendedTime`. */
+  creditSuspendedTime(suspendedForMs: number): void {
+    if (suspendedForMs <= 0) return;
+    const now = Date.now();
+    for (const runtime of this.runtimes.values()) {
+      runtime.lastActiveAt = creditSuspendedTime(runtime.lastActiveAt, suspendedForMs, now);
+    }
   }
 
   navigate(serviceId: string, direction: 'back' | 'forward'): void {

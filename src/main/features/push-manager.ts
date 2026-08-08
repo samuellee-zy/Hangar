@@ -67,6 +67,27 @@ export class PushManager {
       this.deps.save(this.registrations);
     }
 
+    this.connectAll();
+  }
+
+  /**
+   * Drops every socket and dials again.
+   *
+   * A laptop waking has no live connections, but nothing has noticed yet: the peer vanished without
+   * a FIN, so `ON_DISCONNECT` waits on the 5-minute heartbeat to miss, and the backoff can add five
+   * more on top. That is a ten-minute hole in notifications after every lid open, and the only
+   * symptom is messages arriving late — which reads as the service being slow, not as a bug here.
+   * Reconnecting deliberately costs one round trip per service.
+   */
+  reconnectAll(): void {
+    if (!this.started || !this.registrations.length) return;
+    this.deps.log(`push: reconnecting ${this.registrations.length} socket(s) after wake`);
+    // `connect` tears the existing client down first, which also clears any pending retry timer and
+    // resets the backoff — so a socket already deep into its retry schedule is pulled back to now.
+    this.connectAll();
+  }
+
+  private connectAll(): void {
     for (const registration of this.registrations) {
       void this.connect(registration).catch((error) => {
         this.deps.log(`push: reconnect failed for ${registration.serviceId}: ${String(error)}`);

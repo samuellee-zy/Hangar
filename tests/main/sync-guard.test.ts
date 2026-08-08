@@ -60,12 +60,20 @@ function makeSync(allowPublicRepo = false) {
   });
 }
 
-beforeEach(() => {
+beforeEach((ctx) => {
   scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'hangar-guard-'));
   repo = path.join(scratch, 'clone');
-  execFileSync('git', ['init', '-q', repo]);
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+  try {
+    execFileSync('git', ['init', '-q', repo]);
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+  } catch (err) {
+    // A sandboxed shell denies `.git/hooks`, so `git init` fails for a reason that has nothing to
+    // do with this code — and the suite then reports ten red tests that look like a regression.
+    // Skip and say why. This must stay a *skip*: silently passing would make the guard's own
+    // guard inert, which is the failure mode this file exists to catch.
+    ctx.skip(`git is unusable here: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // 200 = "anyone can read this". The refusal path never reaches `git fetch`, so no network.
   fetchMock = vi.fn(async () => new Response(null, { status: 200 }));

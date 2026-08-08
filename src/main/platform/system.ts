@@ -1,6 +1,7 @@
 import { app, globalShortcut, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { applyLaunchAgent } from '@main/platform/launch-agent';
 import type { Preferences, ProxyConfig } from '@shared/types';
 
 /**
@@ -14,39 +15,21 @@ import type { Preferences, ProxyConfig } from '@shared/types';
 /**
  * Returns whether the setting actually took effect.
  *
- * Two ways this silently doesn't work, and both had to be found by running it:
+ * This used to call `app.setLoginItemSettings`, which cannot work here: macOS registers login items
+ * against a code signature, and unsigned it refuses with "Operation not permitted" — logged by
+ * Chromium's native layer, so the call never throws and a naive one looks like success. That is
+ * decision #45, and reading the value back was how the toggle at least admitted it had failed.
  *
- *  1. **Unpackaged**, an Electron binary would register *itself* rather than Hangar, so it's
- *     skipped entirely.
- *  2. **Packaged but unsigned**, macOS refuses outright — "Operation not permitted", logged by
- *     Chromium's native layer, which means it never throws and a naive call looks like success.
- *     Login items are registered against a code signature; without a Developer ID there's nothing
- *     for macOS to trust.
+ * A user-level LaunchAgent has no signature requirement, so the toggle can simply work. Both
+ * mechanisms at once would be worse than either: on a signed build they are two independent
+ * registrations, and login would start Hangar twice with the single-instance lock discarding one.
+ * So this is now a single line, and the read-back honesty moves with it.
  *
- * So the result is *verified by reading back* rather than assumed. A toggle the user flips that
- * quietly does nothing is worse than one that admits it can't.
+ * `startHidden` no longer has anything to do here — `setLoginItemSettings`' `openAsHidden` was only
+ * ever a hint to that mechanism, and boot/index.ts hides the window itself on any launch.
  */
 export function applyLoginItem(prefs: Preferences): boolean {
-  if (!app.isPackaged) return false;
-
-  const wanted = prefs.behaviour.launchAtLogin;
-  // Skip a no-op call: the failure logs a native error line, and repeating it on every unrelated
-  // boot makes the log look broken.
-  if (app.getLoginItemSettings().openAtLogin === wanted) return true;
-
-  app.setLoginItemSettings({
-    openAtLogin: wanted,
-    openAsHidden: prefs.behaviour.startHidden,
-  });
-
-  const applied = app.getLoginItemSettings().openAtLogin === wanted;
-  if (!applied) {
-    console.warn(
-      '[system] launch at login was refused by macOS. This needs a code-signed build — ' +
-        'see docs/packaging.md.'
-    );
-  }
-  return applied;
+  return applyLaunchAgent(prefs);
 }
 
 /** Chromium's proxy rule format. `system` means "don't set one" — the default already is. */
@@ -78,10 +61,26 @@ export async function applyProxy(sessions: Iterable<Electron.Session>, prefs: Pr
 }
 
 /**
+ * Which sessions already have the handler.
+ *
+ * `session.fromPartition` returns a singleton per partition, and `pruneSessions` drops a partition
+ * from the "configured" set when no service uses it — so removing every service on a partition and
+ * re-adding one runs `sessionFor` again against the *same* `Session`. The permission handlers
+ * beside this one are `setX` calls and replace; `on('will-download')` appends, so each cycle
+ * stacked another listener and one download then ran the save-path logic twice.
+ *
+ * Weak, so a session that really does go away isn't retained by this map.
+ */
+const downloadHandlerAttached = new WeakSet<Electron.Session>();
+
+/**
  * Downloads land in the configured folder without a prompt unless asked otherwise. Attaching per
- * session rather than globally, because each service has its own.
+ * session rather than globally, because each service has its own. Idempotent — see above.
  */
 export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Preferences): void {
+  if (downloadHandlerAttached.has(ses)) return;
+  downloadHandlerAttached.add(ses);
+
   ses.on('will-download', (_event, item) => {
     const prefs = getPrefs().downloads;
     if (!prefs.askWhereToSave) {

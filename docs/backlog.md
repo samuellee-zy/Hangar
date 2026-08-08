@@ -4,8 +4,15 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after **Phase 5** (renderer audit, accessibility, E2E, catalog, sync). 327 unit tests plus 8 Playwright end-to-end tests, enforced module
-boundaries, a packaged DMG verified end to end, and every shipped control does something.
+Last updated after **Phase 6** (stability audit: config-sync lifecycle, teardown, renderer split),
+plus the long-running work: crash resilience, waking from sleep, and launch at login without a
+signature. Enforced module boundaries, a packaged DMG verified end to end, and every shipped control
+does something.
+
+**Test counts are deliberately not written here.** They drifted three times — this page once claimed
+327 in one place and 262 in another while the suite ran 392, then said 700 while it ran 690. Run
+`npm run check` for the unit total and `rg -c '^test\(' e2e/*.spec.ts` for the end-to-end one. A
+number in prose is a number nobody updates.
 
 Phase 4 closed everything in the old §1.4 and most of §2 — including a P0 that destroyed the config
 when you removed your last service, and the discovery that **Web Push had never worked for the case
@@ -19,11 +26,11 @@ Can't be finished by writing more of it. Each needs a purchase, an account, or a
 
 ### 1.1 Code signing — $99/year Apple Developer Program
 
-The single highest-leverage unblock here. Three things depend on it:
+Two things depend on it. **Launch at login used to be a third and no longer is** — it now goes
+through a user LaunchAgent, which macOS does not gate on a signature ([decisions #93](decisions.md)).
 
 | Blocked | Detail |
 | --- | --- |
-| **Launch at login** | macOS registers login items against a code signature. Unsigned it refuses with "Operation not permitted" — logged by Chromium's native layer, so it never throws. `applyLoginItem` reads the setting back to detect this, and Settings says so on the control. |
 | **Giving the DMG to anyone else** | An unsigned, un-notarised DMG shows "damaged and can't be opened" on another Mac. The message is a lie — it means unsigned — but the recipient can't tell. |
 | **Auto-update** | Deliberately not configured (`publish: null`). An updater on an unsigned build is a mechanism for delivering someone else's binary to your users. Needs signing *and* notarisation first, not as a follow-up. |
 
@@ -85,6 +92,7 @@ Decisions, not omissions. Revisit if the reasoning stops holding.
 | **Auto-update** | See 1.1 — needs signing first. |
 | **Per-service proxy** | Global only. Per-service means per-session proxy config and a much larger surface for "why won't this load". |
 | **Windows / Linux builds** | The whole layout story is `trafficLightPosition`, `titleBarStyle: 'hidden'` and macOS window buttons. Porting is real work, not a config flag. |
+| **Containerisation** | A container moves a process whose interface is a socket. This one's interface is a screen, a keyboard, a notification centre and a microphone. What you'd get is the Linux build in a VM behind VNC, minus the tray, notifications, calls and sleep handling — on Windows and macOS that VM is running on the machine that could have run the app. Electron already is the portability layer; native builds are the cross-OS answer if one is ever wanted. |
 
 ---
 
@@ -94,85 +102,94 @@ Wanted, unblocked, just not done. Roughly in value order.
 
 ### 4.1 Interaction
 
-- **Drag a tile onto a pane** — currently a tile always opens in the focused pane or a new one.
-  Dropping directly onto a specific pane is the obvious gesture and isn't wired ([decisions #10](decisions.md)).
-- **Drag a service into a folder** — menu-only today (`Move to folder ▸`). Dragging works for
-  reordering but not for nesting.
-- **Compact rail hover-expand** — `compactRail` currently just narrows the rail to 48px. The
-  intended behaviour is a sliver that expands on hover.
+- ~~**Drag a tile onto a pane**~~ — built. Was filed as impossible on the strength of
+  [decisions #10](decisions.md); the way through was to stop letting renderers decide anything, and
+  is written up as [decisions #86](decisions.md).
+- ~~**Drag a service into a folder**~~ — built. Members are rows of the same sortable list as the
+  top level, so a service drags in and out; the right-click `Move to folder ▸` stays for keyboard
+  and precision use.
+- ~~**Compact rail hover-expand**~~ — built. The sliver stays 48px as far as the panes are
+  concerned and grows *over* them under the pointer, which needed the rail ordered in front of the
+  panes — see [decisions #88](decisions.md).
 - **Wake-on-click affordance for sleeping tiles** — a sleeping tile is 50% opacity and a tooltip.
   Nothing says "click to wake", so it reads as broken rather than asleep.
 
 ### 4.2 Settings
 
-- **Reset to defaults** — per section and globally. Not built at all. Notable because a bad rail
-  position or zoom is currently only recoverable by editing `config.json`.
-- **Keyboard rebinding** — the shortcut map is shown read-only. Needs rebinding, conflict
-  detection, and a **per-service passthrough list** so a service can keep a chord for itself. ⌘K in
-  Slack is the motivating case: Hangar swallows it for the palette.
-- **Notification level per service in the UI** — `notificationLevel` is honoured everywhere but
-  only reachable by editing config.
+- ~~**Reset to defaults**~~ — built, per section and globally, so a bad rail position or zoom no
+  longer means editing `config.json` by hand.
+- ~~**Keyboard rebinding**~~ — built, with conflict detection and the per-service passthrough list
+  that lets Slack keep ⌘K for itself. What had blocked it was not the UI but a second copy of the
+  chord living in the menu, so a rebind changed one and not the other — [decisions
+  #89](decisions.md).
+- ~~**Notification level per service in the UI**~~ — built, as a `mute` checkbox in Settings →
+  Connections beside `hibernate`. `update-service` gained validation at the same time: it was a
+  bare `Object.assign`, so `notificationLevel: 'quiet'` would have persisted happily. See
+  `core/services/patch.ts`.
 
 ### 4.3 Accessibility
 
-The weakest area in the app, and the one with no tests.
+Still the weakest area, though no longer bare. Overlays are `role="dialog"` with a focus trap
+(`useFocusTrap.ts`), Settings controls pair `<label htmlFor>` with `aria-describedby`, folders carry
+`aria-expanded` and a `role="group"`, the rail has a live region for drag announcements, and
+`:focus-visible` gives a visible ring.
 
-- The folder tree isn't announced as a tree — no `role="tree"` / `treeitem`, no expanded state.
+What is genuinely missing:
+
+- The folder tree isn't announced as a tree — no `role="tree"` / `treeitem`. Partly deliberate: full
+  tree semantics commit to arrow-key navigation the rail doesn't implement.
 - Panes have no landmark roles, so there's no way to navigate between them with a screen reader.
-- Buttons have `aria-label`s; that's the extent of it.
-- Focus management on overlay open/close is unverified.
+- **No VoiceOver pass has been done.** Everything above is markup that looks right, which is not the
+  same as usable, and there are still no accessibility tests.
 
-**To do it:** roles and states first, then an actual VoiceOver pass. Fixing this properly is
-probably a day, and it's the thing most likely to be embarrassing if anyone else uses this.
+**To do it:** pane landmarks first, then an actual VoiceOver pass. It's the thing most likely to be
+embarrassing if anyone else uses this.
 
 ---
 
 ## 5. Testing gaps
 
-262 tests under Vitest, plus `dependency-cruiser` on every run. The pure-module architecture is
-what makes that possible, and `shell-state.ts` and `migrate.ts` were extracted from `app-window.ts`
-and `config.ts` specifically so their logic could be reached.
+Vitest plus `dependency-cruiser` on every run. The pure-module architecture is what makes that
+possible: `shell-state.ts` and `migrate.ts` were extracted from `app-window.ts` and `config.ts`
+specifically so their logic could be reached, and `effects.ts` for the same reason — "does changing
+the API key restart push?" was a question you could only answer by running Electron.
+
+A score of them skip when `git init` can't create `.git/hooks`, which is the case in a sandboxed
+shell. They skip with a reason rather than failing; a red suite for a reason unrelated to the code is
+how real failures get ignored.
 
 What it still doesn't cover:
 
-- **No integration or E2E tests.** `HANGAR_PROBE=1` now exercises the real paths — hibernated push
-  delivery, window teardown and rebuild, the preload's main-world patches — but its assertions are
-  `console.log` lines a human reads, not a failing exit code. **Promoting it to Playwright is the
-  highest-value remaining test work**; the eight target cases are listed in the Phase 4 plan.
-- **No renderer tests** beyond `accent.ts`. No React component is tested; `@testing-library/react`
-  is the intended tool.
-- **`app-window.ts` is still ~1,300 lines** and its Electron-coupled half — `relayout`,
-  `openService`, `dispatch`'s side effects — remains untestable without a real window.
-- **`tests/` is not typechecked.** Including it surfaces ~86 errors that are one real finding:
-  fixtures for older config versions are honest about missing fields that the types declare
-  required. Now that `migrateConfig` accepts partials this is mostly resolvable.
-- **The probe's timing is racy** — icon counts read 0, 4 and 9 across runs at the same 3-second
-  mark, because icons load asynchronously. Fine for a diagnostic, wrong for a test.
+- **Most of what needs a real window.** Pane geometry, relayout ordering and view attachment are
+  reachable only through Playwright, and the E2E suite covers the paths that have broken before
+  rather than the surface as a whole.
+- **`app-window.ts` has grown to nearly 2,000 lines**, and its Electron-coupled half — `relayout`,
+  `openService`, `dispatch`'s side effects — remains untestable without a real window. It has roughly
+  doubled since this entry was first written, which is the point: extracting pure logic has kept the
+  *tested* share up without shrinking the file.
+- **No accessibility tests at all**, which is the gap behind §4.3.
 
-**Highest value next:** promote the probe to a real harness with assertions and a non-zero exit
-code, so "the UI does nothing" gets caught by CI rather than by noticing.
+**Highest value next:** pane landmark roles and a VoiceOver pass, now that the probe-to-Playwright
+migration is done.
 
 ---
 
 ## 6. Enhancements not yet built
 
-**Catalog expansion.** 9 entries against Rambox's ~700 and Shift's ~1,500. Each is ~8 lines plus a
+**Catalog expansion.** 55 entries against Rambox's ~700 and Shift's ~1,500. Each is ~8 lines plus a
 vendored icon; the real cost is curating `allowedHosts`, and getting one wrong sends the service's
 own URL to the system browser. `catalog.test.ts` now asserts every entry allows its own URL, so the
 expansion has a safety net. Target ~60.
 
-**Ad and tracker blocking.** `@ghostery/adblocker-electron` — uBlock Origin/EasyList compatible,
-serialises its engine to disk, applies per-session, which matches the existing architecture. A
-Rambox Pro feature, and it measurably cuts memory across many loaded services.
+One rule learnt from doing it: **do not delete an entry to fix it.** A `catalogId` that stops
+resolving strands every existing instance on `about:blank` with every navigation refused and nothing
+saying why. Entries that cannot work — Signal has no web client, Obsidian's vault is local — carry a
+`caveat` shown in the picker instead. `isOrphaned` covers the case anyway, for anything renamed or
+removed later.
 
-**Config sync across machines.** Export already exists; this is a sync target plus conflict
-handling. **Must exclude** `pushRegistrations` and anything partition-scoped — syncing those breaks
-both machines.
-
-**Per-service injected JS for unread.** Title patterns now cover Gmail, Slack, Teams and Linear
-([decisions #64](decisions.md)). Rambox's primary mechanism is injected per-service JavaScript
-querying known DOM nodes, which reaches services that don't put a count in the title at all. The
-`customJs` seam already exists to hang it on.
+**Ad and tracker blocking.** *Done* — `@ghostery/adblocker-electron` in `main/platform/adblock.ts`,
+per session in `sessionFor`, engine serialised to disk, `network.blockAds` to turn it off. See
+[preferences.md](preferences.md) for the measured costs.
 
 **Startup performance.** V8 snapshots cut Atom's startup ~50%. Worth measuring now that the module
 boundaries make the main bundle's dependency graph legible.
@@ -191,6 +208,9 @@ Not bugs; things that will look like bugs later.
   per-service rather than global.
 - **Unread clears by looking, not by dismissing.** Matches the underlying web apps and is the only
   signal we reliably have.
+- **A sleeping service's count comes from a background request.** Only for services with an endpoint
+  rule, only on that service's own hosts, and only over the login it already has
+  ([decisions #91](decisions.md)). A service you keep open is never called.
 - **`hibernateAfterMinutes` defaults to 0 (never).** Hibernation is opt-in; the memory saving is
   real but so is the cost of a cold load.
 - **The tray shows a count as text, not a badge.** macOS trays have no badge API.
@@ -203,15 +223,14 @@ Not bugs; things that will look like bugs later.
 
 If picking this up fresh:
 
-1. **Promote the probe to Playwright** (§5) — everything after it gets safer, and the probe already
-   knows what to assert; it just can't fail a build.
-2. **Per-service unread detection** (§6, D1) — the largest remaining correctness gap: unread is
-   still a tally of `Notification` calls, so it only ever rises and reads zero for a service whose
-   browser notifications are off.
-3. **Accessibility roles** (§4.3) — cheapest real quality win, still the weakest area.
-4. **Reset to defaults** (§4.2) — small, and removes the only "edit the JSON" recovery path.
-5. **Verify the unverified** (§2) — an afternoon with a checklist, no new code.
-6. **Code signing** (§1.1) — a purchase decision; unblocks three things at once.
+1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
+   rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
+   Trello, Asana, ClickUp, Monday and Figma each need one afternoon with the page open, following
+   [unread-selectors.md](unread-selectors.md).
+2. **Accessibility: pane landmarks and a VoiceOver pass** (§4.3) — cheapest real quality win, still
+   the weakest area, and the only one with no tests behind it.
+3. **Verify the unverified** (§2) — an afternoon with a checklist, no new code.
+4. **Code signing** (§1.1) — a purchase decision; unblocks distribution and auto-update.
 
 ---
 
@@ -262,13 +281,34 @@ two dozen were done by hand.
 | **Config sync** | Git-backed, allowlist of what travels, conflicts never auto-resolved. Three bugs found only by testing two real clones. |
 | **Reset to defaults** | Per section and globally. |
 
+---
+
+## 12. What Phase 6 closed
+
+A stability audit rather than a feature phase: eleven defects reachable by ordinary use, four latent
+ones hardened with tests. The one worth naming is the first.
+
+| | |
+| --- | --- |
+| **Two config syncs, one repo** | ⌘W destroys the window and a dock click builds a new `AppWindow` with a new `ConfigSync`. The mutex was `this.running` — correct within one instance, absent across two — so both could run `git` against the same repository and fight over `index.lock`. The mutex is now module-level, and `dispose()` cancels the armed debounce that `unref()` never stopped. |
+| **Teardown was partial** | `findBar.close()` threw `removeChildView` on an already-destroyed window, skipping the rest of dispose. The overlay and find bar cache their view and only detach on close, so a closed one was a detached renderer the window never collected. |
+| **Duplicate detection read one workspace** | The `+` picker asked `services` rather than `allServices`, so a Gmail added in another workspace offered a second account instead of focusing the one that exists. |
+| **Typing was clobbered by broadcasts** | `CommitOnBlur` re-synced its draft on every `value` change, and `value` comes from ShellState — a sync tick mid-word reverted the field and then committed the reverted text. |
+| **A page could crash the main process** | `__hangar.notify(null)` reached `handleNotification` verbatim; reading `.title` threw inside an `ipcMain.on` handler, where nothing catches it. |
+| **An orphaned account was caught only by sync** | `validateIncoming` refused a service naming a missing account; `migrateConfig` — the path load and import share — did not. The failure surfaced weeks later as being signed out of everything, because it killed the `persistAll` loop that promotes session cookies. |
+| **Unlabelled preferences** | Every control in Settings was an unlabelled input: the name was a sibling `span`, so VoiceOver announced forty bare checkboxes and clicking a name did nothing. |
+
 ### Still open
 
-- **54 test-fixture type errors** (§10) — needs a hand-written fixture helper per file.
-- **`app-window.ts` is ~1,450 lines.** Its pure logic is extracted and tested; the Electron-coupled
-  half still needs a real window, which is what the E2E suite now covers.
-- **Per-service injected JS for unread** — title patterns cover the services that show a count in
-  the title; injected DOM queries would reach the ones that don't.
+- **`app-window.ts` is close to 2,000 lines.** Its pure logic is extracted and tested; the
+  Electron-coupled half still needs a real window, which is what the E2E suite now covers.
+- **Unread selectors for the eight services that could have one.** The mechanism is done; the
+  selectors are not, and are deliberately not guessed ([decisions #90](decisions.md)). The
+  procedure for finding one is written up in [unread-selectors.md](unread-selectors.md) — what is
+  left is the sitting-with-DevTools part, which needs a real logged-in account per service.
+- **Service APIs** — blocked on a decision rather than on code: an OAuth client secret an
+  open-source binary cannot hold, or somewhere to keep a personal token that git sync will not
+  publish ([decisions #91](decisions.md)).
 - **V8 snapshots** — measure first; startup may already be fine.
 - **Signing** — ruled out. Note that Homebrew ends support for casks failing Gatekeeper on
   **1 Sept 2026**, so a cask is no longer a signing-free distribution route.

@@ -68,6 +68,24 @@ export function migrateConfig(raw: unknown): Config {
     ? { accounts: parsed.accounts!, services: parsed.services.map(backfillService) }
     : migrateV1({ services: parsed.services.map(backfillService) });
 
+  // Every service must be able to resolve its account. `partitionFor` throws on a dangling
+  // `accountId`, and it is called from `openService` — so a config that gets this wrong doesn't
+  // fail loudly at the bad service, it takes down `restoreLayout` and the 60-second `persistAll`
+  // loop with it. That loop is what promotes session cookies to disk, so the visible symptom is
+  // being signed out of everything at the next restart, weeks later and nowhere near the cause.
+  //
+  // `validateIncoming` has had this check for the sync path since the beginning. It belongs here
+  // too: this function exists precisely so load and import share one guarantee, and until now the
+  // guarantee sync relied on was the one thing it didn't cover.
+  const accountIds = new Set(migrated.accounts.map((a) => a.id));
+  const orphaned = migrated.services.filter((svc) => !accountIds.has(svc.accountId));
+  if (orphaned.length > 0) {
+    throw new Error(
+      `${orphaned.length} service(s) reference an account that isn't in the config: ` +
+        orphaned.map((s) => s.name).join(', ')
+    );
+  }
+
   return {
     version: 4,
     // v2 → v3 added preferences (additive). v3 → v4 turns each workspace's flat serviceIds array

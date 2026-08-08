@@ -1,8 +1,10 @@
 import { catalogById } from '@shared/catalog';
 import { flattenServiceIds, pruneMissing } from '@core/workspace/folders';
+import { KEY_ACTIONS, RESERVED_CHORDS, conflicts, resolvePassthrough } from '@core/keyboard/keymap';
 import type {
   Config,
   Command,
+  KeyboardMap,
   Pane,
   ServiceInstance,
   ServiceView,
@@ -26,7 +28,7 @@ import type {
 /** Falls back to the first workspace, so a dangling `activeWorkspaceId` still renders something. */
 export function activeWorkspaceOf(
   config: Config,
-  workspaceId: string | null
+  workspaceId: string | null,
 ): Workspace | undefined {
   return config.workspaces.find((w) => w.id === workspaceId) ?? config.workspaces[0];
 }
@@ -66,6 +68,9 @@ export interface ProjectionInput {
   quarantinedConfigs: string[];
   syncStatus: SyncStatus;
   flashServiceId?: string | null;
+  renameRequest?: { serviceId: string; nonce: number } | null;
+  /** Whether a compact rail is currently open. See `railSizes`. */
+  railExpanded: boolean;
 }
 
 /**
@@ -82,6 +87,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     syncStatus: input.syncStatus,
     allServices: config.services,
     flashServiceId: input.flashServiceId,
+    renameRequest: input.renameRequest,
     services: activeServicesOf(config, config.activeWorkspaceId).map((svc): ServiceView => {
       const entry = catalogById(svc.catalogId);
       const runtime = runtimes.get(svc.id);
@@ -101,6 +107,46 @@ export function projectShellState(input: ProjectionInput): ShellState {
     panes: input.panes,
     focusedPaneId: input.focusedPaneId,
     activeWorkspaceId: config.activeWorkspaceId,
+    railExpanded: input.railExpanded,
+    keyboard: keyboardMapOf(config),
+  };
+}
+
+/**
+ * The shortcut table as Settings draws it.
+ *
+ * Conflicts are computed here rather than in the renderer for the same reason the table is: the
+ * tie-break rule (`KEY_ACTIONS` order) is what decides which of two clashing shortcuts actually
+ * fires, and a renderer re-deriving it would be a second copy of the rule free to disagree.
+ */
+export function keyboardMapOf(config: Config): KeyboardMap {
+  const bindings = config.preferences.keyboard?.bindings ?? {};
+  const clashing = conflicts(bindings);
+  return {
+    actions: KEY_ACTIONS.map((action) => {
+      const chord = bindings[action.id] ?? '';
+      return {
+        id: action.id,
+        label: action.label,
+        chord,
+        conflict: clashing.has(chord),
+      };
+    }),
+    reserved: [...RESERVED_CHORDS],
+    // Resolved here, through the same function the keystroke path uses. The renderer could not do
+    // it anyway — the catalog writes `mod+k`, and expanding that needs a platform it can't ask.
+    passthrough: Object.fromEntries(
+      config.services.map((svc) => [
+        svc.id,
+        {
+          chords: resolvePassthrough(
+            svc.keyboardPassthrough,
+            catalogById(svc.catalogId)?.passthrough,
+          ),
+          fromCatalog: svc.keyboardPassthrough === undefined,
+        },
+      ]),
+    ),
   };
 }
 
@@ -113,7 +159,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
  */
 export function resolveCommand(
   command: Command,
-  context: { config: Config; focusedPaneId: string | null }
+  context: { config: Config; focusedPaneId: string | null },
 ): Command | null {
   const { config, focusedPaneId } = context;
 

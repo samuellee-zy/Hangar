@@ -40,13 +40,37 @@ Two invariants, both pinned by `check:folders`:
 
 - **A service appears exactly once.** Moving detaches first — without that, moving between folders
   leaves it in both and you get a duplicate tile.
-- **Folders never nest.** `moveToFolder` only resolves service ids, so a folder id isn't found.
+- **Folders never nest.** `moveToFolder` only resolves service ids, so a folder id isn't found; the
+  drag path guards it separately, landing a dragged folder beside the one it was aimed at.
 
 **Ungroup keeps the services**, promoting them to the top level in place. There is no "delete folder
 and contents" — that's two destructive operations wearing one label.
 
-Dragging reorders the **top level**. Filing into a folder is menu-only: cross-container nested
-dragging in dnd-kit is fiddly enough that a half-working gesture would be worse than a reliable menu.
+Dragging does all three: reorder within the top level, drop a tile **onto** a folder to file it
+there, and drag one **out** of an expanded folder to promote it back. The right-click route stays for
+anyone who would rather not drag.
+
+What held it up was not dnd-kit but an ambiguity: dropping *between* two tiles means "reorder", and
+dropping *on* one means "file into it", and an index alone cannot tell those apart. The answer is to
+read the meaning off the target rather than the position ([decisions #87](decisions.md)).
+
+It is also the one gesture verified end to end rather than in a unit test, and it has to be: dnd-kit
+resolves the drop from measured rectangles, and jsdom reports every element as zero-sized, so no drop
+target ever resolves and an assertion about dragging passes whether the wiring exists or not.
+
+## Dropping a tile into a pane
+
+Dragging a tile out of the rail and onto the split view puts that service there: onto an existing
+pane to **replace** what it shows, onto the content area but not on any pane — the gutters, or the
+empty remainder beside a single pane — to open a **new** one. A highlight names the target before you
+release, and releasing anywhere else cancels.
+
+This was filed as impossible for most of the project's life, on the correct observation that a DOM
+drag cannot cross a `webContents` boundary ([decisions #10](decisions.md)) and the rail and each pane
+are separate ones. The part that was wrong is the conclusion. Neither renderer needs to resolve the
+drop: both just report where the pointer is in their own coordinates, and main — which owns the pane
+geometry anyway — decides what that means ([decisions #86](decisions.md)). The geometry itself is
+pure and unit-tested in [`core/workspace/drop.ts`](../src/core/workspace/drop.ts).
 
 ## Custom connections
 
@@ -67,8 +91,10 @@ Custom connections have no vendored logo, so their icon comes from the page's ow
 
 ## Managing
 
-Settings (⌘,) renames and removes services, renames accounts, and signs an account out — which
-clears that partition's cookie jar and reloads every service using it.
+Settings (⌘,) is split into named sections. **Connections** renames and removes services;
+**Accounts** renames one and signs it out, which clears that partition's cookie jar and reloads every
+service using it; **Per-service** holds the zoom, hibernation and media overrides; **Unread badges**
+covers the counts, including the endpoint asked on a service's behalf while it sleeps.
 
 Right-click a tile for the same things without the trip: Open, Open in new pane, Move to folder,
 Add another account, Reload, Put to sleep, Remove.

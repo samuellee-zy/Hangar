@@ -37,6 +37,12 @@ const run = promisify(execFile);
  * because the other was running was never re-armed; and pushing without fetching first created
  * commits that could never fast-forward. Splitting the operation was the mistake.
  *
+ * **The mutex is module-level, not per-instance.** It was `this.running`, which is correct within
+ * one `ConfigSync` and absent across two — and there are two whenever ⌘W destroys the window and a
+ * dock click builds a fresh `AppWindow`, each with its own `ConfigSync` pointed at the same repo.
+ * Both could then run git concurrently, which is exactly the `index.lock` fight the single-operation
+ * design exists to prevent. A per-instance flag cannot express "one git at a time on this machine".
+ *
  * ## Conflicts are never resolved automatically
  *
  * A merge guessing which machine's rename of a service to keep can cost an account-to-partition
@@ -72,6 +78,25 @@ const VISIBILITY_TTL_MS = 10 * 60 * 1_000;
 /** How long to wait for the probe. Short: it sits in front of every reconcile. */
 const PROBE_TIMEOUT_MS = 5_000;
 
+/**
+ * Serialises every git-touching pass across every `ConfigSync` instance in the process.
+ *
+ * A promise chain rather than a boolean, because callers have to *wait* their turn rather than be
+ * turned away: an instance that skipped its pass because another was running would drop the change.
+ * Both settlement paths are swallowed when extending the chain, or one rejected pass wedges sync
+ * for the rest of the process.
+ */
+let gitQueue: Promise<unknown> = Promise.resolve();
+
+function exclusively<T>(work: () => Promise<T>): Promise<T> {
+  const next = gitQueue.then(work, work);
+  gitQueue = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
 export interface SyncDeps {
   repoPath: () => string | null;
   /** `preferences.sync.allowPublicRepo` — the override for a repo that probes as world-readable. */
@@ -94,6 +119,12 @@ export class ConfigSync {
   private running = false;
   /** Set when a request arrives mid-run, so it isn't silently dropped. */
   private rerun = false;
+  /**
+   * Set by `dispose()`. Everything that reaches back into `deps` checks it, because those closures
+   * capture an `AppWindow` that no longer exists — `onApplied` calls `restoreLayout()` and
+   * `relayout()` on a destroyed `BaseWindow`.
+   */
+  private disposed = false;
   /** Probe results by web URL, so a reconcile every few seconds isn't a request every few seconds. */
   private visibility = new Map<string, { verdict: RepoVisibility; at: number }>();
 
@@ -109,14 +140,31 @@ export class ConfigSync {
    * ignores the machine-local fields behind most of those writes, so most of these are no-ops.
    */
   schedule(): void {
+    if (this.disposed) return;
     if (this.deps.repoPath() === null) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.reconcile(), 5_000);
     this.timer.unref?.();
   }
 
+  /**
+   * Stops this instance for good: cancels the armed debounce and makes any pass already queued or
+   * running a no-op.
+   *
+   * `unref()` on the timer keeps it from holding the process open; it does nothing to stop it
+   * firing while the process is alive. And dropping the `onConfigSaved` hook — which is what
+   * teardown used to rely on — only prevents *new* schedules. Neither reaches a timer already
+   * armed, or a `reconcile()` sitting inside an `await`.
+   */
+  dispose(): void {
+    this.disposed = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
   /** Fetch, decide, act. The only thing that touches git. */
   async reconcile(): Promise<SyncStatus> {
+    if (this.disposed) return this.status;
     if (this.running) {
       // Re-run rather than drop. `schedule()` has already cleared its timer, so returning here
       // without this flag loses the change entirely.
@@ -127,8 +175,10 @@ export class ConfigSync {
     try {
       do {
         this.rerun = false;
-        await this.once();
-      } while (this.rerun);
+        // Re-checked inside the loop as well as at entry: the pass ahead of us in the queue can
+        // take tens of seconds, and the window may be gone by the time our turn arrives.
+        await exclusively(() => (this.disposed ? Promise.resolve() : this.once()));
+      } while (this.rerun && !this.disposed);
     } finally {
       this.running = false;
     }
@@ -248,6 +298,11 @@ export class ConfigSync {
     // Machine-local preferences — the Firebase credential above all — never come from the repo.
     const incoming = restoreLocalPreferences(verdict.config, local);
     const merged = applyIncoming(local, incoming);
+
+    // `once()` is only entered while live, but every git call above it is an await — the window can
+    // be torn down mid-pass. Landing a config now would write against a stale read and then call
+    // `onApplied` on a destroyed window. The repo is unchanged, so the next instance re-decides.
+    if (this.disposed) return;
 
     this.deps.write(merged);
     // The base is what we just agreed on, computed from the merged config so it matches what a
@@ -446,6 +501,7 @@ export class ConfigSync {
 
   private set(status: SyncStatus): SyncStatus {
     this.status = status;
+    if (this.disposed) return status;
     if (status.state === 'error' || status.state === 'conflict') {
       this.deps.log(`${status.state}: ${'detail' in status ? status.detail : ''}`);
     }

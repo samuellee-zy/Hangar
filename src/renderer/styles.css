@@ -42,11 +42,55 @@ body[data-route='overlay'] {
   background: transparent;
 }
 
+/* Same reason as the overlay, and more so: this one is attached *over the panes* during a drag, so
+   any background at all would hide the very thing the user is aiming at. */
+body[data-route='drag'] {
+  background: transparent;
+}
+
+/* --- drop target ------------------------------------------------------------------------ */
+
+/* The answer to "what happens if I let go here?", drawn over the pane it would affect.
+   Positioned absolutely in coordinates main sends; see renderer/DragLayer.tsx. */
+.drop-target {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--accent-strong, #6ea8fe);
+  border-radius: 10px; /* PANE_RADIUS */
+  background: rgb(110 168 254 / 14%);
+  /* No transition on position: the rectangle jumps between panes, and easing that reads as lag
+     rather than as polish when the pointer has already arrived. */
+  pointer-events: none;
+}
+
+/* Opening alongside spans the whole content area, which as a solid outline reads like an error
+   state. Dashed says "somewhere new here" rather than "this pane". */
+.drop-target.is-new-pane {
+  border-style: dashed;
+  background: rgb(110 168 254 / 8%);
+}
+
+.drop-label {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 /* --- rail ------------------------------------------------------------------------------- */
 
+/* Fills its view in both axes, in every rail position. The view *is* the rail — main sizes it —
+   so taking the thickness from a preference here as well only creates a second answer that lags
+   the first by an IPC round trip. That gap is invisible at a fixed size and very visible the
+   moment the rail can expand under the pointer. */
 .rail {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
   border-right: 1px solid var(--line);
 }
@@ -57,6 +101,158 @@ body[data-route='overlay'] {
   height: 46px;
   flex: none;
   -webkit-app-region: drag;
+}
+
+/* Reads as a button rather than a mark on the edge of the window. Explicitly `no-drag` — a
+   frameless window makes stray chrome draggable easily, and a drag region would swallow the click
+   instead of opening the rail. */
+.rail-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.rail-chevron:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.rail-chevron-text {
+  font-size: 12px;
+}
+
+/* Opened, the footer runs full width and its controls become labelled rows, matching the tiles
+   above them. */
+.rail.is-panel .rail-chevron {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 10px;
+}
+
+/* --- the opened panel: icon and name on one row ------------------------------------------- */
+
+.rail-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.rail.is-panel .rail-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* The tile becomes the whole row, so the name is part of the click target rather than a decoration
+   sitting next to one.
+
+   `display: flex` is doing the real work and is easy to leave out: `.rail-item` is a <button> with
+   no display of its own, so it laid out inline — `gap` and `justify-content` were ignored, the icon
+   sat centred by the button's inherited `text-align`, and the name wrapped underneath it. */
+.rail.is-panel .rail-item,
+.rail.is-panel .rail-add,
+.rail.is-panel .rail-rename {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: 8px;
+  /* Transparent by default so the column reads as a list rather than a stack of buttons. Only
+     hover and the focused service earn a surface. */
+  background: transparent;
+}
+
+.rail.is-panel .rail-item:hover,
+.rail.is-panel .rail-add:hover {
+  background: var(--tile-hover);
+}
+
+/* The 3px accent bar hangs off the left of a centred 52px tile. A full-width row has no margin for
+   it to hang in, so it moves inside the row's padding. */
+.rail.is-panel .rail-item.is-focused::before {
+  left: 3px;
+  height: 18px;
+}
+
+/* A list wants a smaller mark than a 52px tile does. */
+.rail.is-panel .rail-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Beside the icon rather than under it, so it can be read at a glance instead of squinted at.
+   Explicitly `--text`: `.rail-item` sets `color` to the service accent for the sake of the focus
+   bar, and inheriting it gave a column of red, blue and green names. */
+.rail.is-panel .rail-label {
+  margin-top: 0;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Right-hand end of the row, where a count belongs when there is a row to put it in — the corner
+   position only makes sense on a square tile. */
+.rail.is-panel .rail-badge {
+  position: static;
+  margin-left: auto;
+}
+
+.rail.is-panel .rail-items,
+.rail.is-panel .rail-footer,
+.rail.is-panel .rail-row {
+  align-items: stretch;
+}
+
+/* Renaming in place. The input replaces the name and nothing else moves — the icon stays put and
+   the row keeps its height, so committing does not make the list jump. */
+.rail-rename-field {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--accent, var(--fg));
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* No dividing line when there is nothing on the other side of it to divide. */
+.rail.is-compact {
+  border-right-color: transparent;
+}
+
+.rail.is-horizontal .rail-chevron {
+  width: 36px;
+  height: 36px;
+}
+
+/* A horizontal rail lays its footer out as a row, so the chevron sits beside the other two rather
+   than under them. */
+.rail.is-horizontal .rail-footer {
+  flex-direction: row;
+  margin-top: 0;
+  margin-left: auto;
+  padding: 0 12px 0 8px;
 }
 
 .rail-items {
@@ -128,6 +324,21 @@ body[data-route='overlay'] {
   animation: pulse 900ms ease-in-out infinite;
 }
 
+/* Waking a service leaves the pane blank for a second or two while the view rebuilds, and a 2px
+   bar at the foot of a 42px tile is not something you notice when you are looking at the pane.
+   The whole tile pulses instead, so the answer to "did my click do anything" is in peripheral
+   vision rather than needing to be hunted for. */
+.rail-item.is-loading {
+  animation: waking 900ms ease-in-out infinite;
+}
+
+@keyframes waking {
+  50% {
+    background: var(--tile-focused);
+    box-shadow: inset 0 0 0 1px var(--accent, var(--fg));
+  }
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.15;
@@ -164,9 +375,20 @@ body[data-route='overlay'] {
   font-weight: 700;
 }
 
+/* Flex, not a block box: these are buttons, so they are inline-block, and `margin: 0 auto` does not
+   centre an inline-block — it leaves them on a text line, flush against the left edge with all the
+   slack on the right. Matching .rail-items means the footer and the tiles share one centred column
+   at every rail thickness. */
 .rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   padding: 8px 0 12px;
   flex: none;
+  /* Bottom-anchored even when the tile list above it is gone, so the chevron holds one position
+     whether the rail is open or shut. */
+  margin-top: auto;
 }
 
 .rail-add {
@@ -246,6 +468,17 @@ body[data-route='overlay'] {
 .hint {
   font-size: 11px;
   color: var(--muted);
+}
+
+/* Wraps rather than truncating: a caveat cut off mid-sentence is worse than no caveat, because it
+   still reads as a complete claim. */
+.grid-caveat {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--muted);
+  opacity: 0.85;
+  text-align: center;
+  text-wrap: balance;
 }
 
 .grid-alt {
@@ -486,6 +719,46 @@ kbd {
   text-align: center;
 }
 
+/* --- settings: rebinding ------------------------------------------------------------------ */
+
+/* A chord is a button that looks like a key, because clicking it is how you change it. */
+.settings button.chord {
+  min-width: 82px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #2b2b32;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.settings button.chord:hover {
+  border-color: var(--muted);
+}
+
+/* Listening. Distinct enough that it's obvious the next keystroke goes somewhere unusual. */
+.settings button.chord.is-capturing {
+  border-color: #6ea8fe;
+  color: #6ea8fe;
+}
+
+/*
+ * Two actions on one chord. Only a hand-edited or synced config can produce this — `rebind`
+ * unbinds the previous holder — but it renders as one of the two silently not working, so it is
+ * worth saying out loud.
+ */
+.settings button.chord.is-conflicted {
+  border-color: #ff6b6040;
+  color: #ff6b60;
+}
+
+.settings .hint.refused {
+  color: #ff6b60;
+}
+
 .settings button.danger {
   padding: 5px 10px;
   border: 1px solid var(--line);
@@ -519,11 +792,6 @@ kbd {
   }
 }
 
-/* Rail thickness is a preference; the tile stays centred within whatever it's set to. */
-.rail {
-  width: var(--rail-size, 72px);
-}
-
 .rail-label {
   display: block;
   margin-top: 3px;
@@ -533,10 +801,6 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.rail-settings {
-  margin-top: 6px;
 }
 
 .rail-gear {
@@ -627,6 +891,19 @@ kbd {
   color: var(--muted);
 }
 
+/* An open folder's members are draggable in their own right — each is its own sortable row, so it
+   gets the same slot wrapper as a top-level tile. The group keeps them on one axis with the same
+   rhythm as the rail itself, which is what makes the extra wrapper invisible. */
+[role='group'] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail.is-horizontal [role='group'] {
+  flex-direction: row;
+}
+
 /* Members of an open folder sit inset, so the grouping reads without indentation guides. */
 .rail-item.is-nested {
   width: 42px;
@@ -634,17 +911,22 @@ kbd {
   border-radius: 10px;
 }
 
+/* Dimmed, but not so far that it reads as disabled — the tile is fully clickable and clicking is
+   how you wake it. Hover brings it back to full strength to say so. */
 .rail-item.is-sleeping {
   opacity: 0.5;
 }
 
+.rail-item.is-sleeping:hover,
+.rail-item.is-sleeping:focus-visible {
+  opacity: 1;
+}
+
 /* --- rail orientation --------------------------------------------------------------------- */
 
-/* Vertical is the default the rest of the file assumes; horizontal flips the main axis and swaps
-   which dimension the rail-size preference drives. */
+/* Vertical is the default the rest of the file assumes; horizontal only flips the main axis. Which
+   dimension the thickness lands on is settled by the view's bounds, not here. */
 .rail.is-horizontal {
-  width: 100%;
-  height: var(--rail-size, 72px);
   flex-direction: row;
   align-items: center;
   border-right: 0;
@@ -730,6 +1012,25 @@ kbd {
   gap: 3px;
 }
 
+/* Held open by the pointer, floating over the panes rather than beside them.
+   The edge it draws for itself is all the separation there is: a box-shadow would be clipped at the
+   view's bounds, since the rail is its own WebContentsView and cannot paint a pixel outside them. */
+.rail.is-expanded {
+  border-right-color: var(--muted);
+}
+
+.rail.is-expanded.is-right {
+  border-left-color: var(--muted);
+}
+
+.rail.is-expanded.is-top {
+  border-bottom-color: var(--muted);
+}
+
+.rail.is-expanded.is-bottom {
+  border-top-color: var(--muted);
+}
+
 /* --- light theme -------------------------------------------------------------------------- */
 
 /* Electron drives prefers-color-scheme from nativeTheme.themeSource, so honouring the media query
@@ -811,6 +1112,69 @@ kbd {
   color: var(--muted);
 }
 
+/* --- route error boundary ----------------------------------------------------------------- */
+
+/*
+ * Shaped like the empty state on purpose: a route that has crashed should look like a considered
+ * state, not like a half-rendered page. Scrolls, because the rail's view is narrow and the message
+ * must stay readable rather than clipping.
+ */
+.route-error {
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 20px;
+  text-align: center;
+  background: var(--tile);
+}
+
+.route-error h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.route-error p {
+  margin: 0;
+  max-width: 380px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.route-error-detail {
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: left;
+  /* An error message can be one very long line; wrap it rather than forcing a horizontal scroll. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.route-error .btn {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.route-error .btn:hover {
+  border-color: var(--muted);
+}
+
 /* --- find bar ----------------------------------------------------------------------------- */
 
 /* Its own small view, so only this rectangle intercepts clicks — the page behind stays usable. */
@@ -827,7 +1191,10 @@ kbd {
 }
 
 @media (prefers-color-scheme: light) {
-  .findbar { background: #ffffff; box-shadow: 0 8px 24px rgb(0 0 0 / 14%); }
+  .findbar {
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  }
 }
 
 .findbar input {

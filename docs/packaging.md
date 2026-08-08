@@ -10,6 +10,72 @@ each — that's Chromium, and there's no way around it for an Electron app.
 `npm run dist:signed` is the same thing without `--mac.identity=null`, for when a Developer ID
 certificate is present in the keychain.
 
+## Installing it, and getting off the terminal
+
+Running the app through `npm run dev` makes it a child of whatever shell started it, which is how a
+closed terminal came to take the app down overnight — see [decision #92](decisions.md). A
+Finder-launched `.app` has no such parent, and its stdout is not a pipe whose reader can disappear.
+
+1. `npm run dist`
+2. Open `dist/Hangar-0.1.0-arm64.dmg` and drag Hangar to Applications.
+3. First launch only: right-click → **Open** to get past Gatekeeper on an unsigned build.
+
+Then turn on **Close to tray** and **Start hidden** in Settings, so ⌘W leaves it running in the menu
+bar rather than quitting it.
+
+### Launch at login works unsigned, via a LaunchAgent
+
+The in-app toggle works. It does not use `app.setLoginItemSettings` — macOS refuses that without a
+Developer ID (below) — but writes a user LaunchAgent instead, which carries no such requirement:
+
+```
+~/Library/LaunchAgents/com.hangar.desktop.plist
+```
+
+**Both toggles take effect at the next login, not immediately.** The app writes the plist and never
+runs `launchctl`, because the effect that writes it also runs on every `activate`, and booting a job
+out would terminate the very app doing it. See [decision #93](decisions.md).
+
+**Relaunch if it stops unexpectedly** adds `KeepAlive: { SuccessfulExit: false }` to the same job.
+Two things to know:
+
+- It only supervises a Hangar that *launchd* started. One opened from Finder or `npm run dev` is not
+  a launchd job, so killing that copy proves nothing — it will not come back, and that is correct.
+  Verification has to cross a logout.
+- It covers the process dying: native crashes, OOM kills, Force Quit. It does not cover a JavaScript
+  exception, which shows a dialog and keeps running rather than exiting.
+
+Force Quit becomes sticky once it is on, since that is exactly what it is for. To stop a job for the
+rest of the session without logging out:
+
+```bash
+launchctl bootout gui/$(id -u)/com.hangar.desktop
+```
+
+The manual route still works as a fallback, and is unaffected by any of this: **System Settings →
+General → Login Items → Open at Login → +**. Don't use both — that is two registrations and two
+launches, the second discarded by the single-instance lock.
+
+### A dev instance and the installed app share a profile
+
+`userData` holds the config *and* every session partition, and both launches resolve the same one.
+Electron's single-instance lock is keyed on that directory, so this is safe by default — **verified,
+not assumed**: two independently launched instances pointed at one profile log
+
+```
+[boot] single-instance lock: acquired
+[boot] single-instance lock: denied — handing off and quitting
+```
+
+and the second exits before it can touch a cookie jar. `LSMultipleInstancesProhibited` is a separate
+mechanism covering duplicate launches of the same bundle; the lock is what spans *different* ones.
+
+The consequence is that with the packaged app running, `npm run dev` won't start — it hands off and
+quits. Use `npm run dev:isolated`, which points `HANGAR_USER_DATA` at
+`~/Library/Application Support/Hangar (dev)`: a separate profile, a separate lock, both running at
+once. Plain `npm run dev` deliberately keeps the real profile, because testing unread detection
+needs real logins and a fresh profile has none.
+
 ## The app icon is generated, not committed
 
 `npm run icon` renders `build/icon.icns` from an SVG written inline in
@@ -59,13 +125,7 @@ nothing instead of focusing the running one.
 ## What signing would unlock
 
 Unsigned is fine for your own machine — Gatekeeper needs a right-click → Open the first time, and
-after that it's a normal app. Three things stay broken until there's a Developer ID:
-
-**Launch at login does not work.** macOS registers login items against a code signature; with
-nothing to trust it refuses with "Operation not permitted", logged by Chromium's native layer so it
-never throws. `applyLoginItem` now *reads the setting back* to find out whether it took, rather
-than assuming — a toggle that quietly does nothing is worse than one that admits it can't. Settings
-says so on the control.
+after that it's a normal app. Two things stay broken until there's a Developer ID:
 
 **Distribution to anyone else.** An unsigned, un-notarised DMG shows the "damaged and can't be
 opened" dialog on another Mac. That message is a lie — it means unsigned — but there's no way to

@@ -250,7 +250,7 @@ describe('machine-local preferences never travel', () => {
     expect(serialise(local)).not.toContain('/Users/alice');
   });
 
-  it('the proxy, downloads folder, dndUntil and launchAtLogin are stripped', () => {
+  it('the proxy, downloads folder, dndUntil and the launchd settings are stripped', () => {
     const local = withPrefs({
       network: { proxy: { mode: 'http' as const, host: 'work-proxy.internal', port: 8080 } },
       downloads: { folder: '/Users/alice/Downloads', askWhereToSave: false, openOnComplete: false },
@@ -260,6 +260,8 @@ describe('machine-local preferences never travel', () => {
     expect(out).not.toContain('/Users/alice/Downloads');
     expect(out).not.toContain('dndUntil');
     expect(out).not.toContain('launchAtLogin');
+    // A launchd job registered on this Mac has no business being adopted by another one.
+    expect(out).not.toContain('relaunchOnCrash');
   });
 
   it('portable preferences still travel', () => {

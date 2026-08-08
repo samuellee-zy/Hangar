@@ -36,6 +36,31 @@ describe("defaults and merging", () => {
     assert.deepEqual(withDefaults(null), DEFAULT_PREFERENCES);
     assert.deepEqual(withDefaults([1, 2, 3]), DEFAULT_PREFERENCES);
   });
+
+  it('AN UNBOUND SHORTCUT SURVIVES THE MERGE', () => {
+    // The reason chords are stored as strings rather than objects. `merge` descends *into* an
+    // object leaf and fills its missing keys from the default, so an unbound action stored as
+    // `{}` would come back holding whatever chord it used to have — and clearing a shortcut would
+    // silently not stick. `''` is a scalar, so it replaces.
+    const p = withDefaults({ keyboard: { bindings: { palette: '' } } });
+    assert.equal(p.keyboard.bindings['palette'], '');
+    assert.equal(p.keyboard.bindings['find'], DEFAULT_PREFERENCES.keyboard.bindings['find']);
+  });
+
+  it('a binding for an action this build does not have is dropped', () => {
+    // Defaults are the schema, including here — so a config synced from a newer build can't leave
+    // a chord bound to an action nothing dispatches.
+    const p = withDefaults({ keyboard: { bindings: { 'time-travel': 'meta+t' } } });
+    assert.equal('time-travel' in p.keyboard.bindings, false);
+  });
+
+  it('bindings are copied, not aliased to the shared defaults', () => {
+    // `DEFAULT_PREFERENCES` is a module constant: a merge that handed back the same object would
+    // let one rebind change the defaults for the rest of the process.
+    const p = fresh();
+    p.keyboard.bindings['palette'] = 'meta+j';
+    assert.notEqual(DEFAULT_PREFERENCES.keyboard.bindings['palette'], 'meta+j');
+  });
 });
 
 describe("setPreference validation", () => {
@@ -125,6 +150,29 @@ describe('deep paths — three levels, all reachable from Settings', () => {
     const p = fresh();
     assert.equal(setPreference(p, 'network.proxy.username', 'admin'), false);
     assert.equal(setPreference(p, 'notifications.firebase.secret', 'x'), false);
+  });
+
+  it('A CORRUPT BRANCH RETURNS FALSE rather than throwing out of the IPC handler', () => {
+    // The path check used to look only at the schema, which proves the path is *real* and says
+    // nothing about the config actually having an object there. `withDefaults` rebuilds any branch
+    // that isn't one, so this needs to be forced — but the whole job of this function is to be the
+    // validator standing between an IPC message and the config, and a validator that assumes its
+    // input is well-formed is not one.
+    for (const corrupt of ['a string', 42, null, [], true]) {
+      const p = fresh();
+      (p as unknown as Record<string, unknown>).network = corrupt;
+      assert.equal(
+        setPreference(p, 'network.proxy.port', 8080),
+        false,
+        `network = ${JSON.stringify(corrupt)}`
+      );
+    }
+  });
+
+  it('a corrupt branch at depth two is refused the same way', () => {
+    const p = fresh();
+    (p.network as unknown as Record<string, unknown>).proxy = 'nope';
+    assert.equal(setPreference(p, 'network.proxy.port', 8080), false);
   });
 });
 

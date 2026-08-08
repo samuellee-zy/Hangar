@@ -78,15 +78,29 @@ default: copy/paste, open-link-in-browser, and spelling suggestions.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | electron-vite dev server with HMR |
+| `npm run dev:isolated` | The same, on a separate profile. Needed once the packaged app is installed — the single-instance lock is keyed on `userData`, so otherwise the dev copy hands off to the running one and exits |
 | `npm start` | Build and run the production bundle |
-| `npm run check` | Typecheck plus every logic check |
+| `npm run check` | Typecheck `src` and `tests`, run Vitest, enforce the module boundaries. The one to run before committing |
+| `npm test` | Vitest in watch mode |
+| `npm run test:coverage` | Vitest with coverage |
 | `npm run test:e2e` | Build, then the Playwright suite against a real Electron |
+| `npm run typecheck` / `typecheck:tests` | Either half of `check`'s typechecking on its own |
+| `npm run check:boundaries` | `dependency-cruiser` alone |
+| `npm run graph` | Render the dependency graph to SVG. Needs Graphviz |
 | `npm run dist` | Unsigned DMG into `dist/` |
+| `npm run dist:signed` | The same with a Developer ID, if you have one |
 | `npm run icons` | Re-vendor catalog icons from dashboard-icons |
+| `npm run icon` | Rebuild the app icon itself, `.icns` from the SVG |
+
+`dev`, `start` and `icon` go through `scripts/run-electron.mjs`, which strips an inherited
+`ELECTRON_RUN_AS_NODE`. Some terminals set it, and with it set Electron runs as plain Node — the app
+exits instantly with no window and no error.
 
 ## Testing
 
-**392 tests under Vitest, plus 15 Playwright end-to-end tests**, plus `dependency-cruiser` enforcing the module boundaries on every run.
+**Vitest for the logic, Playwright for the window**, plus `dependency-cruiser` enforcing the module
+boundaries on every run. `npm run check` prints the current totals — they are deliberately not
+written here, having drifted three times in files that claimed two different numbers at once.
 
 The architecture is what makes this possible: `src/core/` is pure — no Electron, no React — so its
 logic runs under plain node with no window. That isn't a convention any more; `npm run check` fails
@@ -108,9 +122,18 @@ it ([decisions #53](docs/decisions.md)).
 | `notifications` | Banner-vs-count policy, DND, muting, window visibility, badge totals |
 | `permissions` | Policy by provenance, deny-by-default, orphan partition detection |
 | `recovery` | Which load failures matter, retry backoff, crash recovery, error-page escaping |
-| `push` | Eligibility, replay suppression, payload extraction across six shapes, backoff |
+| `push` / `push-manager` | Eligibility, replay suppression, payload extraction across six shapes, backoff; reconnect on wake |
+| `endpoint` | Asking a sleeping service's own API for its unread count, and the jitter that stops every service asking at once after a wake |
+| `keyboard` | Rebinding, conflict detection, displacement, and the chords that refuse to be rebound |
+| `drop` | Where a dragged tile lands: replace a pane, open one, or nothing |
+| `effects` | That every preference path maps to the side effect it needs — the guard against a setting that saves and does nothing |
+| `sync` / `sync-lifecycle` / `sync-guard` | The allowlist, the three-way decision, teardown, and the public-repo guard |
+| `launch-agent` | The launchd plist, including that a deliberate quit stays quit |
+| `resilience` | That a dead terminal mutes logging instead of killing the app |
+| `cookies` | Session-cookie promotion, including the `__Host-` rules that had silently never worked |
 | `accent` | Contrast lifting, and that no input can produce invalid CSS |
 | `catalog` | Data invariants: unique ids, icon files exist, every entry allows its own URL |
+| `tests/renderer/*` | React components under `@testing-library/react`: the rail, each Settings section, the drag layer, the error boundary |
 
 ```bash
 npm run test:e2e
@@ -136,32 +159,35 @@ that has never opened Gmail.
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
-| [decisions.md](docs/decisions.md) | **85 findings that cost real time. Start here.** |
+| [sync.md](docs/sync.md) | Config sync across machines: setup, what travels, conflicts |
+| [decisions.md](docs/decisions.md) | **Every finding that cost real time. Start here.** |
 
 ## Status
 
 **Built:** the shell (panes, palette, keyboard, application menu, context menus), accounts and
-multi-login, icons, the connection picker with custom URLs, folders, rail reordering, the
-preferences system with a Settings window, rail placement on any edge, theming, hibernation,
-`powerMonitor` handling, tray, and config export/import.
+multi-login, icons, the connection picker with custom URLs, folders, rail reordering, dragging a
+tile onto a pane, dragging one into and out of a folder, the compact rail's hover-expand, keyboard
+rebinding with per-service passthrough, unread from the page's own badge and from a sleeping
+service's own API, Web Push, the preferences system with a Settings window and reset-to-defaults,
+rail placement on any edge, theming, hibernation, `powerMonitor` handling, tray, git-backed config
+sync, config export/import, and launch-at-login with optional relaunch — which works on an unsigned
+build, via a LaunchAgent rather than the API macOS refuses ([decisions #93](docs/decisions.md)).
 
 **Not built:**
 
-- **Dragging a tile onto a pane.** Rail reordering works; cross-pane drop needs the overlay drag
-  layer ([decisions #10](docs/decisions.md)).
-- **Dragging a service into a folder.** Use right-click → Move to folder.
-- **Keyboard rebinding.** Settings shows the map read-only.
-- **Compact rail is a narrower rail, not hover-expand.** Expanding on hover needs the rail view to
-  overlay the panes, and it's added first so it sits underneath.
-- **The integration tiers** — session-borrowed endpoints, Web Push, service APIs. The thing that
-  motivated the tiered design in the first place.
+- **Service APIs.** The tier above session-borrowed endpoints needs a token, and that is a decision
+  rather than a function: OAuth clients need a secret an open-source binary cannot hold, and the
+  personal-token services need somewhere to keep one that git sync will not publish
+  ([decisions #91](docs/decisions.md)).
+- **Unread selectors for eight of the catalog's services.** The mechanism ships; the selectors are
+  deliberately not guessed ([decisions #90](docs/decisions.md)).
 
 ## Contributing
 
 `main` is protected: it requires a pull request, one code-owner approval, and a green CI run
 (`npm run check` plus the E2E suite on macOS). Fork, branch, open a PR.
 
-Before changing behaviour, read [decisions.md](docs/decisions.md). It is 85 entries of things that
+Before changing behaviour, read [decisions.md](docs/decisions.md). It is a long list of things that
 looked correct, passed their tests, and were wrong anyway — a duplicated block that fired a full
 sync on an unrelated click, a "Keep repo" button that did the opposite of its label, three
 dependency rules that silently matched nothing. The recurring lesson is that **verification has to

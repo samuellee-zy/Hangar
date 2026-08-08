@@ -161,3 +161,49 @@ describe('rejecting what it cannot understand', () => {
     expect(() => migrateConfig({ services: [], workspaces: [] })).not.toThrow();
   });
 });
+
+// `validateIncoming` refused an orphaned service on the sync path from the start. This function is
+// the single normalisation point load *and* import share, and it did not — so the one path a
+// hand-edited file actually arrives by was the unguarded one.
+//
+// It matters because the failure is remote from its cause: `partitionFor` throws, which takes out
+// `restoreLayout` and the 60-second `persistAll` loop. That loop is what promotes session cookies
+// to disk, so the symptom is being signed out of everything after a restart, much later.
+describe('services must be able to resolve their account', () => {
+  const orphaned = () => ({
+    version: 4,
+    accounts: [{ id: 'a1', label: 'Google', provider: 'google', partition: 'persist:g' }],
+    services: [
+      { id: 's1', catalogId: 'gmail', name: 'Gmail', accountId: 'a1', notifications: true, hibernate: true, zoom: 1 },
+      { id: 's2', catalogId: 'slack', name: 'Slack', accountId: 'GONE', notifications: true, hibernate: true, zoom: 1 },
+    ],
+    workspaces: [],
+  });
+
+  it('A DANGLING accountId IS REFUSED rather than written to disk', () => {
+    expect(() => migrateConfig(orphaned())).toThrow(/account/i);
+  });
+
+  it('names the offending service, so the message is actionable', () => {
+    expect(() => migrateConfig(orphaned())).toThrow(/Slack/);
+  });
+
+  it('a config where every service resolves is untouched', () => {
+    expect(() => migrateConfig(v2())).not.toThrow();
+  });
+
+  it('holds for v1 too, where accounts are rebuilt rather than read', () => {
+    // migrateV1 derives accounts from the services themselves, so this should be impossible —
+    // which is exactly why it is worth asserting rather than assuming.
+    expect(() => migrateConfig(v1())).not.toThrow();
+  });
+
+  it('matches what validateIncoming already enforced for sync', () => {
+    // The two guards existing in one place and not the other is the actual defect. If sync's check
+    // is ever relaxed this should be revisited together with it.
+    const config = orphaned();
+    const accountIds = new Set(config.accounts.map((a) => a.id));
+    expect(config.services.some((s) => !accountIds.has(s.accountId))).toBe(true);
+    expect(() => migrateConfig(config)).toThrow();
+  });
+});

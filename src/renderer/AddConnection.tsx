@@ -26,8 +26,11 @@ export function AddConnection() {
   );
 
   const accountFor = (provider: string) => state?.accounts.find((a) => a.provider === provider);
+  // `allServices`, not `services`: the latter is the active workspace only, so a Gmail added in
+  // another workspace read as "not added" here and the tile offered a second account — creating a
+  // duplicate instead of focusing the one that exists. Accounts are global; this check must be too.
   const existingOf = (catalogId: string) =>
-    state?.services.filter((s) => s.catalogId === catalogId) ?? [];
+    state?.allServices.filter((s) => s.catalogId === catalogId) ?? [];
 
   if (!state) return null;
 
@@ -67,11 +70,16 @@ export function AddConnection() {
                   className={`grid-tile${isAdded ? ' is-added' : ''}`}
                   style={{ ['--accent' as string]: brightenForDark(entry.color) }}
                   title={
-                    isAdded
-                      ? `Already added — go to ${entry.name}`
-                      : account
-                        ? `Add ${entry.name} using ${account.label}`
-                        : `Add ${entry.name}`
+                    [
+                      isAdded
+                        ? `Already added — go to ${entry.name}`
+                        : account
+                          ? `Add ${entry.name} using ${account.label}`
+                          : `Add ${entry.name}`,
+                      entry.caveat,
+                    ]
+                      .filter(Boolean)
+                      .join('\n')
                   }
                   onClick={() =>
                     // Clicking a service you already have should take you to it. Silently adding a
@@ -110,6 +118,9 @@ export function AddConnection() {
                         ? `via ${account.label}`
                         : 'new account'}
                   </span>
+                  {/* Said on the tile, not just in the tooltip: the whole point is that it is read
+                      before the service is added, and a tooltip needs a hover that a click beats. */}
+                  {entry.caveat && <span className="grid-caveat">{entry.caveat}</span>}
                 </button>
                 {account && (
                   <button

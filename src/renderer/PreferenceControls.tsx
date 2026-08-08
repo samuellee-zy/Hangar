@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
 /**
  * Thin wrappers over native inputs. They send a `set-preference` command and nothing else — main
@@ -13,27 +13,52 @@ import type { ReactNode } from 'react';
 const set = (path: string, value: unknown) =>
   window.hangar.send({ type: 'set-preference', path, value });
 
+/**
+ * The name is a real `<label>` tied to the control, not a span beside it.
+ *
+ * It was a span, which meant every preference in Settings was an unlabelled input: VoiceOver
+ * announced forty "checkbox, unchecked" rows in a column, and clicking a name did nothing. The
+ * layout is unchanged — a label is inline like the span was — so this is purely the association
+ * that was missing.
+ *
+ * The note is wired through `aria-describedby` for the same reason: "Needs a packaged, code-signed
+ * build" is the part that explains why a toggle appears to do nothing, and it was announced as
+ * unrelated text if at all.
+ */
 function Row({
+  id,
   name,
   note,
   pending,
   children,
 }: {
+  id: string;
   name: string;
   note?: string;
   pending?: boolean;
   children: ReactNode;
 }) {
+  const showNote = Boolean(note || pending);
   return (
     <li className={`pref${pending ? ' is-pending' : ''}`}>
       <span className="pref-label">
-        <span className="pref-name">{name}</span>
-        {(note || pending) && <span className="pref-note">{note}</span>}
+        <label className="pref-name" htmlFor={id}>
+          {name}
+        </label>
+        {showNote && (
+          <span className="pref-note" id={`${id}-note`}>
+            {note}
+          </span>
+        )}
       </span>
       {children}
     </li>
   );
 }
+
+/** The attributes every control needs to be described by its own note. */
+const describedBy = (id: string, note?: string, pending?: boolean) =>
+  note || pending ? { 'aria-describedby': `${id}-note` } : {};
 
 export function Toggle({
   name,
@@ -48,9 +73,12 @@ export function Toggle({
   value: boolean;
   pending?: boolean;
 }) {
+  const id = useId();
   return (
-    <Row name={name} note={note} pending={pending}>
+    <Row id={id} name={name} note={note} pending={pending}>
       <input
+        id={id}
+        {...describedBy(id, note, pending)}
         type="checkbox"
         checked={value}
         disabled={pending}
@@ -75,9 +103,16 @@ export function Choice<T extends string>({
   options: readonly T[];
   pending?: boolean;
 }) {
+  const id = useId();
   return (
-    <Row name={name} note={note} pending={pending}>
-      <select value={value} disabled={pending} onChange={(e) => set(path, e.target.value)}>
+    <Row id={id} name={name} note={note} pending={pending}>
+      <select
+        id={id}
+        {...describedBy(id, note, pending)}
+        value={value}
+        disabled={pending}
+        onChange={(e) => set(path, e.target.value)}
+      >
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -107,9 +142,12 @@ export function Num({
   step?: number;
   pending?: boolean;
 }) {
+  const id = useId();
   return (
-    <Row name={name} note={note} pending={pending}>
+    <Row id={id} name={name} note={note} pending={pending}>
       <input
+        id={id}
+        {...describedBy(id, note, pending)}
         type="number"
         value={value}
         min={min}
@@ -153,9 +191,12 @@ export function Text({
   password?: boolean;
   pending?: boolean;
 }) {
+  const id = useId();
   return (
-    <Row name={name} note={note} pending={pending}>
+    <Row id={id} name={name} note={note} pending={pending}>
       <input
+        id={id}
+        {...describedBy(id, note, pending)}
         key={value}
         type={password ? 'password' : 'text'}
         defaultValue={value}

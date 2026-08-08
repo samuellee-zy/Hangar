@@ -20,6 +20,8 @@
  * anything yet this session — and persisting would mean a disk write per notification.
  */
 
+import type { DomUnreadProbe, DomUnreadRule } from '../../shared/types';
+
 export class UnreadCounts {
   private counts = new Map<string, number>();
 
@@ -84,6 +86,11 @@ export class UnreadCounts {
  * permanent phantom count. Rambox learned this — it injects per-service JavaScript as the primary
  * mechanism and falls back to a title pattern only where a site has none. So detection is declared
  * per catalog entry and simply absent for custom connections, where there is nothing to know.
+ *
+ * Two mechanisms, one answer. `titlePattern` reads the tab title; `dom` reads the page's own badge
+ * for the majority of services that never put a count in the title. Both produce an *absolute*
+ * count, which is the point — `increment` from the notification tally can only ever rise, and
+ * reads zero for a service whose browser notifications are off.
  */
 export interface UnreadDetection {
   /**
@@ -91,6 +98,11 @@ export interface UnreadDetection {
    * with no group counts as 1, which covers sites that show a bare dot or asterisk.
    */
   titlePattern?: string;
+  /**
+   * DOM rules, for the services — most of them — that keep the count out of the title. Tried in
+   * order; the first with anything to say wins. See `unreadFromDom`.
+   */
+  dom?: DomUnreadRule[];
 }
 
 /**
@@ -118,4 +130,91 @@ export function unreadFromTitle(
   const n = Number.parseInt(captured, 10);
   // "99+" parses to 99, which is the right answer. Anything unparseable means matched-but-unknown.
   return Number.isFinite(n) ? Math.max(0, n) : 1;
+}
+
+/**
+ * The count a badge's text implies.
+ *
+ * Sites write badges every way there is: "3", "3 unread", "9+", "(12)", "•". Digits anywhere in
+ * the string are the count; text with none is a dot-style badge and counts as 1; nothing at all is
+ * nothing. `parseInt` alone would read "9+" correctly and "3 unread messages" as 3 by luck, but
+ * "unread: 3" as NaN — so match the digits rather than leading with them.
+ */
+export function countFromBadgeText(text: string): number {
+  const trimmed = text.trim();
+  if (trimmed === '') return 0;
+  const digits = trimmed.match(/\d+/);
+  if (!digits) return 1;
+  const n = Number.parseInt(digits[0], 10);
+  return Number.isFinite(n) ? Math.max(0, n) : 1;
+}
+
+/**
+ * The count a set of DOM probes implies, or null for "no information" — the same three-way answer
+ * `unreadFromTitle` gives, and for the same reason: a service we cannot read must keep whatever
+ * count the notification tally has built up rather than being silently zeroed.
+ *
+ * Rules are tried in order and the first that can answer does. A rule can answer in two ways:
+ * matches, which give a count; or an anchor found with no matches, which is a genuine zero. A rule
+ * whose anchor is missing has not loaded and is skipped, so a fallback rule below it still gets its
+ * turn.
+ *
+ * `probes` is untyped on the way in because it arrives from a page over IPC — a service's own
+ * JavaScript can reach the bridge, so nothing about its shape is a given.
+ */
+export function unreadFromDom(
+  rules: DomUnreadRule[] | undefined,
+  probes: unknown
+): number | null {
+  if (!rules || rules.length === 0) return null;
+  if (!Array.isArray(probes)) return null;
+
+  for (const [index, rule] of rules.entries()) {
+    const probe = asProbe(probes[index]);
+    if (!probe) continue;
+
+    if (probe.values.length === 0) {
+      // Anchored and empty is the case that lets a badge clear. Unanchored and empty is a page
+      // that may simply not have drawn yet, and guessing zero there wipes a real count on reload.
+      if (probe.anchored) return 0;
+      continue;
+    }
+
+    if (rule.read === 'count') return probe.values.length;
+
+    // The first match, not a sum: a service showing both a per-channel badge and a total would
+    // otherwise report roughly double, and which nodes a selector catches is the rule author's
+    // decision to make with the selector.
+    return countFromBadgeText(probe.values[0] ?? '');
+  }
+
+  return null;
+}
+
+function asProbe(value: unknown): DomUnreadProbe | null {
+  if (!value || typeof value !== 'object') return null;
+  const { anchored, values } = value as Partial<DomUnreadProbe>;
+  if (!Array.isArray(values)) return null;
+  return {
+    anchored: anchored === true,
+    values: values.filter((v): v is string => typeof v === 'string'),
+  };
+}
+
+/**
+ * The rules to actually run for a service: the user's selector if they set one, otherwise the
+ * catalog's.
+ *
+ * Absent and empty differ, as they do for keyboard passthrough. Absent follows the catalog, so a
+ * rule we fix later reaches installs that already exist. The empty string is the deliberate "read
+ * nothing", which is the only way to switch off a catalog rule that has started matching the wrong
+ * node — and a site *will* eventually make that true of one of ours.
+ */
+export function resolveUnreadRules(
+  detection: UnreadDetection | undefined,
+  override: string | undefined
+): DomUnreadRule[] {
+  if (override === undefined) return detection?.dom ?? [];
+  const selector = override.trim();
+  return selector === '' ? [] : [{ selector }];
 }

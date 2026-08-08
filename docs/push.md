@@ -117,16 +117,21 @@ deliver was decrypted, deduplicated, marked consumed, and discarded. See
 That went unnoticed because verification stopped at "subscribe is intercepted", on the assumption
 that testing delivery needed a Firebase project and a real inbound message. It needed neither:
 `handlePushMessage` receives an *already decrypted* payload, so a synthetic one exercises everything
-downstream of decryption — which is exactly where the bug was. `HANGAR_PROBE` now sleeps a service,
-injects a payload, and asserts the count rises:
+downstream of decryption — which is exactly where the bug was.
 
-```
-[probe] hibernated push to "Calendar": sleeping=true, unread 1 -> 2 (badge 2)
-```
+It is now an end-to-end test, `A HIBERNATED SERVICE STILL RECEIVES A PUSH`, which sleeps a service,
+injects a payload and asserts the count rises. It began life as a line of `HANGAR_PROBE` output that
+a human had to read and believe; the value of the move is not new coverage but coverage that can
+*fail* ([decisions #72](decisions.md)).
 
 What remains unverified is the **transport** — FCM registration, the MCS socket, and real
 end-to-end decryption. That does need your Firebase project and a real message. Test it with a DM
 to yourself with the service hibernated.
+
+If all you want is a badge on a sleeping service, push is not the only route and is by far the more
+involved one. A service with an unread endpoint is polled directly over its own login while it
+sleeps, with no Firebase project anywhere — see [connections.md](connections.md) and
+[decisions #91](decisions.md).
 
 **The site's service worker never sees the push.** We notify from main instead. Anything the worker
 would have done beyond showing a notification — syncing read state, badging in-page — doesn't
@@ -140,4 +145,5 @@ happen.
 | [`src/main/features/push-manager.ts`](../src/main/features/push-manager.ts) | Sockets, registration, reconnect, persistence |
 | [`src/preload/service.ts`](../src/preload/service.ts) | The `PushManager.prototype` patch, in the page's world |
 | [`src/core/notify/unread.ts`](../src/core/notify/unread.ts) | Counts keyed by service id, surviving hibernation — what makes delivery possible |
-| [`tests/main/push.test.ts`](../tests/main/push.test.ts) | 25 checks over the policy |
+| [`tests/main/push.test.ts`](../tests/main/push.test.ts) | The policy, exhaustively |
+| [`tests/main/push-manager.test.ts`](../tests/main/push-manager.test.ts) | The manager: reconnect on wake, teardown |

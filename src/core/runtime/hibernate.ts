@@ -38,13 +38,41 @@ export function servicesToHibernate(
 }
 
 /**
+ * Time the machine spent asleep is not time you spent ignoring a service.
+ *
+ * Idle is wall-clock distance from `lastActiveAt`, which is right while the machine is awake and
+ * wrong the moment it isn't: shut the lid at a 30-minute timeout and every off-screen service is
+ * overdue before you have finished opening it, so the first sweep after wake unloads all of them —
+ * including the one you were mid-thought in. Pushing the stamp forward by the suspended span makes
+ * the timeout mean "time you could have used this and didn't", which is what a user reads it as.
+ *
+ * Clamped to `now`, so a long sleep after a recent use can't leave a stamp in the future.
+ */
+export function creditSuspendedTime(
+  lastActiveAt: number,
+  suspendedForMs: number,
+  now: number
+): number {
+  if (suspendedForMs <= 0) return lastActiveAt;
+  return Math.min(now, lastActiveAt + suspendedForMs);
+}
+
+/**
+ * What counts as a sleep worth reacting to.
+ *
+ * Shared rather than local to `servicesToRefresh`, because the push sockets need the same answer:
+ * one notion of "the machine was actually away" beats two constants that drift apart.
+ */
+export const LONG_SUSPEND_MS = 5 * 60_000;
+
+/**
  * Views loaded before the machine slept are showing stale content and often a dead socket, so a
  * long suspend should reload them. Visible ones first — those are what you're looking at on wake.
  */
 export function servicesToRefresh(
   candidates: Array<{ serviceId: string; sleeping: boolean; visible: boolean; lastActiveAt: number }>,
   suspendedForMs: number,
-  minimumMs = 5 * 60_000
+  minimumMs = LONG_SUSPEND_MS
 ): string[] {
   if (suspendedForMs < minimumMs) return [];
   return candidates

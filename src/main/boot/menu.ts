@@ -1,4 +1,6 @@
 import { Menu, app, type MenuItemConstructorOptions } from 'electron';
+import { KEY_ACTIONS, type Bindings } from '@core/keyboard/keymap';
+import { toAccelerator } from '@shared/keyboard';
 import type { Command } from '@shared/types';
 
 /**
@@ -9,10 +11,64 @@ import type { Command } from '@shared/types';
  * ⌘W closed the whole window even when the intent was "close this pane". Replacing the menu is
  * what makes our binding authoritative.
  *
- * It also makes the shortcuts discoverable, which they weren't at all before.
+ * ## Why nothing here registers an accelerator
+ *
+ * Our own items are declared with `registerAccelerator: false`: the chord is *drawn* beside the
+ * label, and Electron does not bind it. Rebinding is impossible otherwise — a registered
+ * accelerator fires at the application level, ahead of `before-input-event`, so a ⌘K moved to ⌘J
+ * would keep opening the palette from the menu's copy of the fact. With registration off,
+ * `window/shortcuts.ts` is the only dispatcher and `core/keyboard/keymap.ts` the only table.
+ *
+ * Roles are the exception and keep their real accelerators. ⌘C has to work inside a web app
+ * whether or not our keymap has an opinion, and those chords are refused to rebinding for exactly
+ * that reason (`RESERVED_CHORDS`).
+ *
+ * The labels and order come from `KEY_ACTIONS` too, so the menu cannot drift from Settings — it
+ * already had, listing ⌘F and ⌘P that Settings never mentioned.
  */
-export function installMenu(dispatch: (command: Command) => boolean): void {
+
+/**
+ * Kept so a rebind can redraw the menu without the caller re-supplying its wiring. Module state
+ * because there is exactly one application menu, which is also why `Menu.setApplicationMenu` is a
+ * static.
+ */
+let installed: { dispatch: (command: Command) => boolean; bindings: () => Bindings } | null = null;
+
+export function installMenu(
+  dispatch: (command: Command) => boolean,
+  bindings: () => Bindings
+): void {
+  installed = { dispatch, bindings };
+  build();
+}
+
+/**
+ * Redraws the menu against the current bindings.
+ *
+ * A no-op before `installMenu`, which is not defensive padding: `AppWindow` calls this from its
+ * state broadcast, and the window is constructed before the menu is installed.
+ */
+export function refreshMenu(): void {
+  if (installed) build();
+}
+
+function build(): void {
+  const { dispatch, bindings } = installed!;
   const send = (command: Command) => () => dispatch(command);
+  const current = bindings();
+
+  /** The items for one menu, with their separators, drawn from the single table. */
+  const items = (menu: 'app' | 'file' | 'view'): MenuItemConstructorOptions[] =>
+    KEY_ACTIONS.filter((action) => action.menu === menu).flatMap((action) => {
+      const accelerator = toAccelerator(current[action.id] ?? '');
+      const item: MenuItemConstructorOptions = {
+        label: action.label,
+        click: send(action.command),
+        // Shown, not bound. See the module comment — this is the whole reason rebinding works.
+        ...(accelerator ? { accelerator, registerAccelerator: false } : {}),
+      };
+      return action.group ? [{ type: 'separator' } as MenuItemConstructorOptions, item] : [item];
+    });
 
   const template: MenuItemConstructorOptions[] = [
     {
@@ -20,7 +76,7 @@ export function installMenu(dispatch: (command: Command) => boolean): void {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
-        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: send({ type: 'open-settings' }) },
+        ...items('app'),
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -34,19 +90,10 @@ export function installMenu(dispatch: (command: Command) => boolean): void {
     {
       label: 'File',
       submenu: [
-        { label: 'Add connection…', accelerator: 'CmdOrCtrl+N', click: send({ type: 'open-connections' }) },
-        { type: 'separator' },
-        { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: send({ type: 'print' }) },
+        ...items('file'),
         { type: 'separator' },
         { label: 'Export configuration…', click: send({ type: 'export-config' }) },
         { label: 'Import configuration…', click: send({ type: 'import-config' }) },
-        { type: 'separator' },
-        // Deliberately NOT { role: 'close' } — that's the binding that was stealing ⌘W.
-        {
-          label: 'Close pane',
-          accelerator: 'CmdOrCtrl+W',
-          click: send({ type: 'close-pane', paneId: '#focused' }),
-        },
       ],
     },
     // Roles, not custom handlers: without an Edit menu, ⌘C/⌘V/⌘A don't work inside the web apps.
@@ -65,45 +112,9 @@ export function installMenu(dispatch: (command: Command) => boolean): void {
     },
     {
       label: 'View',
-      submenu: [
-        { label: 'Command palette', accelerator: 'CmdOrCtrl+K', click: send({ type: 'open-palette' }) },
-        { label: 'Find in page…', accelerator: 'CmdOrCtrl+F', click: send({ type: 'open-find' }) },
-        { type: 'separator' },
-        { label: 'Zoom in', accelerator: 'CmdOrCtrl+=', click: send({ type: 'zoom', direction: 'in' }) },
-        { label: 'Zoom out', accelerator: 'CmdOrCtrl+-', click: send({ type: 'zoom', direction: 'out' }) },
-        {
-          label: 'Actual size',
-          accelerator: 'CmdOrCtrl+0',
-          click: send({ type: 'zoom', direction: 'reset' }),
-        },
-        { type: 'separator' },
-        { label: 'Split pane', accelerator: 'CmdOrCtrl+\\', click: send({ type: 'split' }) },
-        {
-          label: 'Focus previous pane',
-          accelerator: 'CmdOrCtrl+Alt+Left',
-          click: send({ type: 'cycle-pane', delta: -1 }),
-        },
-        {
-          label: 'Focus next pane',
-          accelerator: 'CmdOrCtrl+Alt+Right',
-          click: send({ type: 'cycle-pane', delta: 1 }),
-        },
-        { type: 'separator' },
-        { label: 'Back', accelerator: 'CmdOrCtrl+[', click: send({ type: 'navigate', direction: 'back' }) },
-        {
-          label: 'Forward',
-          accelerator: 'CmdOrCtrl+]',
-          click: send({ type: 'navigate', direction: 'forward' }),
-        },
-        { type: 'separator' },
-        {
-          label: 'Sleep background services',
-          click: send({ type: 'sleep-others' }),
-        },
-        { type: 'separator' },
-        { role: 'toggleDevTools' },
-      ],
+      submenu: [...items('view'), { type: 'separator' }, { role: 'toggleDevTools' }],
     },
+    // Deliberately no { role: 'close' } anywhere — that's the binding that was stealing ⌘W.
     { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] },
   ];
 

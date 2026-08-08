@@ -1,4 +1,5 @@
-import type { Input, WebContents } from 'electron';
+import type { WebContents } from 'electron';
+import { translate, type KeyContext } from '@core/keyboard/keymap';
 import type { Command } from '@shared/types';
 
 /**
@@ -8,6 +9,13 @@ import type { Command } from '@shared/types';
  *    ⌘K. Slack and Notion both bind it themselves.
  *  - `globalShortcut` would steal keys system-wide even when Hangar isn't focused, which is
  *    hostile behaviour for a background app.
+ *
+ * Since rebinding landed this is also the *only* thing that dispatches a shortcut: the menu
+ * declares its accelerators with `registerAccelerator: false`, so they are shown and not
+ * registered. An accelerator registered by the menu fires at the application level and would
+ * outrank anything decided here, which is what made a rebound ⌘K impossible.
+ *
+ * Which keystroke means what is `core/keyboard/keymap.ts`. This file is the wiring.
  */
 
 /**
@@ -17,52 +25,14 @@ import type { Command } from '@shared/types';
  */
 export type CommandSink = (command: Command) => boolean;
 
-export function translate(input: Input): Command | null {
-  if (input.type !== 'keyDown') return null;
-
-  // Escape is bound on *every* webContents, not just the overlay's. before-input-event only fires
-  // for whichever contents holds focus, and the overlay doesn't reliably win focus from a service
-  // view — so binding it only there left a blank overlay with no way out.
-  if (input.key === 'Escape' && !input.meta && !input.control && !input.alt) {
-    return { type: 'close-overlay' };
-  }
-
-  const mod = process.platform === 'darwin' ? input.meta : input.control;
-  if (!mod) return null;
-
-  const key = input.key.toLowerCase();
-
-  if (input.alt) {
-    if (key === 'arrowleft') return { type: 'cycle-pane', delta: -1 };
-    if (key === 'arrowright') return { type: 'cycle-pane', delta: 1 };
-    // ⌘⌥1..9 → workspace. Resolved to an id by the caller, which knows the workspace list.
-    const n = Number(key);
-    if (Number.isInteger(n) && n >= 1 && n <= 9) {
-      return { type: 'set-workspace', workspaceId: `#${n}` };
-    }
-    return null;
-  }
-
-  if (key === 'k') return { type: 'open-palette' };
-  if (key === 'f') return { type: 'open-find' };
-  if (key === 'p') return { type: 'print' };
-  // '=' is the unshifted key on most layouts; '+' when shift is held.
-  if (key === '=' || key === '+') return { type: 'zoom', direction: 'in' };
-  if (key === '-') return { type: 'zoom', direction: 'out' };
-  if (key === '0') return { type: 'zoom', direction: 'reset' };
-  if (key === '\\') return { type: 'split' };
-  if (key === '[') return { type: 'navigate', direction: 'back' };
-  if (key === ']') return { type: 'navigate', direction: 'forward' };
-  if (key === 'w') return { type: 'close-pane', paneId: '#focused' };
-
-  // ⌘1..9 → nth service in the active workspace. Also resolved by the caller.
-  const n = Number(key);
-  if (Number.isInteger(n) && n >= 1 && n <= 9) {
-    return { type: 'focus-service', serviceId: `#${n}` };
-  }
-
-  return null;
-}
+/**
+ * The bindings and passthrough list in force for a surface, read fresh on every keystroke.
+ *
+ * A function rather than a value because both halves change under a live view: rebinding a chord
+ * in Settings must take effect in a Slack tab that has been open for an hour, and a snapshot taken
+ * at `attachShortcuts` time would keep the old map until that view was recreated.
+ */
+export type KeyContextSource = () => KeyContext;
 
 /**
  * Idempotent by design. This used to be called from the focus path, which quietly added a second
@@ -71,12 +41,16 @@ export function translate(input: Input): Command | null {
  */
 const attached = new WeakSet<WebContents>();
 
-export function attachShortcuts(wc: WebContents, sink: CommandSink): void {
+export function attachShortcuts(
+  wc: WebContents,
+  sink: CommandSink,
+  context: KeyContextSource
+): void {
   if (attached.has(wc)) return;
   attached.add(wc);
 
   wc.on('before-input-event', (event, input) => {
-    const command = translate(input);
+    const command = translate(input, context());
     if (!command) return;
     // Swallow only what we actually handled, so an unconsumed Escape still reaches the page.
     if (sink(command)) event.preventDefault();

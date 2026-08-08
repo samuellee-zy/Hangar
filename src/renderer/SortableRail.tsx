@@ -6,6 +6,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import { restrictToHorizontalAxis, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import {
@@ -16,54 +17,80 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 /**
  * Drag-to-reorder for the rail, wrapping dnd-kit.
  *
- * Only the *top level* reorders here. Dropping a tile onto a pane crosses a webContents boundary,
- * which Electron doesn't support (docs/decisions.md #10), and filing into a folder goes through
- * the right-click menu rather than nested sortable.
- */
-
-/**
  * Reordering within the rail is ordinary DOM drag — the rail is one webContents, so dnd-kit works
- * normally here. Dragging a tile *onto a pane* is a different problem entirely: panes are separate
- * webContents and Electron can't drag across that boundary. See docs/decisions.md #10.
+ * normally here. The KeyboardSensor is the reason for dnd-kit over a hand-rolled solution: space to
+ * lift, arrows to move, space to drop, escape to cancel — announced to screen readers — without
+ * extra work.
  *
- * The KeyboardSensor is the reason for dnd-kit over a hand-rolled solution: space to lift, arrows
- * to move, space to drop, escape to cancel — announced to screen readers — without extra work.
+ * Dragging a tile *onto a pane* is a different problem, and used to be listed as impossible: panes
+ * are separate webContents and Electron can't drag across that boundary (docs/decisions.md #10).
+ * The way through is not to cross it. On a pointer lift, main attaches a transparent view over the
+ * whole content area, so the pointer passes from the rail into one other renderer and no further;
+ * `main/features/drag-layer.ts` has the rest. From this file's point of view the consequence is
+ * narrow but load-bearing: **the release may happen somewhere this renderer cannot see**, so dnd-
+ * kit has to be told, or it is left holding a lifted tile with no way to put it down.
  */
 
 const ACTIVATION_DISTANCE = 5; // px — below this a drag is treated as a click
 
 /**
- * Moves `from` to `to`, matching dnd-kit's own `arrayMove` semantics.
+ * Whether a point in this view's coordinates is still over the rail itself.
  *
- * Extracted so it can be tested without a DOM. The order of operations is easy to get wrong: the
- * removal happens first, which shifts every later index down by one, so `to` is interpreted
- * against the *already-shortened* array. That happens to be the behaviour dnd-kit expects — but
- * only by construction, not by accident, so it's pinned by a test.
+ * The rail's renderer fills exactly the rail, so its own viewport *is* the rail — there is nothing
+ * else to compare against, and nothing to keep in step with main's idea of the geometry.
  */
-export function reorder(ids: string[], activeId: string, overId: string): string[] | null {
-  const from = ids.indexOf(activeId);
-  const to = ids.indexOf(overId);
-  // An id that isn't in the list means the rail changed underneath the drag — a service removed
-  // from another surface, say. Dropping the reorder is safer than reordering the wrong thing.
-  if (from === -1 || to === -1 || from === to) return null;
-  const next = [...ids];
-  next.splice(to, 0, ...next.splice(from, 1));
-  return next;
+export function insideRail(
+  { x, y }: { x: number; y: number },
+  viewport = { width: window.innerWidth, height: window.innerHeight }
+): boolean {
+  return x >= 0 && y >= 0 && x <= viewport.width && y <= viewport.height;
+}
+
+/**
+ * The move a release should perform, or null for none.
+ *
+ * Separate from the event handler because the interesting case can't be reached from a test that
+ * drives dnd-kit: `releasedOutside` means the drop belongs to main's pane hit-testing, and moving
+ * the tile in the rail as well would act on one gesture twice. `overId` is not enough to tell on
+ * its own — `closestCenter` always names *some* tile, however far outside the rail the pointer has
+ * gone.
+ */
+export function moveOnRelease(
+  activeId: string,
+  overId: string | null,
+  releasedOutside: boolean
+): { activeId: string; overId: string } | null {
+  if (releasedOutside || !overId || overId === activeId) return null;
+  return { activeId, overId };
 }
 
 export function SortableRailList({
   ids,
-  onReorder,
+  onMove,
+  canDropOnPane,
   horizontal = false,
   children,
 }: {
+  /**
+   * Every draggable row, in visual order: top-level tiles, and the members of any folder that is
+   * open. Members are in the same list rather than a nested context because a service dragged out
+   * of a folder and a service dragged into one are the same gesture, and dnd-kit can only match an
+   * `active` to an `over` inside one `SortableContext`.
+   */
   ids: string[];
-  onReorder: (ids: string[]) => void;
+  /** A tile was dropped on another. What that means for the tree is decided in main. */
+  onMove: (move: { activeId: string; overId: string }) => void;
+  /**
+   * Whether this item can be dropped onto a pane. Folders can't — there is nothing to show — so
+   * lifting one is an ordinary in-rail move and main is never told about it.
+   */
+  canDropOnPane?: (id: string) => boolean;
   /**
    * The rail runs as a row on the top and bottom edges.
    *
@@ -82,10 +109,72 @@ export function SortableRailList({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // Where the pointer was last seen, in this view's coordinates. Tracked because dnd-kit reports
+  // movement relative to the lift, and main needs a position it can translate into the window.
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  /** Non-null only while a pointer drag that main knows about is in flight. */
+  const flight = useRef<string | null>(null);
+
+  // The release may be one this renderer never sees: whether the pointer events keep coming here
+  // after the press or start going to the drag layer is a mouse-capture detail that differs by
+  // platform. Main reports the end either way, and the lifted tile is cancelled here. Escape is
+  // dnd-kit's own cancel path — it listens for the keydown on the document, and exposes no
+  // imperative equivalent to call instead.
+  useEffect(
+    () =>
+      window.hangar.onDragEnded(() => {
+        if (!flight.current) return;
+        flight.current = null;
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true })
+        );
+      }),
+    []
+  );
+
+  // Bound for the whole life of the rail rather than per drag, because the lift itself happens
+  // inside a pointermove and a listener added then misses the events already in flight. The guard
+  // is what keeps it quiet: no lift, no messages.
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      if (!flight.current) return;
+      pointer.current = { x: event.clientX, y: event.clientY };
+      window.hangar.send({ type: 'drag-tile-to', from: 'rail', ...pointer.current });
+    };
+    window.addEventListener('pointermove', onMove);
+    return () => window.removeEventListener('pointermove', onMove);
+  }, []);
+
+  const onDragStart = ({ active, activatorEvent }: DragStartEvent) => {
+    // Keyboard lifts stay in the rail: the drag layer takes the keyboard focus when it attaches, so
+    // an arrow-key reorder would end on the first press.
+    if (activatorEvent.type !== 'pointerdown') return;
+    const id = String(active.id);
+    if (canDropOnPane && !canDropOnPane(id)) return;
+    const event = activatorEvent as PointerEvent;
+    pointer.current = { x: event.clientX, y: event.clientY };
+    flight.current = id;
+    window.hangar.send({ type: 'begin-tile-drag', serviceId: id });
+  };
+
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over) return;
-    const next = reorder(ids, String(active.id), String(over.id));
-    if (next) onReorder(next);
+    const point = flight.current ? pointer.current : null;
+    if (point) {
+      flight.current = null;
+      window.hangar.send({ type: 'drop-tile', from: 'rail', ...point });
+    }
+    const move = moveOnRelease(
+      String(active.id),
+      over ? String(over.id) : null,
+      point !== null && !insideRail(point)
+    );
+    if (move) onMove(move);
+  };
+
+  const onDragCancel = () => {
+    if (!flight.current) return;
+    flight.current = null;
+    window.hangar.send({ type: 'cancel-tile-drag' });
   };
 
   return (
@@ -93,7 +182,9 @@ export function SortableRailList({
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={[horizontal ? restrictToHorizontalAxis : restrictToVerticalAxis]}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onDragCancel={onDragCancel}
     >
       <SortableContext
         items={ids}

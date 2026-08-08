@@ -1,3 +1,4 @@
+import { DEFAULT_BINDINGS } from '@core/keyboard/keymap';
 import type { Preferences } from '@shared/types';
 
 /**
@@ -25,8 +26,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   behaviour: {
     globalShortcut: null,
-    hibernateAfterMinutes: 0, // 0 = never; hibernation lands in phase 4
+    // 0 = never. Deliberately off: the memory saving is real, but so is the cost of a cold load.
+    hibernateAfterMinutes: 0,
     launchAtLogin: false,
+    relaunchOnCrash: false,
     startHidden: false,
     closeToTray: false,
     confirmQuit: false,
@@ -41,7 +44,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     push: false,
     firebase: { projectId: '', appId: '', apiKey: '', messagingSenderId: '' },
   },
-  network: { proxy: { mode: 'system', host: '', port: 0 } },
+  // Every action, including the ones with no default chord — the schema has to list them or
+  // `merge` would drop a stored binding for an action it can't see a default for.
+  keyboard: { bindings: { ...DEFAULT_BINDINGS } },
+  network: { proxy: { mode: 'system', host: '', port: 0 }, blockAds: true },
   sync: { repoPath: '', allowPublicRepo: false },
   downloads: { folder: null, askWhereToSave: false, openOnComplete: false },
 };
@@ -100,7 +106,16 @@ export function setPreference(prefs: Preferences, path: string, value: unknown):
     const nextSchema = schema[segment];
     if (!isPlainObject(nextSchema)) return false;
     schema = nextSchema;
-    target = target[segment] as Json;
+
+    // Both sides, not just the schema. The schema half proves the *path* is real; this proves the
+    // config actually has an object there to descend into. `withDefaults` rebuilds any branch that
+    // isn't one, so today they always agree — but the whole point of this function is that it is
+    // the validator standing between an IPC message and the config, and a validator that assumes
+    // its input is already well-formed is not one. Without it a `network` holding a string threw a
+    // TypeError out of the IPC handler instead of returning false.
+    const nextTarget = target[segment];
+    if (!isPlainObject(nextTarget)) return false;
+    target = nextTarget;
   }
 
   const fallback = schema[leaf];

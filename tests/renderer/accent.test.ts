@@ -50,7 +50,9 @@ describe('the two bugs this module shipped with', () => {
 
 describe('contrast lifting', () => {
   it("Slack's brand purple is invisible on the tile and gets lifted", () => {
-    // #4A154B against #26262c is about 1.2:1 — the reason this module exists.
+    // #4A154B against #26262c is 1.07:1 — the reason this module exists. It lifts to #a58aa5 at
+    // 4.86:1, but the assertion stays on the threshold rather than the exact value, which is the
+    // algorithm's business to change.
     expect(contrastAgainstTile('#4A154B')).toBeLessThan(2);
     expect(contrastAgainstTile(brightenForDark('#4A154B'))).toBeGreaterThanOrEqual(4.5);
   });

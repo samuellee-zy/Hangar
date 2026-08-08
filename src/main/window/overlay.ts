@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
+import { safeSend } from '@main/platform/safe-send';
 import type { OverlayMode } from '@shared/types';
 
 /**
@@ -20,7 +21,6 @@ export class Overlay {
 
   constructor(
     private win: BaseWindow,
-    private onEscape: () => void,
     private onViewCreated: (wc: Electron.WebContents) => void
   ) {}
 
@@ -52,18 +52,16 @@ export class Overlay {
     });
     this.view.setBackgroundColor('#00000000');
 
-    // Escape is handled in main, on the overlay's own contents, not in React. The overlay is a
-    // transparent full-window view that hit-tests everywhere, so if the renderer hasn't mounted —
-    // or has thrown — a React-only Escape handler leaves the whole app unclickable with no way
-    // out. This is the escape hatch that works even when the surface above it is broken.
-    this.view.webContents.on('before-input-event', (event, input) => {
-      if (input.type === 'keyDown' && input.key === 'Escape') {
-        event.preventDefault();
-        this.onEscape();
-      }
-    });
-
     loadRoute(this.view.webContents, 'overlay');
+    // Escape reaches this view through `attachShortcuts`, which the owner wires up in
+    // `onViewCreated` along with the rest of the keymap. That is a main-process
+    // `before-input-event` handler, so it still works when the renderer hasn't mounted or has
+    // thrown — which matters here more than anywhere else, since a transparent full-window view
+    // hit-tests everywhere and a broken one leaves the whole app unclickable.
+    //
+    // It used to be a bespoke handler on this class. Two handlers on one contents meant Escape
+    // dispatched `close-overlay` twice, and the palette was the one surface where ⌘K and ⌘,
+    // did nothing at all.
     this.onViewCreated(this.view.webContents);
     return this.view;
   }
@@ -80,13 +78,39 @@ export class Overlay {
     view.webContents.focus();
     // Sent on every open, including a mode switch while already attached, so the renderer can
     // reset its own transient state (query text, selection) without remounting.
-    view.webContents.send('overlay:mode', { mode, nonce: this.nonce });
+    //
+    // `safeSend`, because a crashed overlay renderer throws on `send` — and this is reached from a
+    // menu item and a global chord, where the exception surfaces nowhere and ⌘K looks dead.
+    safeSend(view.webContents, 'overlay:mode', { mode, nonce: this.nonce });
   }
 
   close(): void {
     if (!this.attached || !this.view) return;
     this.win.contentView.removeChildView(this.view);
     this.attached = false;
+    this.mode = null;
+  }
+
+  /**
+   * Teardown. `close()` only detaches — deliberately, because the view is cached in `ensure()` and
+   * reused on the next ⌘K — so a *closed* overlay is a detached view holding a live renderer.
+   * Detached views are not children of the window and so aren't destroyed with it: the same leak
+   * decisions #54 fixed for service views, which never covered this one.
+   *
+   * The window is already gone by the time dispose runs, so `removeChildView` is best-effort.
+   */
+  destroy(): void {
+    if (!this.view) return;
+    if (this.attached) {
+      try {
+        this.win.contentView.removeChildView(this.view);
+      } catch {
+        // The window is destroyed, which detached it for us. The close below is what matters.
+      }
+      this.attached = false;
+    }
+    if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
+    this.view = null;
     this.mode = null;
   }
 

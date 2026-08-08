@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { catalog, catalogById, resolveUrl } from '@shared/catalog';
+import { catalog, catalogById, isOrphaned, resolveUrl } from '@shared/catalog';
 import { isAllowedHost } from '@main/platform/session';
 import type { ServiceInstance } from '@shared/types';
 
@@ -85,6 +85,63 @@ describe('host allowlists', () => {
       }
     }
   });
+
+  it('Teams allows consumer Teams, not just the work one', () => {
+    // The bug this pins: a personal Microsoft account is routed to teams.live.com, which is a
+    // separate app rather than a redirect of teams.microsoft.com. It was refused, so the pane
+    // stalled on a work Teams that never finished loading and could not be typed into.
+    const svc = { catalogId: 'teams' } as ServiceInstance;
+    for (const url of [
+      'https://teams.live.com/v2/',
+      'https://teams.microsoft.com/v2/',
+      'https://teams.cloud.microsoft/',
+      'https://login.live.com/oauth20_authorize.srf',
+      'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    ]) {
+      expect(isAllowedHost(svc, url), url).toBe(true);
+    }
+    // Still an allowlist: widening it for consumer Teams must not have let the web in.
+    expect(isAllowedHost(svc, 'https://example.com/')).toBe(false);
+  });
+
+  it('NO ENTRY DECLARES BOTH A TITLE PATTERN AND DOM RULES', () => {
+    // Both write an *absolute* count, so two of them on one service is a badge flapping between
+    // whichever reported last — a bug that looks like the count being random.
+    for (const e of catalog) {
+      const both = Boolean(e.unread?.titlePattern) && Boolean(e.unread?.dom?.length);
+      expect(both, e.id).toBe(false);
+    }
+  });
+
+  it('every title pattern is anchored', () => {
+    // An unanchored pattern finds a number anywhere in the title, so "Re: budget (2024 draft)"
+    // reads as 2024 unread. The failure is a plausible-looking count rather than an error, which
+    // is why this is worth a test rather than a review comment.
+    for (const e of catalog) {
+      const pattern = e.unread?.titlePattern;
+      if (pattern) expect(pattern, e.id).toMatch(/^\^/);
+    }
+  });
+
+  it('a caveat says something', () => {
+    // The field exists to be read in the picker before adding. An empty or one-word one renders as
+    // a stray line of grey text that reads as a rendering bug.
+    for (const e of catalog) {
+      if (e.caveat === undefined) continue;
+      expect(e.caveat.trim().length, e.id).toBeGreaterThan(20);
+    }
+  });
+
+  it('a DOM rule that could only ever report zero is a typo', () => {
+    for (const e of catalog) {
+      for (const rule of e.unread?.dom ?? []) {
+        expect(rule.selector.trim(), e.id).not.toBe('');
+        // `attr` mode with no attribute name reads the empty string off every match, so the rule
+        // matches, answers zero, and looks like a service you have read everything in.
+        if (rule.read === 'attr') expect(rule.attr, e.id).toBeTruthy();
+      }
+    }
+  });
 });
 
 describe('resolveUrl', () => {
@@ -102,5 +159,21 @@ describe('resolveUrl', () => {
   it('an unknown catalog id with no url does not throw', () => {
     // Custom connections always carry a url; a missing one is corrupt config, not a crash.
     expect(() => resolveUrl({ catalogId: '__custom' })).not.toThrow();
+  });
+});
+
+describe('isOrphaned', () => {
+  it('is true only when there is nothing at all to load', () => {
+    // The state a removed or renamed catalog entry leaves behind on an existing install. It has
+    // to be nameable, because both of its symptoms are silent: about:blank, and an allowlist with
+    // nothing in it that therefore refuses every navigation.
+    expect(isOrphaned({ catalogId: 'was-removed' })).toBe(true);
+    expect(isOrphaned({ catalogId: 'gmail' })).toBe(false);
+    // A custom connection carries its own URL, so a missing catalog entry costs it nothing.
+    expect(isOrphaned({ catalogId: '__custom', url: 'https://example.com' })).toBe(false);
+  });
+
+  it('no catalog entry is orphaned — the guard would be dead code if one were', () => {
+    for (const e of catalog) expect(isOrphaned({ catalogId: e.id }), e.id).toBe(false);
   });
 });

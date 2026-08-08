@@ -103,6 +103,29 @@ export function readWithRecovery<T>(
 }
 
 /**
+ * Moves a readable-but-unusable config aside, using the same naming `readWithRecovery` uses so it
+ * shows up in `findQuarantined` and therefore at boot and in Settings.
+ *
+ * Separate from the read path because the two failures are different: that one can't parse the
+ * file, this one parsed it fine and then found it self-inconsistent — a service naming an account
+ * that doesn't exist, say. Both leave the user on defaults, and in both cases the copy they care
+ * about must survive and be findable.
+ *
+ * Returns where it went, or null if it couldn't be moved. Never throws: this runs on the failure
+ * path, and failing there must not stop the app booting on defaults.
+ */
+export function quarantine(paths: ConfigPaths): string | null {
+  if (!fs.existsSync(paths.main)) return null;
+  const target = uniquePath(`${paths.main}.corrupt-${Date.now()}`);
+  try {
+    fs.renameSync(paths.main, target);
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Quarantined copies left behind by earlier failures, newest first.
  *
  * These are the only surviving record of a config that couldn't be read, and until now nothing ever

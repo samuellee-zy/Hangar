@@ -8,7 +8,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { vi, afterEach, beforeEach } from 'vitest';
-import type { ShellState } from '../../src/shared/types';
+import type { DropHighlight, ShellState } from '../../src/shared/types';
 
 /** Commands sent during a test, in order. Cleared between tests. */
 export const sent: unknown[] = [];
@@ -26,6 +26,21 @@ export function pushState(state: ShellState): void {
   for (const fn of stateSubscribers) fn(state);
 }
 
+/**
+ * Subscribers to `drag:ended`. Main sends this when a drag finished somewhere the rail's renderer
+ * couldn't see, so a test needs to be able to play main's part.
+ */
+const dragEndedSubscribers = new Set<() => void>();
+export function pushDragEnded(): void {
+  for (const fn of dragEndedSubscribers) fn();
+}
+
+/** Subscribers to `drag:highlight`, for the drag layer. */
+const highlightSubscribers = new Set<(h: DropHighlight | null) => void>();
+export function pushHighlight(highlight: DropHighlight | null): void {
+  for (const fn of highlightSubscribers) fn(highlight);
+}
+
 // RTL only registers its own auto-cleanup when Vitest runs with `globals: true`, which this
 // project doesn't. Without this every render stacks in the same document, so the second test to
 // look for a tile finds two and fails with "found multiple elements" — which reads like a
@@ -35,6 +50,8 @@ afterEach(cleanup);
 beforeEach(() => {
   sent.length = 0;
   stateSubscribers.clear();
+  dragEndedSubscribers.clear();
+  highlightSubscribers.clear();
   shellState = null;
 
   (window as unknown as { hangar: unknown }).hangar = {
@@ -49,5 +66,13 @@ beforeEach(() => {
     onFindOpened: vi.fn(() => () => {}),
     onFindResult: vi.fn(() => () => {}),
     onOverlayOpen: vi.fn(() => () => {}),
+    onDragHighlight: vi.fn((fn: (h: DropHighlight | null) => void) => {
+      highlightSubscribers.add(fn);
+      return () => highlightSubscribers.delete(fn);
+    }),
+    onDragEnded: vi.fn((fn: () => void) => {
+      dragEndedSubscribers.add(fn);
+      return () => dragEndedSubscribers.delete(fn);
+    }),
   };
 });

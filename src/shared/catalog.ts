@@ -7,12 +7,96 @@ import type { CatalogEntry } from './types';
 // the identity provider.
 
 const GOOGLE_AUTH = ['accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com'];
-const MS_AUTH = ['login.microsoftonline.com', 'login.live.com', 'login.microsoft.com'];
+// A personal Microsoft account signs in through the live.com side rather than the AAD side, and
+// the flow steps through account/signup pages before it hands back. `msauth.net` and `msftauth.net`
+// host the login UI itself for both.
+const MS_AUTH = [
+  'login.microsoftonline.com',
+  'login.live.com',
+  'login.microsoft.com',
+  'account.live.com',
+  'signup.live.com',
+  'msauth.net',
+  'msftauth.net',
+];
 // Atlassian, GitHub and Slack all front their own identity provider. Omitting one of these doesn't
 // fail loudly — the sign-in page is treated as an external navigation and opens in Safari, which
 // reads as "the service is broken" rather than "one host is missing from a list".
 const ATLASSIAN_AUTH = ['id.atlassian.com', 'auth.atlassian.com', 'atlassian.net'];
 const GITHUB_AUTH = ['github.com', 'github.githubassets.com'];
+
+/**
+ * Chords these services bind themselves, which Hangar therefore does not intercept.
+ *
+ * Kept short and evidence-based. A wrong entry here is a shortcut of ours that mysteriously stops
+ * working in one service, which is harder to diagnose than the reverse — so this lists only chords
+ * the service documents, and anything else is one checkbox away in Settings.
+ *
+ * `mod` is the placeholder for ⌘-or-Ctrl, expanded by `resolvePassthrough` in
+ * `core/keyboard/keymap.ts` — a web app's own ⌘K becomes Ctrl+K on Linux exactly as ours does, and
+ * this file is bundled into the renderer where `process.platform` doesn't exist to ask.
+ */
+const QUICK_SWITCHER = ['mod+k'];
+
+/**
+ * Unread detection, and why so many entries have none.
+ *
+ * Ten entries read their count out of the tab title. That leaves 27, and the honest breakdown is
+ * that most of them have no unread count to read: Docs, Sheets, Slides, Keep, Drive, OneDrive,
+ * SharePoint, Calendar, Meet, Zoom, Obsidian, Evernote, Claude, ChatGPT and Perplexity do not have
+ * an inbox, so "no rule" is the correct answer rather than a gap. Signal has no web client at all.
+ *
+ * The remainder — Notion, Jira, Confluence, Trello, Asana, ClickUp, Monday, Figma — do have a
+ * badge, and are deliberately left empty. **A selector nobody has watched a real page render is
+ * worse than nothing**: when it matches nothing it is merely useless, but when it matches the wrong
+ * node it is a phantom count that never clears and cannot be explained, which is the exact failure
+ * the module docstring in core/notify/unread.ts exists to warn about. These sites also ship
+ * generated class names that turn over on their own schedule.
+ *
+ * So the two rules below are the ones with a *published* contract behind them, and everything else
+ * is reachable through `ServiceInstance.unreadSelector` — a field for the person who can see the
+ * page, which is never going to be this file.
+ */
+
+// Salesforce Lightning Design System. `slds-*` is a documented, versioned public class contract,
+// which is what makes this one safe to write down. The badge span is present and empty at zero.
+const SALESFORCE_UNREAD = {
+  dom: [{ selector: '.slds-notification-badge', anchor: '.slds-global-actions' }],
+};
+
+/**
+ * Gmail's Atom feed — the count for a Gmail that is asleep, which the title pattern above cannot
+ * give because a hibernated service has no title.
+ *
+ * `/u/0/` here, unlike the entry's `url`: within one Hangar account the partition holds a single
+ * Google session, so index 0 *is* that session, and the feed has no bare-host form that resolves
+ * per-partition.
+ *
+ * Shipping a rule this specific is a different risk from shipping a speculative CSS selector, and
+ * that is the reason the two are treated differently. A selector can match the wrong node and
+ * invent a count that never clears. An endpoint rule cannot: a signed-out session redirects and is
+ * refused, a changed response fails the regex, and every one of those paths returns "no
+ * information" rather than a number. The worst case is that it quietly does nothing.
+ */
+const GMAIL_FEED = {
+  url: 'https://mail.google.com/mail/u/0/feed/atom',
+  extract: { regex: '<fullcount>(\\d+)</fullcount>' },
+  everySeconds: 300,
+};
+
+// GitLab's To-Do counter. Their frontend is open source and `data-testid` here is the same hook
+// their own suite asserts on, so it breaking is a change they would notice too. The `js-` class is
+// the older markup, still what self-hosted instances serve.
+// Notion, Jira, Confluence, Trello, Asana, ClickUp, Monday and Figma have an inbox worth counting
+// and no rule here. Not an oversight — a guessed selector matches nothing, which is indistinguishable
+// from having read everything, so it fails as a permanent silent zero that nobody investigates.
+// Each needs DevTools on a real logged-in page: docs/unread-selectors.md is the procedure.
+const GITLAB_UNREAD = {
+  dom: [
+    { selector: '[data-testid="todos-counter"]', anchor: '[data-testid="super-sidebar"]' },
+    { selector: '.js-todos-count', anchor: 'header.navbar' },
+  ],
+};
 
 /** Chat and calls: the ones most likely to sit in a rail all day. */
 const COMMS: CatalogEntry[] = [
@@ -21,6 +105,7 @@ const COMMS: CatalogEntry[] = [
     initials: 'Di', color: '#5865F2', provider: 'discord',
     allowedHosts: ['discord.com', 'discordapp.com', 'cdn.discordapp.com'],
     unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+    passthrough: QUICK_SWITCHER,
   },
   {
     id: 'telegram', icon: 'telegram', name: 'Telegram', url: 'https://web.telegram.org/a/',
@@ -37,6 +122,11 @@ const COMMS: CatalogEntry[] = [
   {
     id: 'signal', icon: 'signal', name: 'Signal', url: 'https://signal.org/',
     initials: 'Sg', color: '#3A76F0', provider: 'signal', allowedHosts: ['signal.org'],
+    // Signal has no web client — by design, since linking a device requires key material a browser
+    // tab is not trusted with. There is no URL that would make this entry work, so it stays
+    // pointing at signal.org and says why. Kept rather than deleted because removing the id would
+    // strand anyone who already added it.
+    caveat: 'No web app — Signal is desktop and mobile only. This opens signal.org.',
   },
   {
     id: 'zoom', icon: 'zoom', name: 'Zoom', url: 'https://app.zoom.us/wc/home',
@@ -47,6 +137,63 @@ const COMMS: CatalogEntry[] = [
     id: 'meet', icon: 'google-meet', name: 'Meet', url: 'https://meet.google.com/',
     initials: 'Me', color: '#00897B', provider: 'google',
     allowedHosts: ['meet.google.com', 'workspace.google.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'messenger', icon: 'facebook-messenger', name: 'Messenger',
+    url: 'https://www.messenger.com/',
+    initials: 'Ms', color: '#0084FF', provider: 'facebook',
+    // facebook.com is the identity provider here, not a courtesy: messenger.com hands sign-in
+    // straight to it and comes back with the session.
+    allowedHosts: ['messenger.com', 'www.messenger.com', 'facebook.com'],
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+  },
+  {
+    id: 'gchat', icon: 'google-chat', name: 'Google Chat', url: 'https://chat.google.com/',
+    initials: 'GC', color: '#00AC47', provider: 'google',
+    // mail.google.com because Chat is also embedded in Gmail and hops between the two.
+    allowedHosts: ['chat.google.com', 'mail.google.com', ...GOOGLE_AUTH],
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+  },
+  {
+    id: 'element', icon: 'element', name: 'Element', url: 'https://app.element.io/',
+    initials: 'El', color: '#0DBD8B', provider: 'element',
+    // Matrix is federated: a homeserver other than matrix.org is normal, and its host cannot be
+    // known here. Settings → Connections is where that one gets added.
+    allowedHosts: ['element.io', 'app.element.io', 'matrix.org'],
+  },
+];
+
+/** Feeds. Added because they were the obvious hole, not because they're restful. */
+const SOCIAL: CatalogEntry[] = [
+  {
+    id: 'instagram', icon: 'instagram', name: 'Instagram', url: 'https://www.instagram.com/',
+    initials: 'Ig', color: '#E4405F', provider: 'instagram',
+    // Its own provider rather than sharing Facebook's: the accounts are linkable but routinely
+    // separate, and sharing a cookie jar would sign you into the wrong one with no way back.
+    allowedHosts: ['instagram.com', 'www.instagram.com', 'facebook.com'],
+  },
+  {
+    id: 'x', icon: 'x', name: 'X', url: 'https://x.com/home',
+    initials: 'X', color: '#111111', provider: 'x',
+    // twitter.com still serves live redirects into x.com, so the old host is a navigation target
+    // rather than history.
+    allowedHosts: ['x.com', 'twitter.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'linkedin', icon: 'linkedin', name: 'LinkedIn', url: 'https://www.linkedin.com/feed/',
+    initials: 'Li', color: '#0A66C2', provider: 'linkedin',
+    allowedHosts: ['linkedin.com', 'www.linkedin.com', ...GOOGLE_AUTH],
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+  },
+  {
+    id: 'reddit', icon: 'reddit', name: 'Reddit', url: 'https://www.reddit.com/',
+    initials: 'Rd', color: '#FF4500', provider: 'reddit',
+    allowedHosts: ['reddit.com', 'www.reddit.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'bluesky', icon: 'bluesky', name: 'Bluesky', url: 'https://bsky.app/',
+    initials: 'Bs', color: '#0285FF', provider: 'bluesky',
+    allowedHosts: ['bsky.app', 'bsky.social'],
   },
 ];
 
@@ -68,6 +215,7 @@ const WORK: CatalogEntry[] = [
   },
   {
     id: 'github', icon: 'github', name: 'GitHub', url: 'https://github.com/',
+    passthrough: QUICK_SWITCHER,
     initials: 'GH', color: '#181717', provider: 'github', allowedHosts: [...GITHUB_AUTH],
     unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
   },
@@ -75,9 +223,11 @@ const WORK: CatalogEntry[] = [
     id: 'gitlab', icon: 'gitlab', name: 'GitLab', url: 'https://gitlab.com/',
     initials: 'GL', color: '#FC6D26', provider: 'gitlab',
     allowedHosts: ['gitlab.com', ...GOOGLE_AUTH],
+    unread: GITLAB_UNREAD,
   },
   {
     id: 'asana', icon: 'asana', name: 'Asana', url: 'https://app.asana.com/',
+    passthrough: QUICK_SWITCHER,
     initials: 'As', color: '#F06A6A', provider: 'asana',
     allowedHosts: ['asana.com', 'app.asana.com', ...GOOGLE_AUTH],
   },
@@ -97,6 +247,44 @@ const WORK: CatalogEntry[] = [
     id: 'monday', name: 'Monday', url: 'https://auth.monday.com/',
     initials: 'Mo', color: '#FF3D57', provider: 'monday',
     allowedHosts: ['monday.com', 'auth.monday.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'airtable', icon: 'airtable', name: 'Airtable', url: 'https://airtable.com/',
+    initials: 'At', color: '#18BFFF', provider: 'airtable',
+    allowedHosts: ['airtable.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'miro', icon: 'miro', name: 'Miro', url: 'https://miro.com/app/dashboard/',
+    initials: 'Mi', color: '#FFD02F', provider: 'miro',
+    allowedHosts: ['miro.com', 'app.miro.com', ...GOOGLE_AUTH],
+  },
+  {
+    // No slug upstream — see the Monday entry for why that means omitting the field rather than
+    // guessing one.
+    id: 'loom', name: 'Loom', url: 'https://www.loom.com/looms/videos',
+    initials: 'Lo', color: '#625DF5', provider: 'loom',
+    allowedHosts: ['loom.com', 'www.loom.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'dropbox', icon: 'dropbox', name: 'Dropbox', url: 'https://www.dropbox.com/home',
+    initials: 'Db', color: '#0061FF', provider: 'dropbox',
+    allowedHosts: ['dropbox.com', 'www.dropbox.com', ...GOOGLE_AUTH],
+  },
+];
+
+/** Mail that isn't Google's or Microsoft's. */
+const MAIL: CatalogEntry[] = [
+  {
+    id: 'protonmail', icon: 'proton-mail', name: 'Proton Mail',
+    url: 'https://mail.proton.me/',
+    initials: 'Pr', color: '#6D4AFF', provider: 'proton',
+    allowedHosts: ['proton.me', 'mail.proton.me', 'account.proton.me'],
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+  },
+  {
+    id: 'fastmail', icon: 'fastmail', name: 'Fastmail', url: 'https://app.fastmail.com/',
+    initials: 'Fm', color: '#0067B9', provider: 'fastmail',
+    allowedHosts: ['fastmail.com', 'app.fastmail.com'],
   },
 ];
 
@@ -163,6 +351,19 @@ const AI_NOTES: CatalogEntry[] = [
     allowedHosts: ['chatgpt.com', 'openai.com', 'auth.openai.com', 'auth0.openai.com', ...GOOGLE_AUTH],
   },
   {
+    id: 'gemini', icon: 'google-gemini', name: 'Gemini', url: 'https://gemini.google.com/app',
+    initials: 'Ge', color: '#8E75B2', provider: 'google',
+    allowedHosts: ['gemini.google.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'copilot', icon: 'microsoft-copilot', name: 'Copilot',
+    url: 'https://copilot.microsoft.com/',
+    initials: 'Cp', color: '#0078D4', provider: 'microsoft',
+    // Consumer Copilot is on copilot.microsoft.com; the work one is served from cloud.microsoft,
+    // and which you get depends on the account, so both have to be here.
+    allowedHosts: ['copilot.microsoft.com', 'cloud.microsoft', ...MS_AUTH],
+  },
+  {
     id: 'perplexity', icon: 'perplexity', name: 'Perplexity', url: 'https://www.perplexity.ai/',
     initials: 'Px', color: '#20808D', provider: 'perplexity',
     allowedHosts: ['perplexity.ai', 'www.perplexity.ai', ...GOOGLE_AUTH],
@@ -177,6 +378,10 @@ const AI_NOTES: CatalogEntry[] = [
     id: 'obsidian', icon: 'obsidian', name: 'Obsidian', url: 'https://publish.obsidian.md/',
     initials: 'Ob', color: '#7C3AED', provider: 'obsidian',
     allowedHosts: ['obsidian.md', 'publish.obsidian.md'],
+    // publish.obsidian.md serves *published* sites, not your vault — a local folder no web client
+    // reaches. The URL is the only real web surface Obsidian has, so the correction is to stop it
+    // reading as "your notes, in Hangar".
+    caveat: 'Obsidian Publish sites only — your vault is local and has no web client.',
   },
   {
     id: 'evernote', icon: 'evernote', name: 'Evernote', url: 'https://www.evernote.com/client/web',
@@ -188,7 +393,7 @@ const AI_NOTES: CatalogEntry[] = [
 export const catalog: CatalogEntry[] = [
   {
     id: 'gmail',
-    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+    unread: { titlePattern: '^\\((\\d+)\\+?\\)', endpoint: GMAIL_FEED },
     icon: 'gmail',
     name: 'Gmail',
     // Bare host, NOT /mail/u/0/ — same trap as Calendar. With no session at user index 0, Google
@@ -232,7 +437,21 @@ export const catalog: CatalogEntry[] = [
     initials: 'Tm',
     // Teams now lands on teams.cloud.microsoft rather than teams.microsoft.com.
     color: '#6264A7',
-    allowedHosts: ['teams.microsoft.com', 'teams.cloud.microsoft', 'sharepoint.com', ...MS_AUTH],
+    // `teams.live.com` is consumer Teams, and it is a *different app* rather than a redirect target
+    // of the work one — signing in with a personal account routes there. Without it the sign-in
+    // step was refused and the pane sat on a half-loaded work Teams with nothing to type into,
+    // which is indistinguishable from the service being broken.
+    //
+    // `cloud.microsoft` is the Microsoft 365 domain the whole suite is moving onto, so the shell
+    // hops through it. Microsoft-owned end to end and not a public suffix, so the leading-dot
+    // suffix match is safe here in a way shortening to a registrable domain usually is not.
+    allowedHosts: [
+      'teams.microsoft.com',
+      'teams.live.com',
+      'cloud.microsoft',
+      'sharepoint.com',
+      ...MS_AUTH,
+    ],
     provider: 'microsoft',
   },
   {
@@ -245,6 +464,9 @@ export const catalog: CatalogEntry[] = [
     color: '#4A154B',
     allowedHosts: ['app.slack.com', 'slack.com'],
     provider: 'slack',
+    // ⌘K jump-to, ⌘F search this channel, ⌘[ / ⌘] Slack's own history. All four are chords Hangar
+    // would otherwise take, and all four are the reason this feature exists.
+    passthrough: ['mod+k', 'mod+f', 'mod+[', 'mod+]'],
   },
   {
     id: 'notion',
@@ -258,6 +480,8 @@ export const catalog: CatalogEntry[] = [
     color: '#8A8A8A',
     allowedHosts: ['notion.so', 'www.notion.so', 'notion.com', 'www.notion.com', ...GOOGLE_AUTH],
     provider: 'notion',
+    // ⌘P is Notion's search, ⌘\ toggles its sidebar, ⌘[ / ⌘] are its history.
+    passthrough: ['mod+k', 'mod+p', 'mod+\\', 'mod+[', 'mod+]'],
   },
   {
     id: 'linear',
@@ -269,6 +493,7 @@ export const catalog: CatalogEntry[] = [
     color: '#5E6AD2',
     allowedHosts: ['linear.app', ...GOOGLE_AUTH],
     provider: 'linear',
+    passthrough: QUICK_SWITCHER,
   },
   {
     id: 'figma',
@@ -292,12 +517,24 @@ export const catalog: CatalogEntry[] = [
     // Phase 0: sid is a session cookie and the org invalidates it on browser close. Client-side
     // promotion demonstrably does not help. Belongs on Tier 2 (connected app + refresh token).
     sessionNotPersistable: true,
+    unread: SALESFORCE_UNREAD,
   },
   ...COMMS,
   ...WORK,
   ...SUITES,
   ...AI_NOTES,
+  ...MAIL,
+  ...SOCIAL,
+  {
+    id: 'spotify', icon: 'spotify', name: 'Spotify', url: 'https://open.spotify.com/',
+    initials: 'Sp', color: '#1DB954', provider: 'spotify',
+    allowedHosts: ['open.spotify.com', 'spotify.com', 'accounts.spotify.com', ...GOOGLE_AUTH],
+  },
 ];
+
+// Deliberately not here: **Skype**. Microsoft retired it in May 2025 and web.skype.com now
+// redirects to a migration notice, so an entry for it would be a tile that can never work — the
+// exact trap the Signal and Obsidian caveats exist to stop repeating.
 
 export const catalogById = (id: string): CatalogEntry | undefined =>
   catalog.find((c) => c.id === id);
@@ -309,3 +546,14 @@ export const catalogById = (id: string): CatalogEntry | undefined =>
  */
 export const resolveUrl = (svc: { catalogId: string; url?: string }): string =>
   svc.url ?? catalogById(svc.catalogId)?.url ?? 'about:blank';
+
+/**
+ * A service whose `catalogId` no longer resolves and which has no URL of its own.
+ *
+ * This is what renaming or removing a catalog entry does to installs that already exist, and it
+ * fails in the quietest possible way: `resolveUrl` returns `about:blank`, and `isAllowedHost` has
+ * no list to check so it refuses *every* navigation. The result is a permanently blank pane with
+ * nothing anywhere saying why. Worth naming so the callers can say so instead.
+ */
+export const isOrphaned = (svc: { catalogId: string; url?: string }): boolean =>
+  !svc.url && !catalogById(svc.catalogId);

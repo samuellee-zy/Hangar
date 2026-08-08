@@ -10,10 +10,12 @@ import { describe, it, expect } from 'vitest';
 import {
   activeServicesOf,
   activeWorkspaceOf,
+  keyboardMapOf,
   projectShellState,
   removeServiceFromConfig,
   resolveCommand,
 } from '@core/shell-state';
+import { DEFAULT_BINDINGS, KEY_ACTIONS, primaryChord } from '@core/keyboard/keymap';
 import { DEFAULT_PREFERENCES } from '@core/config/preferences';
 import type { Config, RailItem } from '@shared/types';
 
@@ -113,6 +115,7 @@ describe('projectShellState', () => {
     orphanPartitions: [],
     quarantinedConfigs: [],
     syncStatus: { state: 'off' as const },
+    railExpanded: false,
   };
 
   it('a service with no runtime is reported asleep', () => {
@@ -348,7 +351,62 @@ describe('unread survives having no runtime', () => {
       orphanPartitions: [],
       quarantinedConfigs: [],
       syncStatus: { state: 'off' as const },
+      railExpanded: false,
     });
     expect(state.services[0]).toMatchObject({ sleeping: true, unread: 5 });
+  });
+});
+
+// The keymap is projected rather than imported: the table lives in core/, which the renderer is
+// forbidden from reaching, and resolving a passthrough list needs a platform a page can't ask for.
+describe('keyboardMapOf', () => {
+  it('pairs every action with its stored chord, in table order', () => {
+    const map = keyboardMapOf(config());
+    expect(map.actions.map((a) => a.id)).toEqual(KEY_ACTIONS.map((a) => a.id));
+    expect(map.actions.find((a) => a.id === 'palette')?.chord).toBe(DEFAULT_BINDINGS['palette']);
+    // Every row has a label, or Settings renders a chord attached to nothing.
+    expect(map.actions.every((a) => a.label.length > 0)).toBe(true);
+  });
+
+  it('MARKS BOTH SIDES OF A CONFLICT', () => {
+    // Only a hand-edited or synced config can hold one, and it renders as one of the two shortcuts
+    // silently not working — so it has to be visible.
+    const c = config({
+      preferences: {
+        ...DEFAULT_PREFERENCES,
+        keyboard: {
+          bindings: { ...DEFAULT_BINDINGS, find: DEFAULT_BINDINGS['palette']! },
+        },
+      },
+    });
+    const conflicted = keyboardMapOf(c).actions.filter((a) => a.conflict);
+    expect(conflicted.map((a) => a.id).sort()).toEqual(['find', 'palette']);
+  });
+
+  it('an unbound action is reported as unbound, not omitted', () => {
+    const map = keyboardMapOf(config());
+    expect(map.actions.find((a) => a.id === 'sleep-others')?.chord).toBe('');
+  });
+
+  it('resolves each service passthrough against the catalog', () => {
+    // Slack ships with its own ⌘K; a service that has never been touched follows the catalog, and
+    // `fromCatalog` is what lets Settings say so.
+    const c = config({ services: [svc('s1', { catalogId: 'slack' })] });
+    const entry = keyboardMapOf(c).passthrough['s1']!;
+    expect(entry.fromCatalog).toBe(true);
+    expect(entry.chords).toContain(primaryChord('k'));
+  });
+
+  it('AN EMPTY STORED LIST OVERRIDES THE CATALOG', () => {
+    // `[]` is "claim nothing" and `undefined` is "follow the catalog". Collapsing the two would
+    // make giving ⌘K back to Hangar impossible for any service the catalog has an opinion about.
+    const c = config({
+      services: [svc('s1', { catalogId: 'slack', keyboardPassthrough: [] })],
+    });
+    expect(keyboardMapOf(c).passthrough['s1']).toEqual({ chords: [], fromCatalog: false });
+  });
+
+  it('lists the reserved chords so Settings can refuse them before sending', () => {
+    expect(keyboardMapOf(config()).reserved).toContain(primaryChord('q'));
   });
 });

@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import { creditSuspendedTime, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 
 
 const NOW = 1_000_000_000;
@@ -89,5 +89,41 @@ describe("what gets refreshed after a wake", () => {
   it('sleeping services are not woken just to refresh them', () => {
     const items = [{ serviceId: 'a', sleeping: true, visible: false, lastActiveAt: NOW }];
     assert.deepEqual(servicesToRefresh(items, 30 * 60_000), []);
+  });
+});
+
+describe('time spent asleep does not count as idle time', () => {
+
+  it('a service used just before the lid closed is not due on wake', () => {
+    // The regression. Two minutes of use, twelve hours of sleep, a thirty-minute timeout: without
+    // the credit this is 722 minutes idle and gets unloaded by the first sweep after wake — along
+    // with every other background service, all at once.
+    const slept = 12 * 60 * 60_000;
+    const usedTwoMinutesBeforeSleeping = minutesAgo(2 + 12 * 60);
+
+    const naive = servicesToHibernate([svc('a', { lastActiveAt: usedTwoMinutesBeforeSleeping })], 30, NOW);
+    assert.deepEqual(naive, ['a'], 'guard: without crediting, this is exactly the bad outcome');
+
+    const credited = creditSuspendedTime(usedTwoMinutesBeforeSleeping, slept, NOW);
+    assert.deepEqual(servicesToHibernate([svc('a', { lastActiveAt: credited })], 30, NOW), []);
+  });
+
+  it('a service already idle before the sleep is still due after it', () => {
+    // The credit must not become an amnesty. Idle for two hours before the lid closed, with a
+    // thirty-minute timeout, is idle whichever side of the sleep you measure from.
+    const slept = 12 * 60 * 60_000;
+    const idleLongBefore = minutesAgo(120 + 12 * 60);
+
+    const credited = creditSuspendedTime(idleLongBefore, slept, NOW);
+    assert.deepEqual(servicesToHibernate([svc('a', { lastActiveAt: credited })], 30, NOW), ['a']);
+  });
+
+  it('never returns a stamp in the future, however long the sleep', () => {
+    assert.equal(creditSuspendedTime(NOW - 1000, 99 * 60 * 60_000, NOW), NOW);
+  });
+
+  it('a zero or negative suspend leaves the stamp alone', () => {
+    assert.equal(creditSuspendedTime(minutesAgo(5), 0, NOW), minutesAgo(5));
+    assert.equal(creditSuspendedTime(minutesAgo(5), -1, NOW), minutesAgo(5));
   });
 });

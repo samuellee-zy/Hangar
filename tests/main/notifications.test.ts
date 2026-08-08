@@ -5,8 +5,19 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { badgeTotal, decideNotification, nextUnread } from '@core/notify/policy';
-import { unreadFromTitle } from '@core/notify/unread';
+import {
+  badgeTotal,
+  decideNotification,
+  nextUnread,
+  normaliseNotification,
+} from '@core/notify/policy';
+import {
+  UnreadCounts,
+  countFromBadgeText,
+  resolveUnreadRules,
+  unreadFromDom,
+  unreadFromTitle,
+} from '@core/notify/unread';
 import { catalog } from '@shared/catalog';
 
 
@@ -182,5 +193,237 @@ describe('unread from the page title', () => {
       assert.equal(unreadFromTitle(`(99+) ${entry.name}`, entry.unread), 99, entry.id);
       assert.equal(unreadFromTitle(entry.name, entry.unread), 0, entry.id);
     }
+  });
+});
+
+// Reading the count out of the page's own badge — the mechanism for the 27 catalog entries that
+// never put one in the title. The page-side code deliberately does no arithmetic so that all of it
+// lands here, where a test can reach it.
+describe('unread from the DOM', () => {
+  const probe = (values: string[], anchored = true) => ({ anchored, values });
+
+  it('reads the number out of a badge, however the site writes it', () => {
+    assert.equal(countFromBadgeText('3'), 3);
+    assert.equal(countFromBadgeText(' 12 '), 12);
+    assert.equal(countFromBadgeText('9+'), 9);
+    assert.equal(countFromBadgeText('(4)'), 4);
+    assert.equal(countFromBadgeText('unread: 7'), 7, 'digits anywhere, not only leading');
+    assert.equal(countFromBadgeText('3 unread messages'), 3);
+  });
+
+  it('a badge with no digits is one, and an empty one is none', () => {
+    // The dot-style badge: present means "something", and that something is at least 1.
+    assert.equal(countFromBadgeText('•'), 1);
+    assert.equal(countFromBadgeText('new'), 1);
+    // Sites commonly leave the badge element in place and empty it. That is a real zero.
+    assert.equal(countFromBadgeText(''), 0);
+    assert.equal(countFromBadgeText('   '), 0);
+  });
+
+  it('a matched badge gives its count', () => {
+    assert.equal(unreadFromDom([{ selector: '.badge' }], [probe(['5'])]), 5);
+  });
+
+  it('NO RULES MEANS NO INFORMATION, not zero', () => {
+    // The distinction the whole three-way return exists for: a service we cannot read has to keep
+    // whatever the notification tally built up rather than being silently cleared.
+    assert.equal(unreadFromDom(undefined, [probe(['5'])]), null);
+    assert.equal(unreadFromDom([], [probe(['5'])]), null);
+  });
+
+  it('AN ANCHORED PAGE WITH NO BADGE IS ZERO — this is how a badge clears', () => {
+    assert.equal(unreadFromDom([{ selector: '.badge', anchor: '#app' }], [probe([], true)]), 0);
+  });
+
+  it('AN UNANCHORED PAGE SAYS NOTHING, so a reload does not wipe a real count', () => {
+    // The SPA has not drawn its sidebar yet. Answering zero here clears the badge on every reload,
+    // which is indistinguishable from the count being wrong.
+    assert.equal(unreadFromDom([{ selector: '.badge', anchor: '#app' }], [probe([], false)]), null);
+  });
+
+  it('falls through to the next rule when the first has not loaded', () => {
+    const rules = [
+      { selector: '.new-badge', anchor: '#new-app' },
+      { selector: '.old-badge', anchor: '#old-app' },
+    ];
+    assert.equal(unreadFromDom(rules, [probe([], false), probe(['4'])]), 4);
+  });
+
+  it('stops at the first rule that can answer, including when the answer is zero', () => {
+    const rules = [{ selector: '.badge', anchor: '#app' }, { selector: '.fallback' }];
+    assert.equal(unreadFromDom(rules, [probe([], true), probe(['9'])]), 0);
+  });
+
+  it("read: 'count' counts the elements rather than reading them", () => {
+    // One dot per unread row, with no number anywhere on the page.
+    const rules = [{ selector: '.row.unread', read: 'count' as const }];
+    assert.equal(unreadFromDom(rules, [probe(['', '', ''])]), 3);
+  });
+
+  it('takes the first match, not the sum of every match', () => {
+    // A service showing a per-channel badge *and* a total would otherwise report roughly double.
+    assert.equal(unreadFromDom([{ selector: '.badge' }], [probe(['4', '3', '1'])]), 4);
+  });
+
+  it('SURVIVES ANYTHING A PAGE CAN SEND, because a page can reach the bridge', () => {
+    const rules = [{ selector: '.badge' }];
+    assert.equal(unreadFromDom(rules, null), null);
+    assert.equal(unreadFromDom(rules, 'nope'), null);
+    assert.equal(unreadFromDom(rules, [42]), null);
+    assert.equal(unreadFromDom(rules, [{}]), null, 'no values array is no probe at all');
+    assert.equal(unreadFromDom(rules, [{ anchored: true, values: 'x' }]), null);
+    // Non-strings are dropped rather than coerced, so a tampered-with entry cannot become a count.
+    assert.equal(unreadFromDom(rules, [{ anchored: true, values: [null, '5'] }]), 5);
+    assert.equal(unreadFromDom(rules, [{ anchored: true, values: [{ toString: () => '9' }] }]), 0);
+    assert.equal(unreadFromDom(rules, []), null, 'fewer probes than rules');
+  });
+
+  it('ignores a truthy-but-not-true anchored flag', () => {
+    // Straight from IPC, so the shape is asserted rather than assumed.
+    assert.equal(unreadFromDom([{ selector: '.b' }], [{ anchored: 1, values: [] }]), null);
+  });
+});
+
+describe('resolveUnreadRules', () => {
+  const detection = { dom: [{ selector: '.catalog-badge' }] };
+
+  it('follows the catalog when the user has set nothing', () => {
+    assert.deepEqual(resolveUnreadRules(detection, undefined), [{ selector: '.catalog-badge' }]);
+  });
+
+  it("a user's selector replaces the catalog's", () => {
+    assert.deepEqual(resolveUnreadRules(detection, '.mine'), [{ selector: '.mine' }]);
+  });
+
+  it('THE EMPTY STRING IS "DETECT NOTHING", and is not the same as unset', () => {
+    // The only way to switch off a catalog rule that has started matching the wrong node. Collapse
+    // this with `undefined` and the catalog default becomes unremovable.
+    assert.deepEqual(resolveUnreadRules(detection, ''), []);
+    assert.deepEqual(resolveUnreadRules(detection, '   '), []);
+  });
+
+  it('a service with no detection at all resolves to no rules', () => {
+    assert.deepEqual(resolveUnreadRules(undefined, undefined), []);
+    assert.deepEqual(resolveUnreadRules({ titlePattern: '^\\((\\d+)\\)' }, undefined), []);
+  });
+});
+
+// The class beside `unreadFromTitle`, which had no tests at all — the counts every badge, tray
+// total and folder roll-up reads.
+describe('UnreadCounts', () => {
+  it('an unknown service reads zero rather than undefined', () => {
+    assert.equal(new UnreadCounts().get('nobody'), 0);
+  });
+
+  it('increment returns the new value, so the caller needs no second lookup', () => {
+    const counts = new UnreadCounts();
+    assert.equal(counts.increment('slack'), 1);
+    assert.equal(counts.increment('slack'), 2);
+    assert.equal(counts.get('slack'), 2);
+  });
+
+  it('SET CAN GO DOWN, which is the entire reason it exists next to increment', () => {
+    // Title detection reports a state, not an event. Without this, reading your mail elsewhere
+    // could never lower the badge.
+    const counts = new UnreadCounts();
+    counts.set('gmail', 5);
+    counts.set('gmail', 2);
+    assert.equal(counts.get('gmail'), 2);
+  });
+
+  it('setting zero or less forgets the service rather than storing a zero', () => {
+    const counts = new UnreadCounts();
+    counts.set('gmail', 3);
+    counts.set('gmail', 0);
+    assert.equal(counts.get('gmail'), 0);
+    assert.equal(counts.snapshot().size, 0, 'and leaves nothing behind in the projection');
+
+    counts.set('gmail', -1);
+    assert.equal(counts.snapshot().size, 0);
+  });
+
+  it('clear forgets one service and leaves the rest', () => {
+    const counts = new UnreadCounts();
+    counts.set('gmail', 3);
+    counts.set('slack', 4);
+    counts.clear('gmail');
+    assert.equal(counts.get('gmail'), 0);
+    assert.equal(counts.get('slack'), 4);
+  });
+
+  it('PRUNE DROPS DELETED SERVICES — or the badge counts something the UI cannot explain', () => {
+    const counts = new UnreadCounts();
+    counts.set('gmail', 3);
+    counts.set('deleted', 9);
+    counts.prune(['gmail']);
+    assert.equal(counts.total(), 3);
+    assert.deepEqual([...counts.snapshot().keys()], ['gmail']);
+  });
+
+  it('total sums every service, and is exactly 0 when empty', () => {
+    // macOS shows no badge at 0, so the dock call needs a real 0 rather than a skipped call.
+    const counts = new UnreadCounts();
+    assert.equal(counts.total(), 0);
+    counts.set('gmail', 3);
+    counts.set('slack', 4);
+    assert.equal(counts.total(), 7);
+  });
+
+  it('snapshot is a copy, so a consumer cannot mutate the live counts', () => {
+    const counts = new UnreadCounts();
+    counts.set('gmail', 3);
+    const snap = counts.snapshot();
+    snap.set('gmail', 99);
+    snap.set('injected', 1);
+    assert.equal(counts.get('gmail'), 3);
+    assert.equal(counts.get('injected'), 0);
+  });
+});
+
+// The payload arrives from a *page*, via a bridge the preload puts in the main world — so
+// `__hangar.notify(null)` is something any loaded service can do. Reading `.title` off that threw
+// a TypeError inside an `ipcMain.on` handler, where nothing catches it.
+describe('normalising a notification off the wire', () => {
+  it('NULL AND UNDEFINED DO NOT THROW — the crash a page could trigger at will', () => {
+    assert.deepEqual(normaliseNotification(null), { title: '', body: '', silent: false });
+    assert.deepEqual(normaliseNotification(undefined), { title: '', body: '', silent: false });
+  });
+
+  it('a primitive instead of an object does not throw either', () => {
+    for (const payload of ['boom', 42, true, Symbol('x')]) {
+      assert.deepEqual(normaliseNotification(payload), { title: '', body: '', silent: false });
+    }
+  });
+
+  it('passes an ordinary payload through unchanged', () => {
+    assert.deepEqual(
+      normaliseNotification({ title: 'Hi', body: 'There', silent: true }),
+      { title: 'Hi', body: 'There', silent: true }
+    );
+  });
+
+  it('stringifies a number rather than dropping the notification', () => {
+    // A site passing a number is doing something ordinary. Showing "3" beats showing nothing.
+    assert.deepEqual(
+      normaliseNotification({ title: 3, body: false }),
+      { title: '3', body: 'false', silent: false }
+    );
+  });
+
+  it('a non-primitive title becomes empty rather than "[object Object]"', () => {
+    assert.equal(normaliseNotification({ title: { toString: () => 'evil' } }).title, '');
+    assert.equal(normaliseNotification({ title: ['a', 'b'] }).title, '');
+  });
+
+  it('silent is only true for a real boolean true', () => {
+    // Truthy-but-not-true must not silence a notification the user expects to hear.
+    assert.equal(normaliseNotification({ silent: 'yes' }).silent, false);
+    assert.equal(normaliseNotification({ silent: 1 }).silent, false);
+    assert.equal(normaliseNotification({ silent: true }).silent, true);
+  });
+
+  it('an empty title is left empty, so the caller can fall back to the service name', () => {
+    // `handleNotification` does `payload.title || svc.name`.
+    assert.equal(normaliseNotification({}).title, '');
   });
 });

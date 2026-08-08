@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { DomUnreadProbe, DomUnreadRule } from '../shared/types';
 
 /**
  * Injected into every service view.
@@ -29,12 +30,37 @@ contextBridge.exposeInMainWorld('__hangar', {
   /** Called by the in-pane error page's Try again button. */
   retry: () => ipcRenderer.send('service:retry'),
   /**
+   * Called by the blocked page's Allow button. Takes no host on purpose — this preload is in every
+   * service page, so a host named here would be a page widening its own allowlist. Main applies
+   * the host it just blocked for this service and nothing else.
+   */
+  allowHost: () => ipcRenderer.send('service:allow-host'),
+  /**
    * Registers with FCM on the site's behalf and returns what a `PushSubscription` needs. Resolves
    * to `null` when push is off, unconfigured, or registration failed — the caller then falls back
    * to the browser's own `subscribe`, so a failure here is never worse than not being here.
    */
   subscribePush: (vapidKey: string): Promise<{ endpoint: string; p256dh: string; auth: string } | null> =>
     ipcRenderer.invoke('service:push-subscribe', vapidKey),
+  /**
+   * The DOM rules for *this* service, resolved by main from the catalog and the user's override.
+   * Asked for rather than baked in, because a serialised main-world function cannot close over
+   * anything and the answer depends on which service this view is — which only main knows.
+   */
+  unreadRules: (): Promise<DomUnreadRule[]> => ipcRenderer.invoke('service:unread-rules'),
+  reportUnread: (probes: DomUnreadProbe[]) => ipcRenderer.send('service:unread', probes),
+  /**
+   * Main pushing a new rule set, after the user edited the selector or muted the service.
+   *
+   * Without this the rules are whatever they were at load, so trying out a selector would mean
+   * reloading the service to find out whether it worked — and the point of the field is that the
+   * person editing it is looking at the page.
+   */
+  onUnreadRules: (callback: (rules: DomUnreadRule[]) => void) => {
+    ipcRenderer.on('service:unread-rules-changed', (_event, rules: DomUnreadRule[]) =>
+      callback(rules)
+    );
+  },
 });
 
 try {
@@ -46,6 +72,9 @@ try {
         subscribePush: (
           vapidKey: string
         ) => Promise<{ endpoint: string; p256dh: string; auth: string } | null>;
+        unreadRules: () => Promise<DomUnreadRule[]>;
+        reportUnread: (probes: DomUnreadProbe[]) => void;
+        onUnreadRules: (callback: (rules: DomUnreadRule[]) => void) => void;
       };
       const maybe = (window as unknown as { __hangar?: Bridge }).__hangar;
       if (!maybe) return;
@@ -54,6 +83,9 @@ try {
       const notify = (p: { title: string; body: string; silent: boolean }) => maybe.notify(p);
       const reportBlank = () => maybe.reportBlank();
       const subscribePush = (k: string) => maybe.subscribePush(k);
+      const unreadRules = () => maybe.unreadRules();
+      const reportUnread = (probes: DomUnreadProbe[]) => maybe.reportUnread(probes);
+      const onUnreadRules = (cb: (rules: DomUnreadRule[]) => void) => maybe.onUnreadRules(cb);
 
       // --- notifications ---------------------------------------------------------------------
 
@@ -213,7 +245,21 @@ try {
       const checkBlank = () => {
         try {
           const body = document.body;
-          const blank = !body || body.innerText.trim() === '';
+          // Empty text is not the same as an empty page. A canvas or WebGL app — anything
+          // Figma-shaped — renders everything and has no `innerText` at all, so text alone reported
+          // a healthy service as blank every 15 seconds and got it reloaded once a minute, forever.
+          //
+          // Ask whether the page painted *anything* instead: text, or a node with real layout.
+          // A failed SPA boot leaves neither, which is the case this exists to catch.
+          const hasText = Boolean(body?.innerText.trim());
+          const hasPaintedElement = Boolean(
+            body &&
+              [...body.querySelectorAll('canvas, svg, img, video, iframe')].some((el) => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 1 && rect.height > 1;
+              })
+          );
+          const blank = !body || (!hasText && !hasPaintedElement);
           // `document.hidden` guards against reloading a backgrounded pane mid-render.
           if (blank && !document.hidden && document.readyState === 'complete') {
             reportBlank();
@@ -225,6 +271,89 @@ try {
         }
       };
       setTimeout(checkBlank, 15_000);
+
+      // --- unread badges -----------------------------------------------------------------------
+
+      // Most services never put a count in their title, so the count for them was a tally of
+      // `new Notification()` calls: it only ever rose, and it read zero outright for anyone who had
+      // turned the site's own notifications off. Reading the badge the service already draws gives
+      // an absolute number that can also go *down*.
+      //
+      // Nothing here decides what a badge means — it collects strings and main parses them, so the
+      // arithmetic stays in a core function a test can reach. This closure cannot be imported.
+      const probeRule = (rule: DomUnreadRule): DomUnreadProbe => {
+        try {
+          const anchored = rule.anchor ? document.querySelector(rule.anchor) !== null : true;
+          const values = [...document.querySelectorAll(rule.selector)].map((el) =>
+            rule.read === 'attr'
+              ? (el.getAttribute(rule.attr ?? '') ?? '')
+              : (el.textContent ?? '').trim()
+          );
+          return { anchored, values };
+        } catch {
+          // An invalid selector throws here. Reporting it as un-anchored is exactly right: it means
+          // "no information", so a later fallback rule still gets its turn.
+          return { anchored: false, values: [] };
+        }
+      };
+
+      let stopWatching = () => {};
+
+      const watchUnread = (rules: DomUnreadRule[]) => {
+        stopWatching();
+        stopWatching = () => {};
+        // The overwhelmingly common case, and it must cost nothing: no rules, no observer.
+        if (!Array.isArray(rules) || rules.length === 0) return;
+
+        let previous = '';
+        const report = () => {
+          const probes = rules.map(probeRule);
+          // A chat app rewrites its DOM continuously. Without this, every keystroke anyone types in
+          // a channel is an IPC message saying the count is still 3.
+          const encoded = JSON.stringify(probes);
+          if (encoded === previous) return;
+          previous = encoded;
+          reportUnread(probes);
+        };
+
+        let pending = 0;
+        const schedule = () => {
+          if (pending) return;
+          pending = window.setTimeout(() => {
+            pending = 0;
+            report();
+          }, 400);
+        };
+
+        const observer = new MutationObserver(schedule);
+        observer.observe(document, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          // Whole-document attribute mutations are the expensive subscription, so only take it when
+          // a rule actually reads an attribute.
+          attributes: rules.some((rule) => rule.read === 'attr'),
+        });
+
+        // A badge inside a shadow root or drawn to a canvas mutates nothing the observer can see,
+        // and a service that renders once and idles would otherwise never report at all.
+        const poll = setInterval(report, 30_000);
+
+        stopWatching = () => {
+          observer.disconnect();
+          clearInterval(poll);
+          clearTimeout(pending);
+        };
+
+        report();
+      };
+
+      onUnreadRules(watchUnread);
+      void unreadRules()
+        .then(watchUnread)
+        .catch(() => {
+          // Main is gone or the view is being torn down. The service itself is unaffected.
+        });
     },
   });
 } catch (err) {

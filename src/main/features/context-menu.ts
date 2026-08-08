@@ -45,7 +45,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
           label: 'Add to dictionary',
           click: () => wc.session.addWordToSpellCheckerDictionary(params.misspelledWord),
         },
-        { type: 'separator' }
+        { type: 'separator' },
       );
     }
 
@@ -53,7 +53,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
       items.push(
         { label: 'Open link in browser', click: () => void shell.openExternal(params.linkURL) },
         { label: 'Copy link', click: () => clipboard.writeText(params.linkURL) },
-        { type: 'separator' }
+        { type: 'separator' },
       );
     }
 
@@ -61,7 +61,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
       items.push(
         { label: 'Copy image', click: () => wc.copyImageAt(params.x, params.y) },
         { label: 'Save image…', click: () => wc.downloadURL(params.srcURL) },
-        { type: 'separator' }
+        { type: 'separator' },
       );
     }
 
@@ -72,7 +72,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
         { label: 'Copy', role: 'copy', enabled: editFlags.canCopy },
         { label: 'Paste', role: 'paste', enabled: editFlags.canPaste },
         { label: 'Select all', role: 'selectAll', enabled: editFlags.canSelectAll },
-        { type: 'separator' }
+        { type: 'separator' },
       );
     }
 
@@ -83,7 +83,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
       { label: 'Reload', click: () => wc.reload() },
       { type: 'separator' },
       { label: 'Copy current URL', click: () => clipboard.writeText(wc.getURL()) },
-      { label: 'Open page in browser', click: () => void shell.openExternal(wc.getURL()) }
+      { label: 'Open page in browser', click: () => void shell.openExternal(wc.getURL()) },
     );
 
     // `app.isPackaged`, not an npm env var. The old check was
@@ -93,7 +93,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
     if (!app.isPackaged) {
       items.push(
         { type: 'separator' },
-        { label: 'Inspect element', click: () => wc.inspectElement(params.x, params.y) }
+        { label: 'Inspect element', click: () => wc.inspectElement(params.x, params.y) },
       );
     }
 
@@ -117,7 +117,7 @@ export function showServiceMenu(
     folders: Array<{ id: string; name: string }>;
     currentFolderId: string | null;
   },
-  dispatch: Dispatch
+  dispatch: Dispatch,
 ): void {
   const entry = catalogById(svc.catalogId);
 
@@ -147,7 +147,10 @@ export function showServiceMenu(
 
   popup(
     [
-      { label: `Open ${svc.name}`, click: () => dispatch({ type: 'focus-service', serviceId: svc.id }) },
+      {
+        label: `Open ${svc.name}`,
+        click: () => dispatch({ type: 'focus-service', serviceId: svc.id }),
+      },
       {
         label: 'Open in new pane',
         click: () => dispatch({ type: 'open-in-new-pane', serviceId: svc.id }),
@@ -157,9 +160,11 @@ export function showServiceMenu(
       { type: 'separator' },
       {
         label: 'Rename…',
-        // Native menus can't prompt for text, and Electron has no text dialog. Settings already
-        // owns the name field, so send them there rather than inventing a one-off input.
-        click: () => dispatch({ type: 'open-settings' }),
+        // Native menus can't prompt for text and Electron has no text dialog, so this used to fall
+        // back to opening Settings. That is a page away and drops you on a list — no help at all
+        // when the reason you are renaming is that two rows are both called "Teams". It edits the
+        // name in the rail instead, which is the row you just right-clicked.
+        click: () => dispatch({ type: 'begin-rename-service', serviceId: svc.id }),
       },
       ...(entry
         ? [
@@ -191,7 +196,7 @@ export function showServiceMenu(
         },
       },
     ],
-    window
+    window,
   );
 }
 
@@ -212,7 +217,7 @@ function dialogSyncRemove(window: BaseWindow, name: string): { response: number 
 export function showFolderMenu(
   window: BaseWindow,
   folder: { id: string; name: string; serviceIds: string[]; collapsed: boolean },
-  dispatch: Dispatch
+  dispatch: Dispatch,
 ): void {
   popup(
     [
@@ -228,7 +233,7 @@ export function showFolderMenu(
         click: () => dispatch({ type: 'delete-folder', folderId: folder.id }),
       },
     ],
-    window
+    window,
   );
 }
 
@@ -243,6 +248,6 @@ export function showRailMenu(window: BaseWindow, dispatch: Dispatch): void {
       { type: 'separator' },
       { label: 'Settings…', click: () => dispatch({ type: 'open-settings' }) },
     ],
-    window
+    window,
   );
 }

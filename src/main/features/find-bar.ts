@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
+import { safeSend } from '@main/platform/safe-send';
 import type { Rect } from '@core/workspace/layout';
 
 /**
@@ -64,7 +65,9 @@ export class FindBar {
     }
     this.layout(paneBounds);
     view.webContents.focus();
-    view.webContents.send('find:opened');
+    // `safeSend`: same reason as the overlay — ⌘F reaches here from the menu, where a throw is
+    // invisible and reads as a dead shortcut.
+    safeSend(view.webContents, 'find:opened');
   }
 
   layout(paneBounds: Rect): void {
@@ -99,8 +102,25 @@ export class FindBar {
     this.targetService = null;
     if (!this.attached || !this.view) return;
     // Removed, not hidden — an attached view keeps eating clicks in its rectangle.
-    this.win.contentView.removeChildView(this.view);
+    try {
+      this.win.contentView.removeChildView(this.view);
+    } catch {
+      // `AppWindow.dispose()` runs on `closed`, so the window is already destroyed by the time it
+      // calls this. Throwing here skipped the rest of teardown.
+    }
     this.attached = false;
+  }
+
+  /**
+   * Teardown. As with the overlay, `close()` only detaches and the view is cached for reuse, so a
+   * closed find bar is a detached view holding a live renderer that the window's destruction does
+   * not collect.
+   */
+  destroy(): void {
+    this.close();
+    if (!this.view) return;
+    if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
+    this.view = null;
   }
 
   /** Re-added on top after any relayout, so a split doesn't bury it. */

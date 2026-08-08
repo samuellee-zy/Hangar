@@ -26,7 +26,7 @@ in `Settings.tsx`. No migration needed.
 | Rail position | `left` · `right` · `top` · `bottom`. Repositions the rail and relayouts panes |
 | Rail size | Thickness in px on whichever edge |
 | Show labels | Service names under icons. Suppressed in compact and horizontal rails |
-| Compact rail | Narrower rail with smaller tiles. **Not** hover-expand — see below |
+| Compact rail | Collapses to a 48px sliver and expands over the panes on hover — see below |
 | Theme | `system` · `light` · `dark` via `nativeTheme.themeSource` |
 | Density | Tile spacing |
 | Pane gutter | Space around each pane, 0–24px |
@@ -43,10 +43,11 @@ renderer honours a plain media query.
 | Setting | Effect |
 | --- | --- |
 | Hibernate after | Minutes idle before a background service is unloaded. **0 = never** |
-| Launch at login | `app.setLoginItemSettings`. Ignored in development — an unpackaged binary would register Electron, not Hangar |
+| Launch at login | Writes a user LaunchAgent, which needs no signature where `setLoginItemSettings` did ([decisions #93](decisions.md)). Ignored in development — an unpackaged binary would register Electron, not Hangar. **Applies from the next login** |
+| Relaunch if it stops unexpectedly | Adds `KeepAlive` to the same job, so launchd restarts Hangar after a crash or Force Quit but never after a deliberate quit. Needs launch at login, since launchd can only supervise what it started |
 | Start hidden | Launch to the tray rather than a window |
 | Close to tray | Closing the window hides it instead of quitting |
-| Global shortcut | One accelerator to summon/hide. The only `globalShortcut` in the app |
+| Global shortcut | One accelerator to summon/hide. The only `globalShortcut` in the app — everything else goes through `before-input-event` |
 | Confirm before quitting | Shows a Quit/Cancel dialog on ⌘Q |
 | Default zoom | Applied to newly added services; existing ones keep their own |
 
@@ -82,14 +83,25 @@ first. The last workspace can't be deleted. See [decisions #33](decisions.md).
 Proxy: `system` · `none` · `http` · `socks4` · `socks5`, applied to every live session via
 `session.setProxy`. `system` means "don't set one", which is already the default.
 
+`network.blockAds` — ad and tracker blocking from the prebuilt Ghostery lists, on by default. A
+service pane is a browser tab you cannot install an extension into, so the alternative is no blocker
+rather than your own. One engine is shared by every session (~18MB; per-partition would cost that
+again per account) and serialised to `adblock-engine.bin` in the config directory, refetched weekly.
+Building from the lists takes ~530ms and spikes RSS ~275MB, against ~8ms to read the cache — hence
+the cache. Applied in `sessionFor`, not a bulk pass, so a view woken from hibernation is covered.
+A failed fetch is non-fatal: no blocking, services load as normal.
+
 Downloads: target folder, ask-where-to-save, open-on-complete. Attached per session, since each
 service has its own.
 
 ## Sync
 
 Config sync over a git repo you control. `sync.repoPath` points at a local clone; empty disables
-it. What travels and what doesn't is decided in `core/config/sync.ts` and documented there — the
-short version is an **allowlist**, so a field added later does not sync until someone says so.
+it. What travels and what doesn't is an **allowlist**, so a field added later does not sync until
+someone says so.
+
+**[sync.md](sync.md) is the guide** — setting it up across two Macs, what stays local, and how
+conflicts resolve. What follows here is the settings reference and the public-repo guard.
 
 | Setting | Notes |
 | --- | --- |
@@ -137,21 +149,31 @@ Separate from global preferences and stored on the `ServiceInstance`:
 | User agent | Override. Unused by default: Phase 0 found the global scrub sufficient |
 | Cookie TTL | How long to extend session cookies. The *shortest* TTL among services sharing a partition wins |
 | Mic / camera | Custom connections only — denied by default, since a typed URL isn't reviewed the way a catalog entry is |
+| Keyboard passthrough | Chords Hangar leaves to the page. Absent follows the catalog (Slack keeps its own ⌘K); an empty list claims nothing. See [keyboard.md](keyboard.md) |
+| Unread selector | CSS selector for the service's own unread badge. Absent follows the catalog; the empty string is "detect nothing" |
+| Unread endpoint | A URL of the service's own, asked over its own login while the service is asleep. Config-only, and enforced to be on that service's host allowlist ([decisions #91](decisions.md)) |
 | `allowedHosts` | Custom connections only. Add an identity provider's domain here if its login opens in your browser |
 
 ## What isn't wired
 
-Everything in Settings now does something. The one honest caveat is **launch at login**, which is
-skipped when running from source — an unpackaged binary would register Electron rather than Hangar,
-so the control says so.
+Everything in Settings now does something. The one honest caveat is the pair of **launchd settings**,
+which are skipped when running from source — an unpackaged binary would register Electron rather
+than Hangar — and which apply from the next login rather than immediately, because the app writes
+the job file and deliberately never runs `launchctl` on itself ([decisions #93](decisions.md)).
 
-Absent: **keyboard rebinding**. The map is read-only. Chords will be stored normalised as
-`{ key, meta, alt, shift, ctrl }` rather than accelerator strings, since matching happens in
-`before-input-event`.
+**Keyboard rebinding** is wired, and the storage format ended up the opposite of what this file used
+to promise. Chords are canonical *strings* — `alt+meta+arrowleft` — not `{ key, meta, alt, shift,
+ctrl }` objects, for a reason that only shows up in the merge: `withDefaults` descends into an
+object leaf and fills its missing keys from the default, so an unbound action stored as `{}` would
+come back holding whatever chord it used to have and clearing a shortcut would silently not stick.
+A string is a scalar, so `''` replaces — and it stays legible in a config people resolve git
+conflicts in. [keyboard.md](keyboard.md) covers what can't be rebound and why.
 
-**Compact rail is a narrower rail, not hover-expand.** Expanding on hover needs the rail view to
-overlay the panes, and the rail is added to the window first so it sits underneath. Doing it
-properly means raising the view on hover and lowering it after — deferred rather than faked.
+**Compact rail expands over the panes, not beside them.** The panes reserve the 48px sliver whether
+or not the rail is open, so hovering never reflows them; the rail view simply grows to `Rail size`
+in front of them and shrinks back on leave. The rail reports the pointer, main decides — including
+refusing while a tile is being dragged, since leaving the rail is the first move of a drag onto a
+pane. [decisions #88](decisions.md) has the reasoning.
 
 ## Export and import
 

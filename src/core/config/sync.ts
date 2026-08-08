@@ -60,6 +60,7 @@ export const LOCAL_ONLY_KEYS = ['pushRegistrations', 'window', 'layouts'] as con
  * | `downloads.folder` | An absolute local path. |
  * | `notifications.dndUntil` | A timestamp. Transient state, not a preference. |
  * | `behaviour.launchAtLogin` | Per-machine by nature: laptop yes, desktop no. |
+ * | `behaviour.relaunchOnCrash` | The other half of the same launchd job, and local for the same reason. |
  *
  * `notifications.push` *does* travel. Without credentials the second machine shows the toggle as
  * pending with "Fill in the Firebase project below first", which is honest.
@@ -77,6 +78,7 @@ export const LOCAL_PREFERENCE_PATHS = [
   'network.proxy',
   'downloads.folder',
   'behaviour.launchAtLogin',
+  'behaviour.relaunchOnCrash',
 ] as const;
 
 export type PortableConfig = Pick<Config, (typeof PORTABLE_KEYS)[number]>;

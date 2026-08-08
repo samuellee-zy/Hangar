@@ -17,7 +17,10 @@ export function forwardConsole(wc: WebContents, label: string): void {
   });
 }
 
-export function loadRoute(wc: WebContents, route: 'rail' | 'overlay' | 'settings' | 'empty' | 'find'): void {
+export function loadRoute(
+  wc: WebContents,
+  route: 'rail' | 'overlay' | 'settings' | 'empty' | 'find' | 'drag'
+): void {
   forwardConsole(wc, route);
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (devUrl) {

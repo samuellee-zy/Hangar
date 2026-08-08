@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { catalog, catalogById } from '@shared/catalog';
 import { createAccount, resolveAccount } from '@core/services/accounts';
-import { findQuarantined, pathsFor, readWithRecovery, writeAtomic } from '@core/config/store';
+import { findQuarantined, pathsFor, quarantine, readWithRecovery, writeAtomic } from '@core/config/store';
 import { migrateConfig } from '@core/config/migrate';
 import { withDefaults } from '@core/config/preferences';
 import type { Config, ServiceInstance } from '@shared/types';
@@ -149,9 +149,20 @@ export function loadConfig(): Config {
     cached = migrateConfig(raw);
     if ((raw as { version?: number }).version !== 4) saveConfig(cached, { sync: false });
   } catch (err) {
-    // Migration failed on structurally-valid JSON. The file itself is intact and already
-    // quarantine-free, so start from defaults but leave the original alone for inspection.
-    console.error('[config] could not migrate; starting from defaults:', err);
+    // Migration failed on structurally-valid JSON — parseable, but self-inconsistent in a way that
+    // would break the app later rather than here (a service naming an account that doesn't exist
+    // being the case that matters).
+    //
+    // Quarantine it first. The comment here used to claim the original was "left alone for
+    // inspection", which it wasn't: `saveConfig` below writes defaults over that very path,
+    // rotating the user's setup into the backup where the next write would bury it. Moving it aside
+    // under the `.corrupt-` name is what makes it survive *and* get mentioned — at boot and in
+    // Settings, both of which already read `findQuarantined`.
+    const kept = quarantine(configPaths());
+    console.error(
+      `[config] could not migrate; starting from defaults${kept ? `. Original kept at ${kept}` : ''}:`,
+      err
+    );
     cached = defaultConfig();
     saveConfig(cached, { sync: false });
   }

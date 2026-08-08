@@ -35,6 +35,21 @@ export function openSettingsWindow(register: (wc: Electron.WebContents) => void)
 
   forwardConsole(win.webContents, 'settings');
 
+  // ⌘W, on this window's own contents.
+  //
+  // It used to come from the menu's registered accelerator, which dispatched `close-pane` at the
+  // *main* window — so closing Settings from the keyboard closed a pane behind it instead. The menu
+  // no longer registers anything (see boot/menu.ts), and the shell keymap is deliberately not
+  // attached here: every one of its actions targets panes this window doesn't have.
+  const closer = win;
+  win.webContents.on('before-input-event', (event, input) => {
+    const primary = process.platform === 'darwin' ? input.meta : input.control;
+    if (input.type !== 'keyDown' || !primary || input.alt || input.shift) return;
+    if (input.key.toLowerCase() !== 'w') return;
+    event.preventDefault();
+    if (!closer.isDestroyed()) closer.close();
+  });
+
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (devUrl) void win.loadURL(`${devUrl}#settings`);
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: 'settings' });

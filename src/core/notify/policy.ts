@@ -74,3 +74,38 @@ export function nextUnread(current: number, decision: NotifyDecision): number {
 export function badgeTotal(unreadPerService: number[]): number {
   return unreadPerService.reduce((sum, n) => sum + Math.max(0, n), 0);
 }
+
+/** What `handleNotification` needs, once the wire payload has been made trustworthy. */
+export interface NotificationContent {
+  title: string;
+  body: string;
+  silent: boolean;
+}
+
+/**
+ * Coerces whatever arrived over IPC into something safe to read.
+ *
+ * The payload is typed as an object at the call site and is not one in practice: it comes from a
+ * *page*, through a bridge the preload exposes to the main world, so `__hangar.notify(null)` from
+ * any loaded service reaches the main process verbatim. Reading `.title` off that threw a
+ * `TypeError` inside an `ipcMain.on` handler, where nothing catches it.
+ *
+ * Title and body are stringified rather than rejected: a site passing a number is doing something
+ * ordinary, and dropping the notification would be a worse answer than showing "3".
+ */
+export function normaliseNotification(payload: unknown): NotificationContent {
+  const source: Record<string, unknown> =
+    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+
+  const text = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return '';
+  };
+
+  return {
+    title: text(source.title),
+    body: text(source.body),
+    silent: source.silent === true,
+  };
+}

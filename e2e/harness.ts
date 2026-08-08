@@ -38,6 +38,12 @@ export function seedConfig(origin: string, over: Record<string, unknown> = {}) {
     color: '#4A154B',
   });
 
+  // Overrides are merged one level into `preferences` rather than replacing it, so a test that
+  // sets `sync` or `appearance` still gets `blockAds: false` below.
+  const { preferences: overPreferences, ...rest } = over as {
+    preferences?: Record<string, unknown>;
+  };
+
   return {
     version: 4,
     accounts: [
@@ -57,7 +63,19 @@ export function seedConfig(origin: string, over: Record<string, unknown> = {}) {
     ],
     activeWorkspaceId: 'w1',
     layouts: {},
-    ...over,
+    preferences: {
+      // Off for the same reason the fixture server exists: these tests are meant to touch nothing
+      // outside the machine, and `blockAds` is the one thing in the app that fetches at startup.
+      //
+      // It also cost stability, not just time. Building the engine allocates hard enough to
+      // trigger a major GC a few hundred ms into every launch, and V8 collects the pending
+      // `app.evaluate` promise along with it — Playwright reports "Resulting promise was garbage
+      // collected" and every later evaluate in that test fails too. It landed on a different test
+      // each run, which is what made it look like flakiness rather than one cause.
+      network: { blockAds: false },
+      ...overPreferences,
+    },
+    ...rest,
   };
 }
 
@@ -89,10 +107,15 @@ export async function launch(
     );
   }
 
+  // Inherited, minus one. `ELECTRON_RUN_AS_NODE` turns the Electron binary into a plain node, which
+  // then rejects `--remote-debugging-port` and reports only "Process failed to launch!" — a
+  // confusing way to discover that whatever spawned the test run had it set.
+  const { ELECTRON_RUN_AS_NODE: _asNode, ...inherited } = process.env;
+
   const app = await electron.launch({
     args: [path.join(__dirname, '..', 'out', 'main', 'index.js')],
     env: {
-      ...process.env,
+      ...inherited,
       HANGAR_USER_DATA: userData,
       // Keep the diagnostic probe out of the way — it drives the app itself and would race the
       // test.

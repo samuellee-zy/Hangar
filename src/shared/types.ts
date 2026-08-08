@@ -1,3 +1,89 @@
+/**
+ * A rectangle.
+ *
+ * Here rather than in `core/workspace/layout.ts`, where it used to live, because one of these now
+ * crosses IPC: main tells the drag layer which rectangle to highlight, and the renderer can't
+ * import core for the type (`renderer-is-sandboxed`). `layout.ts` re-exports it, so the geometry
+ * functions still read as if it were theirs.
+ */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * What the drag layer draws: the rectangle a release would affect, and which of the two things it
+ * would do. Null — sent as the message itself — means a release here does nothing.
+ */
+export interface DropHighlight {
+  rect: Rect;
+  kind: 'replace' | 'new-pane';
+}
+
+/**
+ * One way to read an unread count out of a service's own DOM.
+ *
+ * **Data, not code.** Rambox ships a JavaScript file per service and `eval`s it in the page. That
+ * reaches anything, and it also means 90 unauditable scripts, no way to unit-test a rule, and a
+ * syntax error taking out a service. A rule is declarative instead: one evaluator, in core, tested
+ * once, driving every entry.
+ *
+ * The rules for an entry are tried in order and the first one that has anything to say wins, so a
+ * precise selector can lead and a broad fallback can follow.
+ */
+export interface DomUnreadRule {
+  /** CSS selector for the badge element(s). */
+  selector: string;
+  /**
+   * How to turn the matches into a number:
+   *   - `text` (default) — parse a count out of the first match's text. "12", "12 unread", "9+".
+   *     Non-empty text with no digits reads as 1, which covers a bare dot.
+   *   - `count` — the number of matching elements *is* the count, for a badge per row.
+   *   - `attr` — read `attr` off the first match, for `aria-label="3 unread"` and friends.
+   */
+  read?: 'text' | 'count' | 'attr';
+  /** Attribute name for `read: 'attr'`. Ignored otherwise. */
+  attr?: string;
+  /**
+   * Proof that the app has actually rendered.
+   *
+   * Without it, "no badge on the page" is ambiguous — it is either zero unread or an SPA that
+   * hasn't drawn its sidebar yet, and guessing zero clears a real count on every reload. With an
+   * anchor present and the badge absent, zero is a fact. With the anchor absent we say nothing and
+   * the previous count stands.
+   *
+   * Omit only when the selector's own container is always present.
+   */
+  anchor?: string;
+}
+
+/**
+ * What the page found for one rule. The page-side code does no arithmetic: it collects strings and
+ * main parses them, so the parsing is a pure function in core rather than a copy inlined in a
+ * serialised main-world closure that no test can reach.
+ */
+export interface DomUnreadProbe {
+  /** Whether the rule's anchor was found — always true for a rule that declares none. */
+  anchored: boolean;
+  /** Text (or attribute value) of each matching element, in document order. */
+  values: string[];
+}
+
+/**
+ * An endpoint of the service's own that reports its unread count, called with the login the service
+ * already has. See core/notify/endpoint.ts for what it is for and what guards it.
+ */
+export interface EndpointRule {
+  /** Absolute URL, and enforced to be on the service's own host allowlist. */
+  url: string;
+  /** A dotted JSON path, or a regex whose first capture group is the count. */
+  extract: { json: string } | { regex: string };
+  /** Polling interval, floored at one minute. */
+  everySeconds?: number;
+}
+
 /** A template in the catalog. Adding a service instance copies from one of these. */
 export interface CatalogEntry {
   id: string;
@@ -28,11 +114,34 @@ export interface CatalogEntry {
   /** Services whose session the server drops on browser close (Salesforce) — see plan, Tier 2. */
   sessionNotPersistable?: boolean;
   /**
+   * What this entry can't do, said before it is added.
+   *
+   * Some products have no web client at all, so the honest URL is a marketing page. Adding one
+   * looks like adding any other service and then simply doesn't work, and the natural fix —
+   * deleting the entry — is worse: a `catalogId` that stops resolving strands every existing
+   * instance on a blank pane (see `isOrphaned`). Saying so in the picker costs nothing and is the
+   * only version of this that helps.
+   */
+  caveat?: string;
+  /**
    * How to read this service's unread count from its own UI. Opt-in per entry, and deliberately
    * absent for custom connections: a universal title parser produces phantom counts from any page
    * whose title happens to contain a number in brackets. See core/notify/unread.ts.
+   *
+   * `titlePattern` and `dom` are alternatives, never both — two sources writing one absolute count
+   * flap between them. A catalog test enforces it.
+   *
+   * `endpoint` sits alongside either, because it only ever runs when the service has no live view:
+   * a page that isn't rendered cannot be read, which is precisely the hibernated case the other two
+   * cannot cover.
    */
-  unread?: { titlePattern?: string };
+  unread?: { titlePattern?: string; dom?: DomUnreadRule[]; endpoint?: EndpointRule };
+  /**
+   * Chords this service is known to bind itself, which Hangar therefore leaves alone. Slack's ⌘K
+   * is the motivating case. A default, not a rule: `ServiceInstance.keyboardPassthrough` overrides
+   * it in either direction.
+   */
+  passthrough?: string[];
 }
 
 /**
@@ -84,6 +193,16 @@ export interface ServiceInstance {
    * which looks exactly like the service failing to load.
    */
   allowedHosts?: string[];
+  /**
+   * Hosts the *user* added, unioned with the list above rather than replacing it.
+   *
+   * A separate field because `allowedHosts` is a replacement: writing a merged list into it would
+   * pin the instance to today's catalog and it would never see a later fix. That's the property
+   * `resolveUrl` deliberately preserves for URLs, and hosts drift for the same reasons — Teams
+   * moved to `teams.cloud.microsoft`, Notion from `.so` to `.com`. Additive here means a service
+   * unblocked by hand still picks up the entry the catalog grows later.
+   */
+  extraAllowedHosts?: string[];
   /** Tile accent for custom connections, which have no catalog colour. */
   color?: string;
   /** Injected on every dom-ready. The escape hatch for anything the app doesn't model. */
@@ -100,6 +219,34 @@ export interface ServiceInstance {
    * these by provenance; a URL the user typed has to ask.
    */
   allowMedia?: boolean;
+  /**
+   * Canonical chords this service keeps for itself — Hangar leaves them to the page.
+   *
+   * Absent means "follow the catalog", which is how Slack gets its own ⌘K back out of the box.
+   * An empty array is the distinct, deliberate "claim nothing", so the catalog default is
+   * overridable in both directions. See core/keyboard/keymap.ts.
+   */
+  keyboardPassthrough?: string[];
+  /**
+   * A CSS selector for this service's unread badge, replacing whatever the catalog says.
+   *
+   * The catalog can only carry rules for pages we have looked at, and a site's markup is not ours
+   * to keep up with. This is the seam for the person who can actually see the page: point it at the
+   * badge, get a real count. Absent follows the catalog; the empty string is the deliberate "no
+   * detection", which is how you switch a catalog rule off when it starts reading the wrong node.
+   */
+  unreadSelector?: string;
+  /**
+   * An endpoint of this service's own to ask for a count while it is asleep, overriding the
+   * catalog's.
+   *
+   * `null` is the deliberate "call nothing", which stops the background request without having to
+   * turn the service's notifications off; absent follows the catalog. No Settings control on
+   * purpose — a URL that gets fetched with your session cookies is not a field to put beside a zoom
+   * spinner, and the guard that it must be on the service's own allowlist is worth keeping as the
+   * only thing standing between a typo and a credentialled request somewhere else.
+   */
+  unreadEndpoint?: EndpointRule | null;
 }
 
 /**
@@ -172,6 +319,11 @@ export interface Preferences {
     globalShortcut: string | null;
     hibernateAfterMinutes: number;
     launchAtLogin: boolean;
+    /**
+     * Let launchd restart Hangar if it stops unexpectedly. Meaningless without `launchAtLogin`,
+     * because launchd can only supervise a process it started — see core/config/launch-agent.ts.
+     */
+    relaunchOnCrash: boolean;
     startHidden: boolean;
     closeToTray: boolean;
     confirmQuit: boolean;
@@ -195,7 +347,17 @@ export interface Preferences {
      */
     firebase: { projectId: string; appId: string; apiKey: string; messagingSenderId: string };
   };
-  network: { proxy: ProxyConfig };
+  /**
+   * Action id → canonical chord, `''` for unbound. The schema is `DEFAULT_BINDINGS`, so an action
+   * added in a later version picks up its default and one removed is dropped on the next merge.
+   */
+  keyboard: { bindings: Record<string, string> };
+  /**
+   * `blockAds` covers ads *and* trackers, from the prebuilt Ghostery lists. On by default: a
+   * service pane is a browser tab you cannot install an extension into, so the alternative is not
+   * "your own blocker" but no blocker at all.
+   */
+  network: { proxy: ProxyConfig; blockAds: boolean };
   /**
    * Git-backed config sync. `repoPath` is a local clone you control; empty disables it.
    * See core/config/sync.ts for what travels and what deliberately doesn't.
@@ -276,10 +438,60 @@ export interface ShellState {
    * acknowledges itself. See docs/decisions.md #16.
    */
   flashServiceId?: string | null;
+  /**
+   * A request from main that the rail put a service's name into an editable field.
+   *
+   * Carries a nonce rather than being a plain id because it is an *event*, not a state: asking to
+   * rename the same service twice running is two requests, and an id alone cannot tell the second
+   * from a re-broadcast of the first. Main never has to clear it, and the rail acts only when the
+   * nonce changes — so an unrelated broadcast arriving mid-edit cannot restart the edit.
+   */
+  renameRequest?: { serviceId: string; nonce: number } | null;
   panes: Pane[];
   focusedPaneId: string | null;
   activeWorkspaceId: string | null;
+  /**
+   * Whether a compact rail is currently open.
+   *
+   * Main owns this rather than the rail renderer, even though the rail hosts the chevron: main is
+   * the one that resizes the view, and it refuses the change outright during a drag. Two copies of
+   * the answer would disagree exactly then.
+   */
+  railExpanded: boolean;
+  /** The shortcut table, resolved against the stored bindings. See `KeyboardMap`. */
+  keyboard: KeyboardMap;
 }
+
+/**
+ * The keymap as Settings draws it.
+ *
+ * Projected by main rather than imported by the renderer, because the table lives in `core/` and
+ * `renderer-is-sandboxed` forbids reaching it. The renderer still owns *chords* — it parses and
+ * renders them through `shared/keyboard.ts` — but which actions exist, and which of them are in
+ * conflict, is main's answer.
+ */
+export interface KeyboardMap {
+  actions: Array<{
+    id: string;
+    label: string;
+    /** Canonical, or `''` for unbound. */
+    chord: string;
+    /** True when another action holds the same chord, which only a hand-edited config produces. */
+    conflict: boolean;
+  }>;
+  /** Chords the menu bar's roles already own. Settings refuses them before sending. */
+  reserved: string[];
+  /**
+   * Per service id: the chords Hangar leaves to that page, already resolved against the catalog
+   * and this platform's primary modifier. `fromCatalog` distinguishes "hasn't been touched" from
+   * "was set to exactly this", which is the difference between following a future catalog change
+   * and not.
+   */
+  passthrough: Record<string, { chords: string[]; fromCatalog: boolean }>;
+}
+
+/** Whose client coordinates a drag position is expressed in. See `drag-tile-to`. */
+export type DragOrigin = 'rail' | 'content';
 
 /** Commands the rail and palette can send. Keep this the single funnel into main. */
 export type Command =
@@ -297,6 +509,8 @@ export type Command =
   | { type: 'add-service'; catalogId: string; forceNewAccount?: boolean }
   | { type: 'add-custom-service'; name: string; url: string }
   | { type: 'rename-service'; serviceId: string; name: string }
+  /** Ask the rail to edit this service's name in place, opening the rail first if it is collapsed. */
+  | { type: 'begin-rename-service'; serviceId: string }
   | { type: 'remove-service'; serviceId: string }
   | { type: 'rename-account'; accountId: string; label: string }
   | { type: 'sign-out-account'; accountId: string }
@@ -328,7 +542,44 @@ export type Command =
   | { type: 'delete-folder'; folderId: string }
   | { type: 'toggle-folder'; folderId: string }
   | { type: 'move-to-folder'; serviceId: string; folderId: string | null }
-  | { type: 'reorder-items'; itemIds: string[] }
+  /**
+   * A rail drag finished: put `activeId` where `overId` is. Covers reordering and filing into a
+   * folder, because from the rail's side they are the same gesture — which of the two it was is
+   * decided against the workspace tree, in `moveItemTo`.
+   */
+  | { type: 'move-item'; activeId: string; overId: string }
+  /**
+   * A rail tile was lifted with the pointer. Main answers by attaching the drag layer over the
+   * panes — `main/features/drag-layer.ts` explains why the drag can't simply travel there itself.
+   */
+  | { type: 'begin-tile-drag'; serviceId: string }
+  /**
+   * The pointer moved, or was released, during a tile drag.
+   *
+   * `from` says which renderer's coordinate space `x`/`y` are in, because only main knows where
+   * either of those surfaces sits in the window. Both report: mouse capture keeps the events in
+   * whichever view the press started in on some platforms and hands them over on others, and a
+   * feature that works on one of those is not a feature.
+   */
+  | { type: 'drag-tile-to'; from: DragOrigin; x: number; y: number }
+  | { type: 'drop-tile'; from: DragOrigin; x: number; y: number }
+  /**
+   * Escape, or a drag that ended without a release. Distinct from a `drop-tile` outside every
+   * target only in intent, but the intent is worth keeping: this one can never open a pane.
+   */
+  | { type: 'cancel-tile-drag' }
+  /**
+   * The chevron was clicked. Only a compact rail acts on it — see `railSizes`.
+   *
+   * A report of what happened, not an instruction: main decides whether the rail may change size
+   * right now, and a drag in flight is the case where it may not.
+   */
+  | { type: 'toggle-rail' }
+  /**
+   * Assign a chord to an action, or clear it with null. The chord is canonical — Settings builds it
+   * with `shared/keyboard.ts` — but main revalidates it, because this is an IPC boundary.
+   */
+  | { type: 'rebind'; actionId: string; chord: string | null }
   | { type: 'show-folder-menu'; folderId: string }
   | { type: 'sleep-others' }
   | { type: 'show-window' }

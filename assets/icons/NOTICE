@@ -1,7 +1,7 @@
 Icons vendored from https://github.com/homarr-labs/dashboard-icons
 Licensed Apache-2.0. Brand marks remain the property of their respective owners.
 
-Upstream commit: 03e8f8e22da1
-Fetched slugs: discord, telegram, whatsapp, signal, zoom, google-meet, jira, confluence, github, gitlab, asana, atlassian-trello, clickup, google-docs, google-sheets, google-slides, google-keep, microsoft-outlook, microsoft-onedrive, microsoft-sharepoint, microsoft-to-do, claude-ai, chatgpt, perplexity, todoist, obsidian, evernote, gmail, google-calendar, google-drive, microsoft-teams, slack, notion, linear, figma, salesforce
+Upstream commit: 0d6481f2a87c
+Fetched slugs: discord, telegram, whatsapp, signal, zoom, google-meet, facebook-messenger, google-chat, element, instagram, x, linkedin, reddit, bluesky, jira, confluence, github, gitlab, asana, atlassian-trello, clickup, airtable, miro, dropbox, proton-mail, fastmail, google-docs, google-sheets, google-slides, google-keep, microsoft-outlook, microsoft-onedrive, microsoft-sharepoint, microsoft-to-do, claude-ai, chatgpt, google-gemini, microsoft-copilot, perplexity, todoist, obsidian, evernote, gmail, google-calendar, google-drive, microsoft-teams, slack, notion, linear, figma, salesforce, spotify
 
 Refresh with: npm run icons

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Command, OverlayOpen, ShellState } from '@shared/types';
+import type { Command, DropHighlight, OverlayOpen, ShellState } from '@shared/types';
 
 // The rail and palette get exactly two verbs: read state, send a command. No direct access to
 // services, sessions or windows — that keeps the renderer a pure render target and makes the
@@ -30,5 +30,23 @@ contextBridge.exposeInMainWorld('hangar', {
     const handler = (_e: unknown, open: OverlayOpen) => fn(open);
     ipcRenderer.on('overlay:mode', handler);
     return () => ipcRenderer.off('overlay:mode', handler);
+  },
+  /**
+   * What the drag layer should draw, in its own coordinates, or null for nothing. Main decides —
+   * see `main/features/drag-layer.ts` for why the deciding can't happen in a renderer.
+   */
+  onDragHighlight: (fn: (highlight: DropHighlight | null) => void): (() => void) => {
+    const handler = (_e: unknown, highlight: DropHighlight | null) => fn(highlight);
+    ipcRenderer.on('drag:highlight', handler);
+    return () => ipcRenderer.off('drag:highlight', handler);
+  },
+  /**
+   * The rail's cue that a drag it started finished somewhere it can't see. Without it dnd-kit is
+   * left holding a lifted tile, because the release happened over another `webContents`.
+   */
+  onDragEnded: (fn: () => void): (() => void) => {
+    const handler = () => fn();
+    ipcRenderer.on('drag:ended', handler);
+    return () => ipcRenderer.off('drag:ended', handler);
   },
 });
