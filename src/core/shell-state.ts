@@ -71,6 +71,7 @@ export interface ProjectionInput {
   renameRequest?: { id: string; nonce: number } | null;
   about?: { version: string; configPath: string; logPath: string };
   globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
+  isDefaultMailApp?: boolean;
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
 }
@@ -111,6 +112,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     renameRequest: input.renameRequest,
     about: input.about,
     globalShortcutStatus: input.globalShortcutStatus,
+    isDefaultMailApp: input.isDefaultMailApp,
     services: activeServicesOf(config, config.activeWorkspaceId).map(view),
     workspaces: config.workspaces,
     railItems: activeWorkspaceOf(config, config.activeWorkspaceId)?.items ?? [],

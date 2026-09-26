@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toAccelerator } from '@shared/keyboard';
+import { canCompose } from '@shared/mailto';
 import { Num, Toggle } from '../PreferenceControls';
 import { ChordCapture } from './Keyboard';
 import type { Preferences, ShellState } from '@shared/types';
@@ -22,10 +23,16 @@ const STATUS_NOTE: Record<NonNullable<ShellState['globalShortcutStatus']>, strin
 export function Behaviour({
   behaviour,
   shortcutStatus = 'off',
+  services = [],
+  isDefaultMailApp = false,
 }: {
   behaviour: Preferences['behaviour'];
   shortcutStatus?: ShellState['globalShortcutStatus'];
+  /** Every service, to offer the mail ones as where `mailto:` links go. */
+  services?: ShellState['allServices'];
+  isDefaultMailApp?: boolean;
 }) {
+  const mailServices = services.filter((s) => canCompose(s.catalogId));
   // Recorded rather than typed. It was a free-text field for an Electron accelerator string, and
   // what it did with a typo — or a chord another app owned — was write a line to the log.
   const [capturing, setCapturing] = useState(false);
@@ -54,6 +61,46 @@ export function Behaviour({
                 disabled={!behaviour.launchAtLogin} />
         <Toggle name="Close to tray" note="Closing the window keeps Hangar running"
                 path="behaviour.closeToTray" value={behaviour.closeToTray} />
+        {mailServices.length > 0 && (
+          <li className="pref">
+            <span className="pref-label">
+              <span className="pref-name">Email links open in</span>
+              <span className="pref-note">
+                {isDefaultMailApp
+                  ? 'Hangar is your default email app — clicking an address anywhere starts a message here'
+                  : 'Clicking an email address in another app opens Mail until Hangar is the default'}
+              </span>
+            </span>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <select
+                aria-label="Email links open in"
+                value={behaviour.mailtoServiceId}
+                onChange={(e) =>
+                  window.hangar.send({
+                    type: 'set-preference',
+                    path: 'behaviour.mailtoServiceId',
+                    value: e.target.value,
+                  })
+                }
+              >
+                <option value="">First mail service</option>
+                {mailServices.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              {!isDefaultMailApp && (
+                <button
+                  className="secondary"
+                  onClick={() => window.hangar.send({ type: 'make-default-mail-app' })}
+                >
+                  Make default
+                </button>
+              )}
+            </span>
+          </li>
+        )}
         <Toggle name="Open links in your services"
                 note="A link to Jira from Slack opens in your Jira, not the browser — when you have that service here"
                 path="behaviour.routeLinks" value={behaviour.routeLinks} />

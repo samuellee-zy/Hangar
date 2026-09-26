@@ -73,6 +73,7 @@ import {
 } from '@main/platform/system';
 import { allLiveSessions, clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
 import { routable, routeTarget } from '@core/services/routing';
+import { canCompose, composeUrlFor } from '@shared/mailto';
 import { setAdBlocking } from '@main/platform/adblock';
 import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
 import { isQuitting } from '@main/platform/quit-state';
@@ -459,6 +460,7 @@ export class AppWindow {
       railExpanded: this.railExpanded,
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
+      isDefaultMailApp: app.isPackaged && app.isDefaultProtocolClient('mailto'),
     });
   }
 
@@ -735,6 +737,31 @@ export class AppWindow {
     // Nothing to redraw before the first broadcast — `installMenu` has just built it, or hasn't
     // run yet and will build it against these same bindings.
     if (!first) refreshMenu();
+  }
+
+  /**
+   * A `mailto:` link from anywhere on the Mac: a new message in your chosen mail service.
+   *
+   * Falls back to the first mail service that can take one when none is chosen, so making Hangar
+   * the default email app and clicking an address does something the first time rather than
+   * nothing until a second setting is found.
+   */
+  openMailto(link: string): void {
+    const config = loadConfig();
+    const chosen = config.services.find((s) => s.id === config.preferences.behaviour.mailtoServiceId);
+    const svc = chosen && canCompose(chosen.catalogId) ? chosen : config.services.find((s) => canCompose(s.catalogId));
+    this.showWindow();
+    if (!svc) {
+      console.warn('[mailto] no mail service here can open a new message — add Gmail, Outlook or Yahoo');
+      this.dispatch({ type: 'open-settings' });
+      return;
+    }
+    const url = composeUrlFor(svc.catalogId, link);
+    if (!url) return;
+    this.dispatch({ type: 'focus-service', serviceId: svc.id });
+    this.contentsForService(svc.id)?.loadURL(url).catch(() => {
+      // Reported through did-fail-load.
+    });
   }
 
   /**
@@ -1396,6 +1423,14 @@ export class AppWindow {
         // Same as muting from Settings: the page is told to stop (or start) watching for a count.
         this.clearUnread(command.serviceId);
         this.pushUnreadRules(command.serviceId);
+        this.sync();
+        break;
+
+      case 'make-default-mail-app':
+        // Packaged only: unpackaged, this would register the bare Electron binary as your mail app.
+        if (app.isPackaged && !app.setAsDefaultProtocolClient('mailto')) {
+          console.warn('[mailto] macOS did not accept Hangar as the default email app');
+        }
         this.sync();
         break;
 

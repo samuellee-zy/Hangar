@@ -60,6 +60,13 @@ mac:
     # the running one.
     LSMultipleInstancesProhibited: true
 
+# Declares that Hangar can handle mailto: links, which is what lets Settings offer to be the default
+# email app. Declaring it doesn't make it the default — only the button in Settings does that.
+protocols:
+  - name: Email
+    schemes: [mailto]
+    role: Viewer
+
 dmg:
   # The conventional drag-to-install layout. Anything else makes people hunt for the target.
   contents:

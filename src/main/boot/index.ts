@@ -127,6 +127,18 @@ function ensureShell(): void {
   shell.showWindow();
 }
 
+/**
+ * `mailto:` links, once Hangar is the default email app. macOS can deliver one before the app is
+ * ready — clicking an address launches Hangar to handle it — so it waits for a window.
+ */
+let pendingMailto: string | null = null;
+app.on('open-url', (event, url) => {
+  if (!/^mailto:/i.test(url)) return;
+  event.preventDefault();
+  if (shell && app.isReady()) shell.openMailto(url);
+  else pendingMailto = url;
+});
+
 app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
   if ((additionalData as { quit?: unknown } | null)?.quit === true) {
     console.log('[boot] --quit from a second instance');
@@ -178,6 +190,10 @@ app.whenReady().then(() => {
     () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS
   );
   shell.applySystemPreferences();
+  if (pendingMailto) {
+    shell.openMailto(pendingMailto);
+    pendingMailto = null;
+  }
 });
 
 /**

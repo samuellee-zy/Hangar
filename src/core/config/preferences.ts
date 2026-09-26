@@ -34,6 +34,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     // Off by default: a link that used to open in the browser suddenly opening in a pane would be
     // a surprise, however useful.
     routeLinks: false,
+    mailtoServiceId: '',
     confirmQuit: false,
     defaultZoom: 1,
     spellcheckLanguages: ['en-US'],

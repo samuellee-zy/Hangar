@@ -340,6 +340,8 @@ export interface Preferences {
     closeToTray: boolean;
     /** Open a link that leaves a service in another of your services when it belongs there. */
     routeLinks: boolean;
+    /** The mail service a `mailto:` link opens a compose in, or `''` for none. */
+    mailtoServiceId: string;
     confirmQuit: boolean;
     defaultZoom: number;
     spellcheckLanguages: string[];
@@ -467,6 +469,8 @@ export interface ShellState {
   renameRequest?: { id: string; nonce: number } | null;
   /** For Settings → About: the running version and where its files really are. */
   about?: { version: string; configPath: string; logPath: string };
+  /** Whether macOS sends `mailto:` links to Hangar. */
+  isDefaultMailApp?: boolean;
   /** Whether the global shortcut actually registered — "taken" means another app owns it. */
   globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
   panes: Pane[];
@@ -533,6 +537,7 @@ export type Command =
   | { type: 'mute-service'; serviceId: string; until: number | null }
   | { type: 'mark-read'; serviceId: string }
   | { type: 'reveal'; what: 'config' | 'log' }
+  | { type: 'make-default-mail-app' }
   /** Opens a folder picker and writes the choice to that preference. */
   | { type: 'choose-folder'; purpose: 'downloads' | 'sync' }
   | { type: 'move-to-workspace'; serviceId: string; workspaceId: string }

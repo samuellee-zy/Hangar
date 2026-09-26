@@ -306,3 +306,36 @@ test('A CRASHED RAIL RENDERER COMES BACK BY ITSELF', async () => {
     )
     .toBeGreaterThan(0);
 });
+
+test('A MAILTO LINK OPENS A NEW MESSAGE IN THE CHOSEN MAIL SERVICE', async () => {
+  // What macOS sends once Hangar is the default email app. The seeded services are custom, so give
+  // one Gmail's catalog id — the template, not the page, is what is under test.
+  h = await launch((origin) => {
+    const config = seedConfig(origin) as { services: Array<{ id: string; catalogId: string }> };
+    config.services[1]!.catalogId = 'gmail';
+    return config;
+  });
+  await h.rail();
+
+  const requested = await h.app.evaluate(async ({ app, webContents }) => {
+    const loads: string[] = [];
+    const patch = (wc: Electron.WebContents) => {
+      const original = wc.loadURL.bind(wc);
+      wc.loadURL = (url: string, options?: Electron.LoadURLOptions) => {
+        loads.push(url);
+        // Not actually loaded: this is a test machine with no business reaching Gmail.
+        return url.startsWith('https://mail.google.com') ? Promise.resolve() : original(url, options);
+      };
+    };
+    for (const wc of webContents.getAllWebContents()) patch(wc);
+    app.on('web-contents-created', (_e, wc) => patch(wc));
+    app.emit('open-url', { preventDefault: () => {} }, 'mailto:alice@example.com?subject=Hello');
+    await new Promise((r) => setTimeout(r, 2000));
+    return loads.filter((u) => u.startsWith('https://mail.google.com'));
+  });
+
+  // Waking the service loads its start page first; the compose is what has to follow.
+  expect(requested).toContain(
+    `https://mail.google.com/mail/?extsrc=mailto&url=${encodeURIComponent('mailto:alice@example.com?subject=Hello')}`,
+  );
+});
