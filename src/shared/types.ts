@@ -215,6 +215,13 @@ export interface ServiceInstance {
    */
   notificationLevel?: 'all' | 'muted';
   /**
+   * When a timed mute ends, epoch ms. Set together with `notificationLevel: 'muted'`, which is what
+   * everything actually reads — this is only the alarm clock that turns it back to `'all'`. So a
+   * timed mute behaves exactly like a manual one until it expires, and nothing that checks for
+   * `'muted'` needs to know timers exist.
+   */
+  mutedUntil?: number;
+  /**
    * Lets a custom connection use the microphone, camera and screen share. Catalog services get
    * these by provenance; a URL the user typed has to ask.
    */
@@ -508,6 +515,12 @@ export type Command =
   | { type: 'navigate'; direction: 'back' | 'forward' }
   | { type: 'open-palette' }
   | { type: 'open-shortcuts' }
+  /** `until` null with `on` true is "until I turn it off". */
+  | { type: 'set-dnd'; on: boolean; until: number | null }
+  /** `until` null unmutes; a number mutes until then. */
+  | { type: 'mute-service'; serviceId: string; until: number | null }
+  | { type: 'mark-read'; serviceId: string }
+  | { type: 'move-to-workspace'; serviceId: string; workspaceId: string }
   | { type: 'open-connections' }
   | { type: 'close-overlay' }
   | { type: 'add-service'; catalogId: string; forceNewAccount?: boolean }

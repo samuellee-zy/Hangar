@@ -1,5 +1,7 @@
 import { Menu, app, clipboard, dialog, type BaseWindow, type WebContents } from 'electron';
 import { catalogById } from '@shared/catalog';
+import { HOUR_MS, tomorrowMorning } from '@core/notify/policy';
+import { untilLabel } from '@main/features/tray';
 import { openExternalSafely } from '@main/platform/external';
 import type { Command, ServiceInstance } from '@shared/types';
 
@@ -112,11 +114,17 @@ export function showServiceMenu(
     isSleeping,
     folders,
     currentFolderId,
+    unread,
+    currentUrl,
+    otherWorkspaces,
   }: {
     isVisible: boolean;
     isSleeping: boolean;
     folders: Array<{ id: string; name: string }>;
     currentFolderId: string | null;
+    unread: number;
+    currentUrl: string;
+    otherWorkspaces: Array<{ id: string; name: string }>;
   },
   dispatch: Dispatch,
 ): void {
@@ -146,6 +154,43 @@ export function showServiceMenu(
     ],
   };
 
+  const muted = svc.notificationLevel === 'muted';
+  const mute: Electron.MenuItemConstructorOptions = {
+    label: muted ? `Muted${svc.mutedUntil ? ` ${untilLabel(svc.mutedUntil)}` : ''}` : 'Mute',
+    submenu: [
+      ...(muted
+        ? [
+            {
+              label: 'Unmute',
+              click: () => dispatch({ type: 'mute-service', serviceId: svc.id, until: null }),
+            },
+            { type: 'separator' as const },
+          ]
+        : []),
+      {
+        label: 'For 1 hour',
+        click: () =>
+          dispatch({ type: 'mute-service', serviceId: svc.id, until: Date.now() + HOUR_MS }),
+      },
+      {
+        label: 'Until tomorrow',
+        click: () =>
+          dispatch({ type: 'mute-service', serviceId: svc.id, until: tomorrowMorning(Date.now()) }),
+      },
+      {
+        // Far enough away to mean "until I say so" — the same flag Settings' mute checkbox sets,
+        // just reached from here.
+        label: 'Until I unmute it',
+        click: () =>
+          dispatch({
+            type: 'update-service',
+            serviceId: svc.id,
+            patch: { notificationLevel: 'muted' },
+          }),
+      },
+    ],
+  };
+
   popup(
     [
       {
@@ -157,7 +202,27 @@ export function showServiceMenu(
         click: () => dispatch({ type: 'open-in-new-pane', serviceId: svc.id }),
       },
       { type: 'separator' },
+      {
+        label: 'Mark as read',
+        enabled: unread > 0,
+        click: () => dispatch({ type: 'mark-read', serviceId: svc.id }),
+      },
+      mute,
+      { label: 'Copy address', click: () => clipboard.writeText(currentUrl) },
+      { type: 'separator' },
       moveTo,
+      ...(otherWorkspaces.length
+        ? [
+            {
+              label: 'Move to workspace',
+              submenu: otherWorkspaces.map((w) => ({
+                label: w.name,
+                click: () =>
+                  dispatch({ type: 'move-to-workspace', serviceId: svc.id, workspaceId: w.id }),
+              })),
+            },
+          ]
+        : []),
       { type: 'separator' },
       {
         label: 'Rename…',

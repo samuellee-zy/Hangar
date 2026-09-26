@@ -1,3 +1,4 @@
+import { HOUR_MS, tomorrowMorning } from '@shared/time';
 import { Text, Toggle } from '../PreferenceControls';
 import type { Preferences } from '@shared/types';
 
@@ -38,7 +39,7 @@ export function Notifications({
       <ul className="rows">
         <Toggle name="Enabled" path="notifications.enabled" value={notifications.enabled} />
         <Toggle name="Play sound" path="notifications.sound" value={notifications.sound} />
-        <Toggle name="Do not disturb" path="notifications.dnd" value={notifications.dnd} />
+        <DoNotDisturb dnd={notifications.dnd} until={notifications.dndUntil} />
       </ul>
 
       <h3>Web Push</h3>
@@ -75,5 +76,43 @@ export function Notifications({
               value={notifications.firebase.messagingSenderId} placeholder="123456789012" />
       </ul>
     </section>
+  );
+}
+
+/**
+ * Do Not Disturb with a time limit, the same four choices as the tray. It was an on/off toggle, which
+ * is a focus session you have to remember to end.
+ */
+function DoNotDisturb({ dnd, until }: { dnd: boolean; until: number | null }) {
+  const current = !dnd ? 'off' : until === null ? 'on' : 'timed';
+  const set = (choice: string) => {
+    const now = Date.now();
+    if (choice === 'off') window.hangar.send({ type: 'set-dnd', on: false, until: null });
+    if (choice === 'hour') window.hangar.send({ type: 'set-dnd', on: true, until: now + HOUR_MS });
+    if (choice === 'tomorrow') window.hangar.send({ type: 'set-dnd', on: true, until: tomorrowMorning(now) });
+    if (choice === 'on') window.hangar.send({ type: 'set-dnd', on: true, until: null });
+  };
+  const ends = until
+    ? new Date(until).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+    : '';
+
+  return (
+    <li className="pref">
+      <span className="pref-label">
+        <span className="pref-name">Do not disturb</span>
+        <span className="pref-note">
+          {current === 'timed'
+            ? `On until ${ends}. Banners are held back; unread still counts`
+            : 'Banners are held back; unread still counts'}
+        </span>
+      </span>
+      <select aria-label="Do not disturb" value={current === 'timed' ? 'timed' : current} onChange={(e) => set(e.target.value)}>
+        <option value="off">Off</option>
+        {current === 'timed' && <option value="timed">Until {ends}</option>}
+        <option value="hour">For 1 hour</option>
+        <option value="tomorrow">Until tomorrow</option>
+        <option value="on">Until I turn it off</option>
+      </select>
+    </li>
   );
 }

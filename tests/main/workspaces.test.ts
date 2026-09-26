@@ -11,6 +11,7 @@ import {
   deleteWorkspace,
   rehomeUnreachable,
   renameWorkspace,
+  moveServiceToWorkspace,
   reorderWorkspaces,
   workspaceHolding,
 } from '@core/workspace/workspaces';
@@ -163,5 +164,21 @@ describe('which workspace holds a service', () => {
 
   it('null for a service no workspace holds', () => {
     assert.equal(workspaceHolding(config(ws('w1', 'a')), 'nope'), null);
+  });
+});
+
+describe('moving a service to another workspace', () => {
+  it('leaves every other workspace — out of a folder too — and lands at the end of the target', () => {
+    const c = config(ws('w1', 'a', 'b'), ws('w2', 'c'));
+    c.workspaces[0]!.items.push({ kind: 'folder', id: 'f', name: 'F', collapsed: false, serviceIds: ['b'] } as never);
+    assert.equal(moveServiceToWorkspace(c, 'b', 'w2'), true);
+    assert.ok(!reachable({ workspaces: [c.workspaces[0]] }).has('b'));
+    assert.deepEqual(c.workspaces[1]!.items.map((i) => i.id), ['c', 'b']);
+  });
+
+  it('A MISSING TARGET TOUCHES NOTHING — a service must never be left in no workspace', () => {
+    const c = config(ws('w1', 'a'));
+    assert.equal(moveServiceToWorkspace(c, 'a', 'nope'), false);
+    assert.ok(reachable(c).has('a'));
   });
 });

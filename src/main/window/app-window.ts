@@ -13,7 +13,7 @@ import {
   shell,
   type WebContents,
 } from 'electron';
-import { catalogById } from '@shared/catalog';
+import { catalogById, resolveUrl } from '@shared/catalog';
 import {
   addService,
   loadConfig,
@@ -48,7 +48,7 @@ import {
 } from '@main/features/context-menu';
 import { exportConfig, importConfig } from '@main/features/transfer';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { decideNotification, normaliseNotification } from '@core/notify/policy';
+import { decideNotification, expiredQuiet, normaliseNotification } from '@core/notify/policy';
 import {
   ALL_PREFERENCE_EFFECTS,
   preferenceEffectFor,
@@ -86,6 +86,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   rehomeUnreachable,
+  moveServiceToWorkspace,
   renameWorkspace,
   reorderWorkspaces,
   workspaceHolding,
@@ -1294,6 +1295,10 @@ export class AppWindow {
           const svc = c.services.find((s) => s.id === command.serviceId);
           if (!svc) return;
           Object.assign(svc, patch);
+          // A mute or unmute set by hand — Settings' checkbox, "Until I unmute it" — ends any timed
+          // one. Otherwise a timer left from an earlier "for 1 hour" would lift a mute that is now
+          // meant to be indefinite.
+          if ('notificationLevel' in patch && !('mutedUntil' in patch)) delete svc.mutedUntil;
           // Canonicalised on the way in — Settings sends what it captured, and a list holding
           // `Meta+K` and `meta+k` would claim one chord twice and match neither reliably. Only
           // when the patch actually carries it, so every other update leaves it alone.
@@ -1336,6 +1341,55 @@ export class AppWindow {
         }
         const id = command.type === 'begin-rename-service' ? command.serviceId : command.folderId;
         this.renameRequest = { id, nonce: this.renameRequest.nonce + 1 };
+        this.sync();
+        break;
+      }
+
+      case 'set-dnd':
+        updateConfig((c) => {
+          c.preferences.notifications.dnd = command.on;
+          c.preferences.notifications.dndUntil = command.on ? command.until : null;
+        });
+        this.sync();
+        break;
+
+      case 'mute-service':
+        updateConfig((c) => {
+          const svc = c.services.find((s) => s.id === command.serviceId);
+          if (!svc) return;
+          if (command.until === null) {
+            svc.notificationLevel = 'all';
+            delete svc.mutedUntil;
+          } else {
+            svc.notificationLevel = 'muted';
+            svc.mutedUntil = command.until;
+          }
+        });
+        // Same as muting from Settings: the page is told to stop (or start) watching for a count.
+        this.clearUnread(command.serviceId);
+        this.pushUnreadRules(command.serviceId);
+        this.sync();
+        break;
+
+      case 'mark-read':
+        this.clearUnread(command.serviceId);
+        this.sync();
+        break;
+
+      case 'move-to-workspace': {
+        const moved = updateConfigReturning((c) =>
+          moveServiceToWorkspace(c, command.serviceId, command.workspaceId),
+        );
+        if (!moved) break;
+        // Gone from this workspace, so gone from its panes too — a pane showing a service the rail
+        // no longer lists is exactly the stranded state `rehomeUnreachable` exists to prevent.
+        if (loadConfig().activeWorkspaceId !== command.workspaceId) {
+          for (const pane of this.layout.panes.filter((p) => p.serviceId === command.serviceId)) {
+            this.layout.close(pane.id);
+          }
+          this.saveLayout();
+          this.relayout();
+        }
         this.sync();
         break;
       }
@@ -1457,6 +1511,7 @@ export class AppWindow {
         if (!svc) break;
         const workspace = this.activeWorkspace(loadConfig().activeWorkspaceId);
         const folders = (workspace?.items ?? []).filter((i) => i.kind === 'folder');
+        const config = loadConfig();
         showServiceMenu(
           this.win,
           svc,
@@ -1465,6 +1520,12 @@ export class AppWindow {
             isSleeping: !this.services.has(svc.id),
             folders: folders.map((f) => ({ id: f.id, name: f.name })),
             currentFolderId: folders.find((f) => f.serviceIds.includes(svc.id))?.id ?? null,
+            unread: this.unread.get(svc.id),
+            // Where it is now, not where it started: the address worth copying is the page on screen.
+            currentUrl: this.contentsForService(svc.id)?.getURL() || resolveUrl(svc),
+            otherWorkspaces: config.workspaces
+              .filter((w) => w.id !== config.activeWorkspaceId)
+              .map((w) => ({ id: w.id, name: w.name })),
           },
           (c) => this.dispatch(c),
         );
@@ -1693,7 +1754,32 @@ export class AppWindow {
   }
 
   /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */
+  /**
+   * Ends timed Do Not Disturb and timed mutes whose time is up. Runs on the 30-second sweep, so a
+   * quiet period ends within half a minute of when it said it would.
+   */
+  private expireQuietPeriods(): void {
+    const expired = expiredQuiet(loadConfig(), Date.now());
+    if (!expired.dnd && expired.services.length === 0) return;
+    updateConfig((c) => {
+      if (expired.dnd) {
+        c.preferences.notifications.dnd = false;
+        c.preferences.notifications.dndUntil = null;
+      }
+      for (const svc of c.services) {
+        if (!expired.services.includes(svc.id)) continue;
+        svc.notificationLevel = 'all';
+        delete svc.mutedUntil;
+      }
+    });
+    for (const serviceId of expired.services) this.pushUnreadRules(serviceId);
+    if (expired.dnd) console.log('[notify] Do Not Disturb ended on schedule');
+    this.sync();
+  }
+
   hibernateIdle(): void {
+    // First, and whatever the hibernation setting: the sweep is the only clock timed quiet has.
+    this.expireQuietPeriods();
     const config = loadConfig();
     const timeout = config.preferences.behaviour.hibernateAfterMinutes;
     if (timeout <= 0) return;

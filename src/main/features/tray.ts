@@ -1,4 +1,5 @@
 import { Menu, Tray, app, nativeImage } from 'electron';
+import { HOUR_MS, tomorrowMorning } from '@core/notify/policy';
 import { TRAY_GLYPH_POINTS, trayGlyphBitmap } from '@main/features/tray-glyph';
 import type { Command, ShellState } from '@shared/types';
 
@@ -65,6 +66,7 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
   const signature = JSON.stringify([
     services.map((s) => [s.id, s.name, s.unread]),
     state.preferences.notifications.dnd,
+    state.preferences.notifications.dndUntil,
   ]);
   if (signature === lastSignature) return;
   lastSignature = signature;
@@ -86,17 +88,7 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
         },
       })),
       { type: 'separator' },
-      {
-        label: 'Do not disturb',
-        type: 'checkbox',
-        checked: state.preferences.notifications.dnd,
-        click: () =>
-          dispatch({
-            type: 'set-preference',
-            path: 'notifications.dnd',
-            value: !state.preferences.notifications.dnd,
-          }),
-      },
+      dndMenu(state, dispatch),
       {
         label: 'Sleep background services',
         click: () => dispatch({ type: 'sleep-others' }),
@@ -105,4 +97,30 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
       { label: 'Quit Hangar', click: () => app.quit() },
     ])
   );
+}
+
+/** "until 14:30", or "until tomorrow 09:00" when it runs past midnight. */
+export function untilLabel(until: number, now = Date.now()): string {
+  const at = new Date(until);
+  const time = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(now).toDateString() === at.toDateString() ? `until ${time}` : `until tomorrow ${time}`;
+}
+
+/**
+ * Do Not Disturb, with a time limit. It was a checkbox — on until you remembered to turn it off —
+ * while the config had carried an unused `dndUntil` all along.
+ */
+function dndMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron.MenuItemConstructorOptions {
+  const { dnd, dndUntil } = state.preferences.notifications;
+  const set = (on: boolean, until: number | null) => () => dispatch({ type: 'set-dnd', on, until });
+  return {
+    label: dnd ? `Do not disturb — ${dndUntil ? untilLabel(dndUntil) : 'on'}` : 'Do not disturb',
+    submenu: [
+      { label: 'Off', type: 'radio', checked: !dnd, click: set(false, null) },
+      { type: 'separator' },
+      { label: 'For 1 hour', click: () => dispatch({ type: 'set-dnd', on: true, until: Date.now() + HOUR_MS }) },
+      { label: 'Until tomorrow', click: () => dispatch({ type: 'set-dnd', on: true, until: tomorrowMorning(Date.now()) }) },
+      { label: 'Until I turn it off', type: 'radio', checked: dnd && dndUntil === null, click: set(true, null) },
+    ],
+  };
 }

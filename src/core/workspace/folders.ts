@@ -25,7 +25,7 @@ export const findFolder = (workspace: Workspace, folderId: string) =>
   );
 
 /** Strips a service from wherever it currently sits — top level or any folder. */
-function detach(workspace: Workspace, serviceId: string): void {
+export function detach(workspace: Workspace, serviceId: string): void {
   workspace.items = workspace.items.filter(
     (item) => !(item.kind === 'service' && item.id === serviceId)
   );

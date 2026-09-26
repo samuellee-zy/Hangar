@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { flattenServiceIds } from '@core/workspace/folders';
+import { detach, flattenServiceIds } from '@core/workspace/folders';
 import type { Config, RailItem, Workspace } from '@shared/types';
 
 /**
@@ -90,4 +90,17 @@ export function workspaceHolding(config: Config, serviceId: string): string | nu
   const active = config.workspaces.find((w) => w.id === config.activeWorkspaceId);
   if (active && holds(active)) return active.id;
   return config.workspaces.find(holds)?.id ?? null;
+}
+
+/**
+ * Moves a service to another workspace: out of every other one it is in — folders included — and
+ * onto the end of the target's rail. False when the target doesn't exist, in which case nothing is
+ * touched: a service must never be left in no workspace at all.
+ */
+export function moveServiceToWorkspace(config: Config, serviceId: string, targetId: string): boolean {
+  const target = config.workspaces.find((w) => w.id === targetId);
+  if (!target) return false;
+  for (const w of config.workspaces) if (w.id !== targetId) detach(w, serviceId);
+  if (!flattenServiceIds(target).includes(serviceId)) target.items.push({ kind: 'service', id: serviceId });
+  return true;
 }

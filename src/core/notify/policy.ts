@@ -109,3 +109,22 @@ export function normaliseNotification(payload: unknown): NotificationContent {
     silent: source.silent === true,
   };
 }
+
+export { HOUR_MS, tomorrowMorning } from '@shared/time';
+
+/** The quiet periods whose time is up at `now`: whether DND should end, and which mutes. */
+export function expiredQuiet(
+  config: {
+    preferences: { notifications: { dnd: boolean; dndUntil: number | null } };
+    services: Array<{ id: string; notificationLevel?: NotificationLevel; mutedUntil?: number }>;
+  },
+  now: number,
+): { dnd: boolean; services: string[] } {
+  const { dnd, dndUntil } = config.preferences.notifications;
+  return {
+    dnd: dnd && dndUntil !== null && now >= dndUntil,
+    services: config.services
+      .filter((s) => s.notificationLevel === 'muted' && s.mutedUntil !== undefined && now >= s.mutedUntil)
+      .map((s) => s.id),
+  };
+}
