@@ -6,8 +6,8 @@ import type { ServiceInstance, ShellState } from '@shared/types';
  * Where a service's badge number comes from, and the escape hatch for the ones it comes from
  * nowhere.
  *
- * Ten catalog entries put their count in the tab title and two more publish a stable enough badge
- * to name a selector for. For the rest, the number was a running tally of `new Notification()`
+ * Some catalog entries put their count in the tab title and a couple more publish a stable enough
+ * badge to name a selector for. For the rest, the number was a running tally of `new Notification()`
  * calls: it only ever rose, it never noticed you'd read something on your phone, and it sat at zero
  * for anyone who had turned that site's notifications off. Pointing this field at the badge the
  * page already draws replaces all of that with the number the service itself is showing.

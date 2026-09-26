@@ -41,7 +41,7 @@ const QUICK_SWITCHER = ['mod+k'];
 /**
  * Unread detection, and why so many entries have none.
  *
- * Ten entries read their count out of the tab title. That leaves 27, and the honest breakdown is
+ * Some entries read their count out of the tab title. Of the rest, the honest breakdown is
  * that most of them have no unread count to read: Docs, Sheets, Slides, Keep, Drive, OneDrive,
  * SharePoint, Calendar, Meet, Zoom, Obsidian, Evernote, Claude, ChatGPT and Perplexity do not have
  * an inbox, so "no rule" is the correct answer rather than a gap. Signal has no web client at all.
@@ -161,6 +161,25 @@ const COMMS: CatalogEntry[] = [
     // known here. Settings → Connections is where that one gets added.
     allowedHosts: ['element.io', 'app.element.io', 'matrix.org'],
   },
+  // --- Added in the Phase 7 catalog pass. None has a vendored icon yet: each shows its initials in
+  // --- the picker and captures its own favicon on first load (`captureFavicon`). `npm run icons`
+  // --- with a slug added here is how one gets a real logo.
+  {
+    id: 'gmessages', name: 'Google Messages', url: 'https://messages.google.com/web/conversations',
+    initials: 'Ms', color: '#1A73E8', provider: 'google',
+    allowedHosts: ['messages.google.com', ...GOOGLE_AUTH],
+    caveat: 'Pairs with the Messages app on your Android phone by QR code.',
+  },
+  {
+    id: 'gvoice', name: 'Google Voice', url: 'https://voice.google.com/',
+    initials: 'GV', color: '#0F9D58', provider: 'google',
+    allowedHosts: ['voice.google.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'webex', name: 'Webex', url: 'https://web.webex.com/',
+    initials: 'Wx', color: '#07C160', provider: 'webex',
+    allowedHosts: ['webex.com', 'ciscospark.com', ...GOOGLE_AUTH, ...MS_AUTH],
+  },
 ];
 
 /** Feeds. Added because they were the obvious hole, not because they're restful. */
@@ -194,6 +213,31 @@ const SOCIAL: CatalogEntry[] = [
     id: 'bluesky', icon: 'bluesky', name: 'Bluesky', url: 'https://bsky.app/',
     initials: 'Bs', color: '#0285FF', provider: 'bluesky',
     allowedHosts: ['bsky.app', 'bsky.social'],
+  },
+  {
+    id: 'youtube', name: 'YouTube', url: 'https://www.youtube.com/',
+    initials: 'YT', color: '#FF0000', provider: 'google',
+    allowedHosts: ['youtube.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'ytmusic', name: 'YouTube Music', url: 'https://music.youtube.com/',
+    initials: 'YM', color: '#FF0000', provider: 'google',
+    allowedHosts: ['music.youtube.com', 'youtube.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'threads', name: 'Threads', url: 'https://www.threads.net/',
+    // Instagram's provider, so it rides the Instagram login it signs in with rather than asking
+    // for it again.
+    initials: 'Th', color: '#101010', provider: 'instagram',
+    allowedHosts: ['threads.net', 'threads.com', 'instagram.com'],
+  },
+  {
+    // One server of many. Anyone on another instance adds it as a custom connection by URL, which
+    // gets its own allowlist from that host.
+    id: 'mastodon', name: 'Mastodon', url: 'https://mastodon.social/',
+    initials: 'Ma', color: '#6364FF', provider: 'mastodon',
+    allowedHosts: ['mastodon.social'],
+    caveat: 'This is mastodon.social. For another server, add it by URL instead.',
   },
 ];
 
@@ -270,6 +314,37 @@ const WORK: CatalogEntry[] = [
     initials: 'Db', color: '#0061FF', provider: 'dropbox',
     allowedHosts: ['dropbox.com', 'www.dropbox.com', ...GOOGLE_AUTH],
   },
+  {
+    id: 'bitbucket', name: 'Bitbucket', url: 'https://bitbucket.org/',
+    initials: 'Bb', color: '#0052CC', provider: 'atlassian',
+    allowedHosts: ['bitbucket.org', ...ATLASSIAN_AUTH, ...GOOGLE_AUTH],
+  },
+  {
+    id: 'azuredevops', name: 'Azure DevOps', url: 'https://dev.azure.com/',
+    initials: 'AD', color: '#0078D4', provider: 'microsoft',
+    allowedHosts: ['dev.azure.com', 'visualstudio.com', ...MS_AUTH],
+  },
+  {
+    id: 'hubspot', name: 'HubSpot', url: 'https://app.hubspot.com/',
+    initials: 'HS', color: '#FF7A59', provider: 'hubspot',
+    // hubspot.com covers the regional app-eu1 and app-na2 hosts too.
+    allowedHosts: ['hubspot.com', ...GOOGLE_AUTH, ...MS_AUTH],
+  },
+  {
+    id: 'intercom', name: 'Intercom', url: 'https://app.intercom.com/',
+    initials: 'IC', color: '#1F8DED', provider: 'intercom',
+    allowedHosts: ['intercom.com', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'front', name: 'Front', url: 'https://app.frontapp.com/',
+    initials: 'Fr', color: '#A857F1', provider: 'front',
+    allowedHosts: ['frontapp.com', ...GOOGLE_AUTH, ...MS_AUTH],
+  },
+  {
+    id: 'canva', name: 'Canva', url: 'https://www.canva.com/',
+    initials: 'Ca', color: '#00C4CC', provider: 'canva',
+    allowedHosts: ['canva.com', ...GOOGLE_AUTH],
+  },
 ];
 
 /** Mail that isn't Google's or Microsoft's. */
@@ -285,6 +360,32 @@ const MAIL: CatalogEntry[] = [
     id: 'fastmail', icon: 'fastmail', name: 'Fastmail', url: 'https://app.fastmail.com/',
     initials: 'Fm', color: '#0067B9', provider: 'fastmail',
     allowedHosts: ['fastmail.com', 'app.fastmail.com'],
+  },
+  {
+    id: 'icloudmail', name: 'iCloud Mail', url: 'https://www.icloud.com/mail/',
+    initials: 'iC', color: '#3693F3', provider: 'apple',
+    allowedHosts: ['icloud.com', 'idmsa.apple.com', 'appleid.apple.com'],
+  },
+  {
+    id: 'yahoomail', name: 'Yahoo Mail', url: 'https://mail.yahoo.com/',
+    initials: 'Ya', color: '#6001D2', provider: 'yahoo',
+    allowedHosts: ['mail.yahoo.com', 'login.yahoo.com', 'yahoo.com'],
+  },
+  {
+    id: 'zohomail', name: 'Zoho Mail', url: 'https://mail.zoho.com/',
+    initials: 'Zo', color: '#E42527', provider: 'zoho',
+    // Zoho runs a data centre per region, each on its own domain.
+    allowedHosts: ['zoho.com', 'zoho.eu', 'zoho.in', 'zoho.com.au', ...GOOGLE_AUTH],
+  },
+  {
+    id: 'hey', name: 'HEY', url: 'https://app.hey.com/',
+    initials: 'HE', color: '#5522FA', provider: 'hey',
+    allowedHosts: ['hey.com'],
+  },
+  {
+    id: 'tuta', name: 'Tuta Mail', url: 'https://app.tuta.com/',
+    initials: 'Tu', color: '#850122', provider: 'tuta',
+    allowedHosts: ['tuta.com', 'tutanota.com'],
   },
 ];
 
@@ -316,25 +417,40 @@ const SUITES: CatalogEntry[] = [
     id: 'outlook', icon: 'microsoft-outlook', name: 'Outlook',
     url: 'https://outlook.office.com/mail/',
     initials: 'Ou', color: '#0078D4', provider: 'microsoft',
-    allowedHosts: ['outlook.office.com', 'outlook.office365.com', 'outlook.live.com', ...MS_AUTH],
+    // `cloud.microsoft`: Microsoft is moving Outlook to outlook.cloud.microsoft, the same move that
+    // already took Teams to teams.cloud.microsoft. Missing, the redirect lands off the allowlist and
+    // opens in the browser — the failure Notion's .so → .com move caused.
+    allowedHosts: [
+      'outlook.office.com', 'outlook.office365.com', 'outlook.live.com', 'cloud.microsoft', ...MS_AUTH,
+    ],
     unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
   },
   {
     id: 'onedrive', icon: 'microsoft-onedrive', name: 'OneDrive',
     url: 'https://onedrive.live.com/',
     initials: 'OD', color: '#0078D4', provider: 'microsoft',
-    allowedHosts: ['onedrive.live.com', 'onedrive.com', 'sharepoint.com', ...MS_AUTH],
+    allowedHosts: ['onedrive.live.com', 'onedrive.com', 'sharepoint.com', 'cloud.microsoft', ...MS_AUTH],
   },
   {
     id: 'sharepoint', icon: 'microsoft-sharepoint', name: 'SharePoint',
     url: 'https://www.office.com/launch/sharepoint',
     initials: 'SP', color: '#038387', provider: 'microsoft',
-    allowedHosts: ['sharepoint.com', 'office.com', 'www.office.com', ...MS_AUTH],
+    // office.com now redirects to m365.cloud.microsoft (and, for some tenants, microsoft365.com).
+    allowedHosts: [
+      'sharepoint.com', 'office.com', 'www.office.com', 'cloud.microsoft', 'microsoft365.com', ...MS_AUTH,
+    ],
   },
   {
     id: 'mstodo', icon: 'microsoft-to-do', name: 'To Do', url: 'https://to-do.office.com/tasks/',
     initials: 'TD', color: '#2564CF', provider: 'microsoft',
-    allowedHosts: ['to-do.office.com', 'office.com', ...MS_AUTH],
+    // to-do.live.com is where a personal Microsoft account's To Do lives.
+    allowedHosts: ['to-do.office.com', 'to-do.live.com', 'office.com', 'cloud.microsoft', ...MS_AUTH],
+  },
+  {
+    // Word, Excel and PowerPoint in one launcher, which is where Microsoft now sends office.com.
+    id: 'm365', name: 'Microsoft 365', url: 'https://m365.cloud.microsoft/',
+    initials: 'M3', color: '#D83B01', provider: 'microsoft',
+    allowedHosts: ['cloud.microsoft', 'office.com', 'microsoft365.com', 'sharepoint.com', 'officeapps.live.com', ...MS_AUTH],
   },
 ];
 
