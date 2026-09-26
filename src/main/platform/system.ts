@@ -1,6 +1,7 @@
 import { app, globalShortcut, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { safeToAutoOpen } from '@core/runtime/downloads';
 import { applyLaunchAgent } from '@main/platform/launch-agent';
 import type { Preferences, ProxyConfig } from '@shared/types';
 
@@ -87,9 +88,17 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
       item.setSavePath(uniqueDownloadPath(folder, item.getFilename()));
     }
     item.once('done', (_e, state) => {
-      if (state === 'completed' && prefs.openOnComplete) {
-        void shell.openPath(item.getSavePath());
+      if (state !== 'completed' || !prefs.openOnComplete) return;
+      const saved = item.getSavePath();
+      // Never *run* something because a page downloaded it — see `safeToAutoOpen`.
+      if (!safeToAutoOpen(path.basename(saved))) {
+        console.log(`[download] not opening ${path.basename(saved)} automatically — it would run`);
+        shell.showItemInFolder(saved);
+        return;
       }
+      shell.openPath(saved).then((error) => {
+        if (error) console.warn(`[download] could not open ${path.basename(saved)}: ${error}`);
+      }, () => {});
     });
   });
 }

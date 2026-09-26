@@ -95,6 +95,9 @@ export class ServiceManager {
         // Required for dictionarySuggestions to be populated in the context-menu event. Setting
         // spellchecker languages alone (session.ts) does nothing without it.
         spellcheck: true,
+        // Offers "prevent this page from creating more dialogs" after a few, so a page looping
+        // `alert()` can't hold a modal over the pane until the app is killed.
+        safeDialogs: true,
       },
     });
 

@@ -88,6 +88,13 @@ describe("adding a custom connection", () => {
     assert.ok(!svc.allowedHosts.includes('co.uk'));
   });
 
+  it('A NON-WEB URL IS REFUSED IN MAIN — a file: URL made an allowlist of [\'\'] that matched everything', () => {
+    // The Add Connection form checks too, but IPC is the boundary, not the form.
+    for (const url of ['file:///etc/passwd', 'data:text/html,hi', 'about:blank', 'javascript:alert(1)', 'http://']) {
+      assert.throws(() => makeCustomInstance(config, { name: 'Bad', url }), /http\(s\) URL/, url);
+    }
+  });
+
   it('a custom connection gets an isolated account of its own', () => {
     const svc = config.services.find((s) => s.name === 'Grafana');
     const partitions = config.services.filter((s) => s.id !== svc!.id).map(partitionOf);

@@ -224,8 +224,8 @@ Not bugs; things that will look like bugs later.
 
 ## 8. Suggested order
 
-If picking this up fresh, start with **§13.1–13.3** — two security holes a dropped link or a page
-can reach, and reliability bugs that are live in the log today. Then:
+If picking this up fresh, start with **§13.2–13.3** — reliability bugs that are live in the log
+today, and UI that doesn't do what it says. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -326,35 +326,18 @@ A read-through of main, preload, renderer, packaging and docs, done after the re
 (#96). Each item names where it lives and what the fix is. Severity: **P1** is wrong behaviour or a
 hole a page can reach; **P2** is cost, polish, or latent. Nothing in this section is fixed yet.
 
-### 13.1 Security (P1)
+### 13.1 Security (P1) — closed
 
-- **Internal views can be navigated, and IPC trusts any sender.** The rail, empty view, overlay,
-  find bar, drag layer (`app-window.ts`, `overlay.ts`, `find-bar.ts`, `drag-layer.ts`) and Settings
-  (`settings-window.ts`) all load `sidebar.cjs`, and none blocks `will-navigate` or sets a
-  `setWindowOpenHandler` — those guards exist only for service views (`session.ts:141,188`).
-  Dropping a link on the rail navigates it to a remote page that still has `window.hangar`, and
-  `shell:command` (`boot/index.ts`, `registerIpc`) never checks `event.sender`: that page could
-  send `update-service` with `customJs` and inject script into Gmail. **Fix:** deny navigation and
-  window-open on every internal webContents; accept `shell:*` and `app:*` only from a sender whose
-  `senderFrame.url` is the app's own renderer URL.
-- **`shell.openExternal` takes any scheme** (`session.ts:153,175`, `context-menu.ts:54,86`):
-  `file:`, `smb:`, `x-apple.systempreferences:`. **Fix:** allow http(s), mailto, tel and an explicit
-  list of app schemes (zoommtg, msteams, slack); rate-limit per service.
-- **`will-redirect` ignores `isMainFrame`** (`session.ts:198`), so any iframe redirecting off the
-  allowlist is cancelled and bounced to the browser — silent sign-in iframes included.
-- **Permissions ignore the requesting origin** (`session.ts:74-84`): a third-party iframe in a
-  catalog service is granted media and clipboard silently, and `allowMedia` is captured from the
-  first service to create the partition, so toggling it needs a restart. **Screen sharing cannot
-  work at all** — there is no `setDisplayMediaRequestHandler`.
-- **A `file:` custom URL makes an allowlist of `['']`**, which then matches every `file:`, `data:`
-  and `about:` URL (`session.ts:52-61`; main doesn't validate `add-custom-service`). **Fix:** http(s)
-  only, in main, and `isAllowedHost` refuses an empty host.
-- **The page can widen its own allowlist** after you decline: `lastBlockedHost` survives "Back to
-  X", and `__hangar.allowHost()` is callable from page script (`boot/index.ts`, `service:allow-host`).
-  **Fix:** only honour it from the `data:` error page's frame, and clear it on retry.
-- Smaller: `customJs` travels through git sync; export writes FCM registrations and the Firebase key
-  to disk (`transfer.ts:33-37`); `openOnComplete` opens any file type; Toggle DevTools ships in the
-  production View menu; service views lack `safeDialogs`.
+All of it, in [decisions #97](decisions.md): the internal screens are locked to the app's renderer
+and IPC answers only their frames; `openExternal` takes an allowlist of schemes and a rate limit;
+subframe redirects are left alone; permissions are judged per requesting frame and re-read per
+request; screen sharing works, through a picker; `file:` custom connections are refused in main;
+the blocked page's Allow can't be pressed by the page; `customJs` stays out of git sync; exports
+drop push keys; "open when complete" won't run a program; service views use `safeDialogs`.
+
+Deliberately kept: **Toggle Developer Tools stays in the View menu** of the packaged app. Finding an
+unread selector (§8, [unread-selectors.md](unread-selectors.md)) is done with DevTools open on a
+real signed-in page, and this is an app you build for yourself.
 
 ### 13.2 Reliability (P1)
 

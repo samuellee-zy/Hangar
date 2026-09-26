@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { shell } from 'electron';
 import { attachNavigationGuards, isAllowedHost } from '@main/platform/session';
+import { forgetExternalOpens } from '@main/platform/external';
 import type { ServiceInstance } from '@shared/types';
 
 const openedUrls = () => (shell as unknown as { opened: string[] }).opened;
@@ -76,6 +77,7 @@ const service = (extra?: Partial<ServiceInstance>): ServiceInstance =>
 
 beforeEach(() => {
   openedUrls().length = 0;
+  forgetExternalOpens();
 });
 
 describe('isAllowedHost', () => {
@@ -96,6 +98,16 @@ describe('isAllowedHost', () => {
     assert.equal(isAllowedHost(svc, 'https://login.example.test/'), true);
     assert.equal(isAllowedHost(svc, 'https://example.com/'), true);
     assert.equal(isAllowedHost(svc, 'https://elsewhere.test/'), false);
+  });
+
+  it('A NON-WEB URL IS NEVER ALLOWED, even by an allowlist holding an empty host', () => {
+    // A custom connection made from a `file:` URL carried `allowedHosts: ['']`, and `''` matched
+    // the empty hostname of every file:, data: and about: URL.
+    const svc = service({ allowedHosts: [''] });
+    for (const url of ['file:///Applications/Calculator.app', 'data:text/html,x', 'about:blank']) {
+      assert.equal(isAllowedHost(svc, url), false, url);
+    }
+    assert.equal(isAllowedHost(service(), 'file:///example.com/x'), false);
   });
 
   it('an unparseable URL is not allowed', () => {
@@ -129,6 +141,25 @@ describe('attachNavigationGuards', () => {
 
     assert.equal(wc.navigate('will-redirect', 'https://elsewhere.test/steal'), true);
     assert.deepEqual(openedUrls(), ['https://elsewhere.test/steal']);
+  });
+
+  it('A SUBFRAME REDIRECT IS LEFT ALONE — no browser tab for an iframe nobody clicked', () => {
+    const wc = new FakeContents('https://example.com/');
+    attachNavigationGuards(wc.asContents, service(), 'persist:test');
+
+    let prevented = false;
+    wc.emit('will-redirect', { isMainFrame: false, preventDefault: () => (prevented = true) }, 'https://tracker.test/pixel');
+    assert.equal(prevented, false);
+    assert.deepEqual(openedUrls(), []);
+  });
+
+  it('A REFUSED NON-WEB NAVIGATION IS NOT HANDED TO THE SYSTEM — file: would launch an app', () => {
+    const wc = new FakeContents('https://example.com/');
+    attachNavigationGuards(wc.asContents, service(), 'persist:test');
+
+    assert.equal(wc.navigate('will-navigate', 'file:///Applications/Calculator.app'), true);
+    assert.equal(wc.navigate('will-navigate', 'x-apple.systempreferences:com.apple.preference.security'), true);
+    assert.deepEqual(openedUrls(), [], 'refused, not opened');
   });
 
   it('a redirect that stays on the allowlist is not disturbed', () => {

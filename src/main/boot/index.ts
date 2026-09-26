@@ -11,6 +11,7 @@ import { applyUserAgent } from '@main/platform/ua';
 import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
 import { AppWindow } from '@main/window/app-window';
+import { isInternalSender } from '@main/platform/renderer-url';
 import type { Command } from '@shared/types';
 
 /**
@@ -168,11 +169,38 @@ app.whenReady().then(() => {
   shell.applySystemPreferences();
 });
 
+/**
+ * The app's own channels answer only the app's own screens.
+ *
+ * `shell:command` can do anything a person can in Settings — add a service, point sync at a repo,
+ * give Gmail custom JavaScript — and it used to answer any sender at all. The screens that hold
+ * the bridge are locked to this renderer now (`loadRoute`), and this is the second half: a frame
+ * showing anything else is ignored, and says so in the log.
+ */
+function fromApp(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, channel: string): boolean {
+  if (isInternalSender(event)) return true;
+  console.warn(`[ipc] ignored ${channel} from ${event.senderFrame?.url.slice(0, 80) ?? 'a closed frame'}`);
+  return false;
+}
+
+/**
+ * Whether a service message comes from the error or blocked page main put in the pane, rather than
+ * from the service's own page. Those pages are `data:` URLs we wrote; "Allow this host" and "Try
+ * again" are their buttons, and a page's own script has no business pressing them.
+ */
+const fromRecoveryPage = (event: Electron.IpcMainEvent): boolean =>
+  event.senderFrame?.url.startsWith('data:') === true;
+
 function registerIpc(): void {
-  ipcMain.handle('shell:get-state', () => shell?.state() ?? null);
-  ipcMain.handle('overlay:get-mode', () => shell?.overlayOpen ?? null);
+  ipcMain.handle('shell:get-state', (event) =>
+    fromApp(event, 'shell:get-state') ? (shell?.state() ?? null) : null,
+  );
+  ipcMain.handle('overlay:get-mode', (event) =>
+    fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
+  );
   // Memory readout for Settings, so the hibernation setting has a visible consequence.
-  ipcMain.handle('app:metrics', () => {
+  ipcMain.handle('app:metrics', (event) => {
+    if (!fromApp(event, 'app:metrics')) return null;
     const metrics = app.getAppMetrics();
     return {
       processes: metrics.length,
@@ -181,7 +209,8 @@ function registerIpc(): void {
       ),
     };
   });
-  ipcMain.on('shell:command', (_event, command: Command) => {
+  ipcMain.on('shell:command', (event, command: Command) => {
+    if (!fromApp(event, 'shell:command')) return;
     // The renderer is a separate process, so an exception thrown here surfaces nowhere useful —
     // the click just appears to do nothing. Log the command and any failure explicitly.
     try {
@@ -215,6 +244,7 @@ function registerIpc(): void {
   });
 
   ipcMain.on('service:retry', (event) => {
+    if (!fromRecoveryPage(event)) return;
     const serviceId = shell?.serviceIdForContents(event.sender);
     if (serviceId) shell?.retryService(serviceId);
   });
@@ -222,6 +252,7 @@ function registerIpc(): void {
   // No payload: the host comes from what main last blocked for this sender's service. See the
   // preload's allowHost for why the page is not allowed to name it.
   ipcMain.on('service:allow-host', (event) => {
+    if (!fromRecoveryPage(event)) return;
     const serviceId = shell?.serviceIdForContents(event.sender);
     if (serviceId) shell?.allowBlockedHost(serviceId);
   });

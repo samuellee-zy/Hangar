@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
+import { isWebUrl } from '@core/runtime/urls';
 import { catalog, catalogById } from '@shared/catalog';
 import { createAccount, resolveAccount } from '@core/services/accounts';
 import { findQuarantined, pathsFor, quarantine, readWithRecovery, writeAtomic } from '@core/config/store';
@@ -46,6 +47,10 @@ export function makeCustomInstance(
   config: Config,
   { name, url }: { name: string; url: string }
 ): ServiceInstance {
+  // Checked here and not only in the Add Connection form, because the form is not the boundary —
+  // `add-custom-service` is an IPC message. A `file:` URL made a service whose allowlist was `['']`,
+  // and an empty host matched every `file:`, `data:` and `about:` URL there is.
+  if (!isWebUrl(url)) throw new Error(`a custom connection needs an http(s) URL, not ${url.slice(0, 40)}`);
   const host = new URL(url).hostname;
   const account = createAccount(config, 'custom', name);
   return {

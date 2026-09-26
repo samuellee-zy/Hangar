@@ -1972,3 +1972,67 @@ running copy to quit through the single-instance handoff: no confirm dialog, coo
 **One more guard.** Every packaged copy rewrote the LaunchAgent to point at itself on boot, so trying
 out a build straight from `dist/` repointed login at the build directory. Only a copy in an
 Applications folder may claim it now (`isInstalledCopy`).
+
+## 97. The app's own screens hold the bridge, so they may only show the app
+
+The rail, Settings, the overlay, the find bar, the drag layer and the empty view all load
+`sidebar.cjs`, which gives them `window.hangar` — and `send` takes any command there is: add a
+service, point sync at a repo, give Gmail custom JavaScript. Service views had navigation guards
+from the start (#94); these had none. Dragging a link onto the rail navigated the rail to that page
+with the bridge still in it, and `shell:command` answered whatever sent it.
+
+**Two halves, because either alone is one bug from nothing.**
+
+- **The screens are locked** in `loadRoute`, the one place every internal screen is loaded — which
+  is also why Settings now goes through it rather than loading itself, the way it had come to be the
+  one screen that would have missed this. `will-navigate` and `will-redirect` are refused for any
+  URL that isn't this renderer, `window.open` goes to the browser (through the same filter as
+  everything else) and never to a window that would inherit the preload, and `<webview>` is refused.
+  "This renderer" is the dev server's origin in development and the exact path of `index.html` in a
+  build — the path, not the scheme, because dropping a file is a navigation to `file:` too.
+- **IPC checks the frame.** `shell:*`, `overlay:get-mode` and `app:metrics` answer only when
+  `senderFrame.url` is the app, and log what they ignored. The frame and not the webContents,
+  because a webContents is a container and what matters is the document in it when it sent.
+
+**Everything that leaves goes through `openExternalSafely`.** Four call sites handed URLs straight
+to `shell.openExternal`, which opens whatever handles the scheme: `file:` launches apps,
+`x-apple.systempreferences:` opens System Settings, `smb:` mounts shares. Now an allowlist — the
+web, mail and phone links, and the meeting and desktop apps a web service legitimately hands off to
+— and five opens per ten seconds per source, so a page opening popups on a timer produces five tabs
+and a log line. The rejection that a missing handler produces (`zoommtg:` with no Zoom) is caught;
+it used to reach the unhandled-rejection guard and become a modal dialog.
+
+**Permissions are the requesting frame's, not the partition's.** The handler captured whichever
+service first created the partition, so an embed inside Slack got the camera because Slack is in
+the catalog, and a second service on the same Google account was judged as the first. Now each
+webContents is registered to its service as its guards attach (popups included), the request's own
+URL has to be on that service's allowlist, and the service is read fresh from config — so toggling
+camera and microphone takes effect on the next request rather than after a restart. A third-party
+frame gets fullscreen, pointer lock and sanitised clipboard writes, and nothing else.
+
+**Screen sharing works now**, and never on a page's say-so: a display-media handler asks, every time,
+in a native dialog listing screens and then windows. Without a handler `getDisplayMedia` just failed,
+so the `display-capture` grant had never done anything.
+
+**Smaller holes, same theme:**
+
+- `will-redirect` ignored `isMainFrame`, so any iframe redirecting off the allowlist was cancelled
+  and bounced to the browser — a tab opening for something nobody clicked.
+- A `file:` custom connection had an allowlist of `['']`, and the empty host matched every `file:`,
+  `data:` and `about:` URL. Main refuses non-web custom URLs now, and `isAllowedHost` ignores empty
+  entries and accepts only web URLs.
+- The blocked page's Allow button carried no argument by design (#94), but the host it meant stayed
+  armed after "Back to …", so the service's own script could call `__hangar.allowHost()` later.
+  Allow and Try again are honoured only from our `data:` pages now, and the host is forgotten as
+  soon as the pane navigates anywhere else.
+- `customJs` no longer travels through git sync: anyone who can push to the repo could otherwise run
+  script in a signed-in page on every machine that pulls. CSS still travels; it can restyle a page,
+  not act as you.
+- Export leaves out `pushRegistrations`, which hold the private keys for this machine's pushes.
+- "Open when complete" shows scripts, apps and installers in Finder instead of opening — opening one
+  is running it, and a page chooses what it downloads.
+- Service views and their popups use `safeDialogs`, so a page looping `alert()` can be stopped.
+
+Both e2e tests in `security.spec.ts` were checked by removing the guard each covers: each fails
+without it.
+

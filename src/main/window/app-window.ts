@@ -112,6 +112,7 @@ import { EndpointPoller } from '@main/features/endpoint-poll';
 import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
+import { isWebUrl } from '@core/runtime/urls';
 import type {
   Command,
   DomUnreadRule,
@@ -1105,6 +1106,10 @@ export class AppWindow {
       }
 
       case 'add-custom-service': {
+        if (!isWebUrl(command.url)) {
+          console.warn(`[command] add-custom-service refused: not an http(s) URL`);
+          break;
+        }
         const svc = updateConfigReturning((c) => addService(c, makeCustomInstance(c, command)));
         this.overlay.close();
         this.openService(svc.id, { newPane: false });

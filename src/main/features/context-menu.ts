@@ -1,5 +1,6 @@
-import { Menu, app, clipboard, dialog, shell, type BaseWindow, type WebContents } from 'electron';
+import { Menu, app, clipboard, dialog, type BaseWindow, type WebContents } from 'electron';
 import { catalogById } from '@shared/catalog';
+import { openExternalSafely } from '@main/platform/external';
 import type { Command, ServiceInstance } from '@shared/types';
 
 /**
@@ -51,7 +52,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
 
     if (params.linkURL) {
       items.push(
-        { label: 'Open link in browser', click: () => void shell.openExternal(params.linkURL) },
+        { label: 'Open link in browser', click: () => openExternalSafely(params.linkURL, 'context menu') },
         { label: 'Copy link', click: () => clipboard.writeText(params.linkURL) },
         { type: 'separator' },
       );
@@ -83,7 +84,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
       { label: 'Reload', click: () => wc.reload() },
       { type: 'separator' },
       { label: 'Copy current URL', click: () => clipboard.writeText(wc.getURL()) },
-      { label: 'Open page in browser', click: () => void shell.openExternal(wc.getURL()) },
+      { label: 'Open page in browser', click: () => openExternalSafely(wc.getURL(), 'context menu') },
     );
 
     // `app.isPackaged`, not an npm env var. The old check was

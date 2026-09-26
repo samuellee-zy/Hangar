@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { BrowserWindow } from 'electron';
-import { forwardConsole } from '@main/platform/renderer-url';
+import { loadRoute } from '@main/platform/renderer-url';
 
 /**
  * Settings is a real window rather than another overlay mode, following the macOS Preferences
@@ -33,8 +33,6 @@ export function openSettingsWindow(register: (wc: Electron.WebContents) => void)
     },
   });
 
-  forwardConsole(win.webContents, 'settings');
-
   // ⌘W, on this window's own contents.
   //
   // It used to come from the menu's registered accelerator, which dispatched `close-pane` at the
@@ -50,9 +48,9 @@ export function openSettingsWindow(register: (wc: Electron.WebContents) => void)
     if (!closer.isDestroyed()) closer.close();
   });
 
-  const devUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (devUrl) void win.loadURL(`${devUrl}#settings`);
-  else void win.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: 'settings' });
+  // Through `loadRoute` like every other internal screen, so it gets the same lockdown: it holds
+  // the same bridge, and loading itself directly is how it came to be the one screen without it.
+  loadRoute(win.webContents, 'settings');
 
   win.on('closed', () => (win = null));
 

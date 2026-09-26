@@ -33,7 +33,10 @@ export async function exportConfig(window: BaseWindow): Promise<void> {
   const config = loadConfig();
   fs.writeFileSync(
     filePath,
-    JSON.stringify({ _note: NOTE, ...config, window: undefined }, null, 2)
+    // Not `pushRegistrations`: each holds the private keys that decrypt this machine's pushes, and
+    // is bound to this one receiver — useless on another Mac, and not something to leave in a file
+    // in Downloads.
+    JSON.stringify({ _note: NOTE, ...config, window: undefined, pushRegistrations: undefined }, null, 2)
   );
   console.log(`[transfer] exported to ${filePath}`);
 }
