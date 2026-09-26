@@ -172,6 +172,29 @@ export function contentArea(chrome: Chrome, width: number, height: number): Rect
 export class Layout {
   panes: Pane[] = [];
   focusedPaneId: string | null = null;
+  /**
+   * One pane filling the content area on its own, the others kept but not drawn — the split
+   * survives, it is just out of the way. Follows focus: cycling panes while maximised shows the
+   * next one full size. Not persisted; it is a momentary view, like a zoomed window.
+   */
+  maximisedPaneId: string | null = null;
+
+  /** Toggles maximise on the focused pane. Meaningless with one pane, so it clears instead. */
+  toggleMaximise(): void {
+    this.maximisedPaneId =
+      this.maximisedPaneId || this.panes.length < 2 ? null : (this.focusedPaneId ?? null);
+  }
+
+  /** The panes actually drawn: the maximised one alone, or all of them. */
+  drawn(): Pane[] {
+    const maximised = this.maximisedPaneId ? this.find(this.maximisedPaneId) : undefined;
+    return maximised && this.panes.length > 1 ? [maximised] : this.panes;
+  }
+
+  /** Services in a pane that is drawn — what someone could be looking at. */
+  drawnServiceIds(): Set<string> {
+    return new Set(this.drawn().map((p) => p.serviceId));
+  }
 
   get isFull(): boolean {
     return this.panes.length >= MAX_PANES;
@@ -212,6 +235,8 @@ export class Layout {
 
   add(serviceId: string): Pane {
     if (this.isFull) return this.show(serviceId);
+    // Opening a pane alongside is asking for the split back.
+    this.maximisedPaneId = null;
     const pane: Pane = { id: randomUUID(), serviceId };
     this.panes.push(pane);
     this.focusedPaneId = pane.id;
@@ -244,6 +269,7 @@ export class Layout {
 
   /** Keeps `focusedPaneId` naming a pane that exists. Every removal path must end here. */
   private refocusAfter(index: number, removedId: string): void {
+    if (this.maximisedPaneId === removedId || this.panes.length < 2) this.maximisedPaneId = null;
     if (this.focusedPaneId !== removedId) return;
     this.focusedPaneId = this.panes[Math.min(index, this.panes.length - 1)]?.id ?? null;
   }
@@ -253,6 +279,7 @@ export class Layout {
     const index = this.panes.findIndex((p) => p.id === this.focusedPaneId);
     const next = (index + delta + this.panes.length) % this.panes.length;
     this.focusedPaneId = this.panes[next]?.id ?? null;
+    if (this.maximisedPaneId) this.maximisedPaneId = this.focusedPaneId;
   }
 
   /**
@@ -261,7 +288,8 @@ export class Layout {
    */
   bounds(chrome: Chrome, contentWidth: number, contentHeight: number): Map<string, Rect> {
     const out = new Map<string, Rect>();
-    const n = this.panes.length;
+    const panes = this.drawn();
+    const n = panes.length;
     if (n === 0) return out;
 
     const area = contentArea(chrome, contentWidth, contentHeight);
@@ -277,7 +305,7 @@ export class Layout {
     const cellW = Math.floor(usableW / cols);
     const cellH = Math.floor(usableH / rows);
 
-    this.panes.forEach((pane, i) => {
+    panes.forEach((pane, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       out.set(pane.id, {

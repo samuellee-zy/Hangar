@@ -558,6 +558,7 @@ export type Command =
   | { type: 'reveal'; what: 'config' | 'log' }
   | { type: 'make-default-mail-app' }
   | { type: 'pop-out-service'; serviceId: string }
+  | { type: 'toggle-maximise-pane' }
   | { type: 'reveal-download'; id: string }
   /** Opens a folder picker and writes the choice to that preference. */
   | { type: 'choose-folder'; purpose: 'downloads' | 'sync' }

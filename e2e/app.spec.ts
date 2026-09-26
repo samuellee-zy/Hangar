@@ -836,3 +836,35 @@ test('A NOTIFICATION YOU MISSED IS KEPT IN RECENT — one you were looking at is
   });
   expect(recent.map((n) => n.title)).toEqual(['Missed this']);
 });
+
+test('MAXIMISING A PANE TAKES THE OTHER OFF THE WINDOW — and the focus ring marks the focused one', async () => {
+  h = await launch();
+  await h.rail();
+
+  const result = await h.app.evaluate(async ({ webContents }) => {
+    const shell = (globalThis as never as {
+      __hangarShell: { win: Electron.BaseWindow; dispatch: (c: unknown) => boolean; focusRing: Electron.View | null };
+    }).__hangarShell;
+    shell.dispatch({ type: 'split' });
+    await new Promise((r) => setTimeout(r, 2000));
+    const attachedPanes = () =>
+      shell.win.contentView.children.filter((v) =>
+        'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().startsWith('http://127.0.0.1'),
+      ).length;
+    const split = attachedPanes();
+    const ringWithTwo = Boolean(shell.focusRing?.getVisible());
+    shell.dispatch({ type: 'toggle-maximise-pane' });
+    await new Promise((r) => setTimeout(r, 300));
+    const maximised = attachedPanes();
+    const ringWithOne = Boolean(shell.focusRing?.getVisible());
+    shell.dispatch({ type: 'toggle-maximise-pane' });
+    await new Promise((r) => setTimeout(r, 300));
+    return { split, maximised, restored: attachedPanes(), ringWithTwo, ringWithOne, _: webContents.getAllWebContents().length };
+  });
+
+  expect(result.split).toBe(2);
+  expect(result.maximised, 'the hidden pane must be detached, not left underneath').toBe(1);
+  expect(result.restored).toBe(2);
+  expect(result.ringWithTwo, 'two panes: the focused one is marked').toBe(true);
+  expect(result.ringWithOne, 'one pane drawn: nothing to tell apart').toBe(false);
+});

@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   BaseWindow,
   Notification,
+  View,
   WebContentsView,
   dialog,
   app,
@@ -955,7 +956,9 @@ export class AppWindow {
     const { width, height } = this.win.getContentBounds();
     const chrome = this.chrome();
     const bounds = this.layout.bounds(chrome, width, height);
-    const visible = this.layout.visibleServiceIds();
+    // Drawn, not merely in a pane: behind a maximised pane the others keep their places but must
+    // come off the window, or they would sit under it — and hit-test — at their old rectangles.
+    const visible = this.layout.drawnServiceIds();
 
     for (const [serviceId, runtime] of this.services.all()) {
       if (!visible.has(serviceId)) this.win.contentView.removeChildView(runtime.view);
@@ -966,7 +969,7 @@ export class AppWindow {
     // tray every service in a pane had its unread wiped before anyone saw it. `show`/`restore`
     // acknowledge the panes instead, once they are actually on screen.
     const onScreen = this.windowOnScreen();
-    for (const pane of this.layout.panes) {
+    for (const pane of this.layout.drawn()) {
       const runtime = this.services.get(pane.serviceId);
       const rect = bounds.get(pane.id);
       if (!runtime || !rect) continue;
@@ -979,6 +982,7 @@ export class AppWindow {
       // here since nothing sits underneath them but the rail background.
       runtime.view.setBorderRadius(PANE_RADIUS);
     }
+    this.drawFocusRing(bounds, chrome.gutter);
 
     // A pane whose service has no runtime renders nothing, so treat that as empty too.
     const hasVisibleContent = this.layout.panes.some((p) => this.services.has(p.serviceId));
@@ -1433,6 +1437,12 @@ export class AppWindow {
         this.clearUnread(command.serviceId);
         this.pushUnreadRules(command.serviceId);
         this.sync();
+        break;
+
+      case 'toggle-maximise-pane':
+        this.layout.toggleMaximise();
+        this.relayout();
+        this.focusActivePane();
         break;
 
       case 'pop-out-service': {
@@ -2325,7 +2335,8 @@ export class AppWindow {
       dnd: config.preferences.notifications.dnd,
       level: svc.notificationLevel ?? 'all',
       serviceEnabled: svc.notifications,
-      inVisiblePane: this.layout.visibleServiceIds().has(serviceId),
+      // Drawn: a pane hidden behind a maximised one is not something you're looking at.
+      inVisiblePane: this.layout.drawnServiceIds().has(serviceId),
       // A pane inside a window you closed to the tray is not something you're looking at.
       windowVisible: this.windowOnScreen(),
     });
@@ -2385,6 +2396,40 @@ export class AppWindow {
   }
 
   /** Looking at a service is what marks it read — the only signal we reliably have. */
+  /**
+   * A ring around the focused pane, when there is more than one to tell apart.
+   *
+   * Only the rail tile said which pane had focus, so with two Gmails side by side ⌘W and ⌘F were a
+   * guess. A plain coloured view just behind the focused pane, two pixels larger, in that service's
+   * colour — drawn in the gutter, so it needs one at least that wide.
+   */
+  private focusRing: View | null = null;
+  private drawFocusRing(bounds: Map<string, { x: number; y: number; width: number; height: number }>, gutter: number): void {
+    const focused = this.layout.focused();
+    const rect = focused ? bounds.get(focused.id) : undefined;
+    if (!rect || bounds.size < 2 || gutter < 2) {
+      this.focusRing?.setVisible(false);
+      return;
+    }
+    if (!this.focusRing) {
+      this.focusRing = new View();
+      // Index 0: beneath everything, so it shows only around the pane's edge.
+      this.win.contentView.addChildView(this.focusRing, 0);
+    }
+    const svc = loadConfig().services.find((s) => s.id === focused!.serviceId);
+    const colour = svc?.color ?? catalogById(svc?.catalogId ?? '')?.color ?? '#8a8a96';
+    const ring = 2;
+    this.focusRing.setBounds({
+      x: rect.x - ring,
+      y: rect.y - ring,
+      width: rect.width + ring * 2,
+      height: rect.height + ring * 2,
+    });
+    this.focusRing.setBorderRadius(PANE_RADIUS + ring);
+    this.focusRing.setBackgroundColor(/^#[0-9a-f]{6}$/i.test(colour) ? `${colour}cc` : '#8a8a96cc');
+    this.focusRing.setVisible(true);
+  }
+
   /** Whether the window is somewhere a person could be looking at it. */
   private windowOnScreen(): boolean {
     return !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized();

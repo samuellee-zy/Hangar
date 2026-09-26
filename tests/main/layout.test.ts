@@ -2,7 +2,7 @@
 // wrong shows up as panes overlapping the rail or uneven gutters — visible but easy to mis-eyeball.
 //
 
-import { describe, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   COMPACT_RAIL_SIZE,
@@ -394,5 +394,54 @@ describe('the focus invariant', () => {
         );
       }
     }
+  });
+});
+
+describe('maximising a pane', () => {
+  const chrome = { railPosition: 'left' as const, railSize: 72, gutter: 6, topStrip: 0 };
+
+  it('ONE PANE FILLS THE AREA; THE OTHERS KEEP THEIR PLACES BUT ARE NOT DRAWN', () => {
+    const layout = new Layout();
+    const a = layout.add('a');
+    const b = layout.add('b');
+    const split = layout.bounds(chrome, 1400, 900);
+    layout.toggleMaximise();
+    const max = layout.bounds(chrome, 1400, 900);
+    expect([...max.keys()]).toEqual([b.id]);
+    expect(max.get(b.id)!.width).toBeGreaterThan(split.get(b.id)!.width);
+    expect(layout.panes.map((p) => p.id)).toEqual([a.id, b.id]);
+    expect([...layout.drawnServiceIds()]).toEqual(['b']);
+    expect([...layout.visibleServiceIds()].sort(), 'hibernation still sees both').toEqual(['a', 'b']);
+  });
+
+  it('cycling focus moves the maximised pane with it; toggling again restores the split', () => {
+    const layout = new Layout();
+    const a = layout.add('a');
+    layout.add('b');
+    layout.toggleMaximise();
+    layout.cycleFocus(1);
+    expect(layout.maximisedPaneId).toBe(a.id);
+    layout.toggleMaximise();
+    expect(layout.bounds(chrome, 1400, 900).size).toBe(2);
+  });
+
+  it('opening another pane, or closing down to one, ends it', () => {
+    const layout = new Layout();
+    layout.add('a');
+    const b = layout.add('b');
+    layout.toggleMaximise();
+    layout.add('c');
+    expect(layout.maximisedPaneId).toBeNull();
+    layout.toggleMaximise();
+    layout.close(b.id);
+    layout.close(layout.panes[1]!.id);
+    expect(layout.maximisedPaneId).toBeNull();
+  });
+
+  it('with one pane there is nothing to maximise', () => {
+    const layout = new Layout();
+    layout.add('a');
+    layout.toggleMaximise();
+    expect(layout.maximisedPaneId).toBeNull();
   });
 });

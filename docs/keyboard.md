@@ -15,6 +15,7 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 | `⌘+` / `⌘−` / `⌘0` | Zoom the focused service; `⌘0` resets to your default zoom |
 | `⌘P` | Print the focused service |
 | `⌘\` | Split — opens the next unshown service alongside |
+| `⌘⇧↵` | Maximise the focused pane; again to restore the split. `⌘⌥←/→` while maximised shows the next pane full size |
 | `⌘⌥←` / `⌘⌥→` | Move focus between panes |
 | `⌘W` | Close the focused pane; closes the window when it's the last one |
 | `⌘[` / `⌘]` | Back / forward within the focused service |

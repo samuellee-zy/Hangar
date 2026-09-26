@@ -104,6 +104,7 @@ export type ActionId =
   | 'zoom-out'
   | 'zoom-reset'
   | 'split'
+  | 'maximise-pane'
   | 'close-pane'
   | 'focus-prev-pane'
   | 'focus-next-pane'
@@ -207,6 +208,13 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     menu: 'view',
     group: true,
     defaultChord: primaryChord('\\'),
+  },
+  {
+    id: 'maximise-pane',
+    label: 'Maximise pane',
+    command: { type: 'toggle-maximise-pane' },
+    menu: 'view',
+    defaultChord: primaryChord('enter', { shift: true }),
   },
   {
     id: 'focus-prev-pane',
