@@ -3,7 +3,6 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   BaseWindow,
-  Notification,
   View,
   WebContentsView,
   dialog,
@@ -41,6 +40,7 @@ import { DragLayer } from '@main/features/drag-layer';
 import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
+import { AttentionCenter } from '@main/window/attention';
 import { closePopOuts, popOut } from '@main/features/popout';
 import { deleteCachedIcon } from '@main/features/icons';
 import {
@@ -52,7 +52,7 @@ import {
 } from '@main/features/context-menu';
 import { exportConfig, importConfig } from '@main/features/transfer';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { decideNotification, expiredQuiet, normaliseNotification } from '@core/notify/policy';
+import { expiredQuiet } from '@core/notify/policy';
 import {
   ALL_PREFERENCE_EFFECTS,
   preferenceEffectFor,
@@ -60,12 +60,6 @@ import {
   type PreferenceEffect,
 } from '@core/config/effects';
 import { safeSend } from '@main/platform/safe-send';
-import {
-  UnreadCounts,
-  resolveUnreadRules,
-  unreadFromDom,
-  unreadFromTitle,
-} from '@core/notify/unread';
 import {
   applyGlobalShortcut,
   applyLoginItem,
@@ -123,7 +117,7 @@ import { ConfigSync } from '@main/features/sync';
 import { readSyncBase, writeSyncBase } from '@main/platform/sync-base';
 import { PushManager } from '@main/features/push-manager';
 import { EndpointPoller } from '@main/features/endpoint-poll';
-import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
+import { firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import { resolveRepoPath } from '@core/config/sync';
@@ -199,14 +193,28 @@ export class AppWindow {
    */
   private renameRequest: { id: string; nonce: number } = { id: '', nonce: 0 };
   /**
-   * Unread counts live here rather than on `ServiceRuntime`, so they survive hibernation and can
-   * be set for a service that was never loaded. See core/notify/unread.ts.
+   * Unread, banners, the badge and recent notifications — see attention.ts. The host is lazy (every
+   * member is read at call time), so it is safe to build before the constructor has run.
    */
-  private unread = new UnreadCounts();
-  /** Held so GC can't collect a banner before its click handler runs. */
-  private liveNotifications = new Set<Notification>();
-  /** Newest first, capped. In memory only — never written, never synced. */
-  private recentNotifications: NonNullable<ShellState['recentNotifications']> = [];
+  private attention = new AttentionCenter({
+    drawnServiceIds: () => this.layout.drawnServiceIds(),
+    paneServiceIds: () => this.layout.panes.map((p) => p.serviceId),
+    isLive: (serviceId) => this.services.has(serviceId),
+    contentsFor: (serviceId) => this.contentsForService(serviceId),
+    windowOnScreen: () => this.windowOnScreen(),
+    sync: () => this.sync(),
+    focusService: (serviceId) => {
+      this.showWindow();
+      this.dispatch({ type: 'focus-service', serviceId });
+    },
+  });
+  /**
+   * Unread counts live in the attention centre rather than on `ServiceRuntime`, so they survive
+   * hibernation and can be set for a service that was never loaded. See core/notify/unread.ts.
+   */
+  private get unread() {
+    return this.attention.unread;
+  }
   private flashTimer: NodeJS.Timeout | null = null;
 
   /**
@@ -260,7 +268,7 @@ export class AppWindow {
         const contents = this.findBar.contents;
         if (contents) safeSend(contents, 'find:result', { active, total });
       },
-      (serviceId, title) => this.handleTitle(serviceId, title),
+      (serviceId, title) => this.attention.handleTitle(serviceId, title),
     );
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
@@ -281,8 +289,8 @@ export class AppWindow {
       this.saveWindowBounds();
     });
     this.win.on('move', () => this.saveWindowBounds());
-    this.win.on('show', () => this.acknowledgePanes());
-    this.win.on('restore', () => this.acknowledgePanes());
+    this.win.on('show', () => this.attention.acknowledgePanes());
+    this.win.on('restore', () => this.attention.acknowledgePanes());
     // The debounce means a window that's never moved would otherwise never record its bounds,
     // and a quit inside the debounce window would drop the last change.
     this.win.on('close', (event: Electron.Event) => {
@@ -306,13 +314,13 @@ export class AppWindow {
         updateConfig((c) => {
           c.pushRegistrations = registrations;
         }),
-      deliver: (serviceId, message) => this.handlePushMessage(serviceId, message),
+      deliver: (serviceId, message) => this.attention.handlePushMessage(serviceId, message),
       log: (message) => console.log(`[push] ${message}`),
     });
 
     this.endpoints = new EndpointPoller(
       () => loadConfig().services.filter((svc) => !this.services.has(svc.id)),
-      (serviceId, count) => this.applyEndpointCount(serviceId, count),
+      (serviceId, count) => this.attention.applyEndpointCount(serviceId, count),
     );
 
     this.configSync = new ConfigSync({
@@ -469,7 +477,7 @@ export class AppWindow {
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
       isDefaultMailApp: app.isPackaged && app.isDefaultProtocolClient('mailto'),
-      recentNotifications: this.recentNotifications.slice(0, 10),
+      recentNotifications: this.attention.recentNotifications(),
       downloads: recentDownloads(),
     });
   }
@@ -2101,7 +2109,7 @@ export class AppWindow {
    * is exactly where the bug was. Verified by reintroducing the bug and watching the test fail.
    */
   injectPush(serviceId: string, payload: { title: string; body: string }): void {
-    this.handlePushMessage(serviceId, payload);
+    this.attention.handlePushMessage(serviceId, payload);
   }
 
   /** Live service views. Used by the E2E teardown test to detect leaked views. */
@@ -2207,76 +2215,14 @@ export class AppWindow {
     }
   }
 
-  /**
-   * A push arrived for a service. Routed through the same notification path as an in-page one, so
-   * DND, muting, unread counting and click-to-focus all behave identically — the transport
-   * shouldn't be visible in the behaviour.
-   */
-  private handlePushMessage(serviceId: string, message: unknown): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    const content = extractNotification(message, svc.name);
-    // A payload we can't read at all is dropped rather than shown as an empty banner.
-    if (!content) {
-      console.warn(`[push] unreadable payload for ${svc.name}`);
-      return;
-    }
-    this.handleNotification(serviceId, {
-      title: content.title,
-      body: content.body,
-      silent: false,
-    });
-  }
-
-  /**
-   * A service changed its title.
-   *
-   * Where the catalog declares a pattern, the title is treated as the *authoritative* unread count
-   * rather than another event to tally. That's a real difference: counting `new Notification()`
-   * calls only ever goes up, never reflects what you've already read elsewhere, and reads zero for
-   * a service whose browser notifications are off — Gmail showing "(5) Inbox" reported nothing.
-   *
-   * A title that stops matching means zero, which is how reading your mail on your phone clears
-   * the badge here.
-   */
-  private handleTitle(serviceId: string, title: string): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    this.applyDetectedUnread(svc, unreadFromTitle(title, catalogById(svc.catalogId)?.unread));
-  }
-
-  /**
-   * The DOM rules a service view should watch, answered when its preload asks on load.
-   *
-   * Resolved here rather than in the preload because it needs the config: which catalog entry this
-   * instance came from, and whether the user has overridden the selector.
-   */
-  /** Tells a live view to start watching a different set of rules. No-op if it isn't loaded. */
-  private pushUnreadRules(serviceId: string): void {
-    const contents = this.services.get(serviceId)?.view.webContents;
-    if (contents)
-      safeSend(contents, 'service:unread-rules-changed', this.unreadRulesFor(serviceId));
-  }
-
+  /** A service's unread rules, for its preload. Public for the IPC handler in boot/index.ts. */
   unreadRulesFor(serviceId: string): DomUnreadRule[] {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return [];
-    // A muted service isn't going to be allowed to set a count, so don't make its page watch every
-    // mutation to produce one.
-    if (svc.notificationLevel === 'muted' || !svc.notifications) return [];
-    return resolveUnreadRules(catalogById(svc.catalogId)?.unread, svc.unreadSelector);
+    return this.attention.unreadRulesFor(serviceId);
   }
 
-  /**
-   * A service view read its own badge. The probes are raw page output: the page-side code collects
-   * strings and `unreadFromDom` decides what they mean, so the rule semantics stay in a pure
-   * function rather than in a serialised closure no test can reach.
-   */
+  /** A service's page read its own badge. Public for the IPC handler in boot/index.ts. */
   handleUnreadProbes(serviceId: string, probes: unknown): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    const rules = resolveUnreadRules(catalogById(svc.catalogId)?.unread, svc.unreadSelector);
-    this.applyDetectedUnread(svc, unreadFromDom(rules, probes));
+    this.attention.handleUnreadProbes(serviceId, probes);
   }
 
   /**
@@ -2289,113 +2235,11 @@ export class AppWindow {
     return this.endpoints.sweep();
   }
 
-  private applyEndpointCount(serviceId: string, count: number): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    // Raced with the service being deleted, or with it waking up — in which case its own page is
-    // about to report, and the endpoint's answer is the staler of the two.
-    if (!svc || this.services.has(serviceId)) return;
-    this.applyDetectedUnread(svc, count);
-  }
-
-  /**
-   * Records an absolute count from detection — a title pattern or a DOM rule.
-   *
-   * `null` means the rule had nothing to say, which is not zero: a service we cannot read keeps
-   * whatever count it has rather than being silently cleared.
-   */
-  private applyDetectedUnread(svc: ServiceInstance, detected: number | null): void {
-    if (detected === null) return;
-
-    // Muting and the per-service toggle still win: an unread count is an interruption of a
-    // quieter kind, and opting out should mean opting out of both.
-    if (svc.notificationLevel === 'muted' || !svc.notifications) return;
-
-    if (this.unread.get(svc.id) === detected) return;
-    this.unread.set(svc.id, detected);
-    this.updateBadge();
-    this.sync();
-  }
-
-  /**
-   * A service fired a notification. Attribution is the whole reason the preload wraps the
-   * constructor rather than letting Electron route it directly.
-   */
+  /** A service fired a notification. Public for the IPC handler and the E2E suite. */
   handleNotification(serviceId: string, raw: unknown): void {
-    // `unknown`, because one caller is an IPC handler fed by a page. See `normaliseNotification`.
-    const payload = normaliseNotification(raw);
-    const config = loadConfig();
-    const svc = config.services.find((s) => s.id === serviceId);
-    // Deliberately no runtime check. A hibernated service has no runtime by definition, and a Web
-    // Push exists precisely to reach you then — requiring one dropped every push this feature was
-    // built for. See docs/decisions.md #56.
-    if (!svc) return;
-
-    const decision = decideNotification({
-      enabled: config.preferences.notifications.enabled,
-      dnd: config.preferences.notifications.dnd,
-      level: svc.notificationLevel ?? 'all',
-      serviceEnabled: svc.notifications,
-      // Drawn: a pane hidden behind a maximised one is not something you're looking at.
-      inVisiblePane: this.layout.drawnServiceIds().has(serviceId),
-      // A pane inside a window you closed to the tray is not something you're looking at.
-      windowVisible: this.windowOnScreen(),
-    });
-
-    if (decision.count) this.unread.increment(serviceId);
-    // Counted ones only: a message you were looking at as it arrived isn't one you missed.
-    if (decision.count) {
-      this.recentNotifications.unshift({
-        serviceId,
-        title: payload.title || svc.name,
-        body: payload.body ?? '',
-        at: Date.now(),
-      });
-      this.recentNotifications.length = Math.min(this.recentNotifications.length, 30);
-    }
-
-    if (decision.banner) {
-      const notification = new Notification({
-        title: payload.title || svc.name,
-        body: payload.body,
-        silent: payload.silent || !config.preferences.notifications.sound,
-      });
-      // Clicking should land you on the thing that pinged you.
-      notification.on('click', () => {
-        this.showWindow();
-        this.dispatch({ type: 'focus-service', serviceId });
-      });
-      notification.show();
-      // Retained until it's dismissed: the object is otherwise only referenced by this local, so
-      // GC can collect it before the click handler ever fires and click-to-focus does nothing.
-      this.liveNotifications.add(notification);
-      notification.on('close', () => this.liveNotifications.delete(notification));
-      // Bounded. A notification left in Notification Center never closes, so over a week of
-      // messages the set only grew. The oldest are the least likely to be clicked; a Set iterates
-      // in insertion order, so the first entry is the oldest.
-      while (this.liveNotifications.size > 50) {
-        const oldest = this.liveNotifications.values().next().value;
-        if (!oldest) break;
-        this.liveNotifications.delete(oldest);
-      }
-      // The only evidence there will ever be. macOS delivers nothing to an unsigned bundle, and
-      // before this the banner simply never appeared — unread counted, the badge moved, and the
-      // log said nothing at all. Also released here: a failed notification never closes.
-      notification.on('failed', (_event, error) => {
-        console.error(`[notification] ${svc.name}: not delivered — ${error}`);
-        this.liveNotifications.delete(notification);
-      });
-    }
-
-    this.updateBadge();
-    this.sync();
+    this.attention.handleNotification(serviceId, raw);
   }
 
-  /** macOS hides the badge at 0, so it must be *set* to 0 rather than skipped. */
-  private updateBadge(): void {
-    app.setBadgeCount(this.unread.total());
-  }
-
-  /** Looking at a service is what marks it read — the only signal we reliably have. */
   /**
    * A ring around the focused pane, when there is more than one to tell apart.
    *
@@ -2435,18 +2279,12 @@ export class AppWindow {
     return !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized();
   }
 
-  /** The window has just come back into view: whatever is in a pane has now been seen. */
-  private acknowledgePanes(): void {
-    for (const pane of this.layout.panes) {
-      if (this.services.has(pane.serviceId)) this.clearUnread(pane.serviceId);
-    }
-    this.sync();
+  private clearUnread(serviceId: string): void {
+    this.attention.clearUnread(serviceId);
   }
 
-  private clearUnread(serviceId: string): void {
-    if (this.unread.get(serviceId) === 0) return;
-    this.unread.clear(serviceId);
-    this.updateBadge();
+  private pushUnreadRules(serviceId: string): void {
+    this.attention.pushUnreadRules(serviceId);
   }
 
   /** Every workspace mutation goes through here so the sync is never forgotten. */
