@@ -10,15 +10,11 @@ import {
   nativeTheme,
   screen,
   session,
-  shell,
   type WebContents,
 } from 'electron';
 import { catalogById, resolveUrl } from '@shared/catalog';
 import {
-  addService,
   loadConfig,
-  makeCustomInstance,
-  makeInstance,
   updateConfig,
   updateConfigReturning,
   quarantinedConfigs,
@@ -41,16 +37,10 @@ import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
 import { AttentionCenter } from '@main/window/attention';
-import { closePopOuts, popOut } from '@main/features/popout';
+import { route, type ShellContext } from '@main/window/commands';
+import { closePopOuts } from '@main/features/popout';
 import { deleteCachedIcon } from '@main/features/icons';
-import {
-  installWebContextMenu,
-  showFolderMenu,
-  showRailMenu,
-  showWorkspaceMenu,
-  showServiceMenu,
-} from '@main/features/context-menu';
-import { exportConfig, importConfig } from '@main/features/transfer';
+import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { expiredQuiet } from '@core/notify/policy';
 import {
@@ -66,7 +56,6 @@ import {
   applyProxy,
   releaseGlobalShortcut,
   globalShortcutStatus,
-  downloadPath,
   onDownloadsChanged,
   recentDownloads,
 } from '@main/platform/system';
@@ -76,33 +65,14 @@ import { canCompose, composeUrlFor } from '@shared/mailto';
 import { setAdBlocking } from '@main/platform/adblock';
 import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
 import { isQuitting } from '@main/platform/quit-state';
-import {
-  createFolder,
-  deleteFolder,
-  findFolder,
-  flattenServiceIds,
-  moveItemTo,
-  moveToFolder,
-} from '@core/workspace/folders';
 import { findOrphanPartitions } from '@core/runtime/permissions';
-import { isValidHost, sanitiseServicePatch } from '@core/services/patch';
-import { resetPreferences, setPreference } from '@core/config/preferences';
-import {
-  createWorkspace,
-  deleteWorkspace,
-  rehomeUnreachable,
-  moveServiceToWorkspace,
-  renameWorkspace,
-  reorderWorkspaces,
-  workspaceHolding,
-} from '@core/workspace/workspaces';
-import { closeSettingsWindow, openSettingsWindow } from '@main/features/settings-window';
+import { isValidHost } from '@core/services/patch';
+import { rehomeUnreachable } from '@core/workspace/workspaces';
+import { closeSettingsWindow } from '@main/features/settings-window';
 import { attachShortcuts } from '@main/window/shortcuts';
 import { refreshMenu } from '@main/boot/menu';
 import {
   DEFAULT_BINDINGS,
-  normalisePassthrough,
-  rebind,
   resolvePassthrough,
   type KeyContext,
 } from '@core/keyboard/keymap';
@@ -121,7 +91,6 @@ import { firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import { resolveRepoPath } from '@core/config/sync';
-import { isWebUrl } from '@core/runtime/urls';
 import { LOG_FILE } from '@main/platform/log-file';
 import type {
   Command,
@@ -1065,648 +1034,96 @@ export class AppWindow {
   }
 
   /** Returns whether anything happened — the keyboard layer uses this to decide whether to
-   *  swallow the keystroke. See CommandSink. */
+   *  swallow the keystroke. See CommandSink.
+   *
+   *  The handlers are in `commands/`, one file per concern; this resolves placeholders and looks
+   *  the type up. */
   dispatch(raw: Command): boolean {
     const command = this.resolve(raw);
     if (!command) return false;
-
-    switch (command.type) {
-      case 'focus-service': {
-        // A service in another workspace — reachable now from the tray, the palette and a
-        // notification — is opened in its own workspace, not dropped into this one's panes.
-        const config = loadConfig();
-        const home = workspaceHolding(config, command.serviceId);
-        if (home && home !== config.activeWorkspaceId) {
-          this.dispatch({ type: 'set-workspace', workspaceId: home });
-        }
-        this.overlay.close();
-        this.openService(command.serviceId);
-        // Without this, clicking a service that's already the focused pane changes nothing on
-        // screen and reads as a dead button — the reported bug.
-        this.flash(command.serviceId);
-        break;
-      }
-
-      case 'open-in-new-pane':
-        this.overlay.close();
-        this.openService(command.serviceId, { newPane: true });
-        break;
-
-      case 'split': {
-        // Split with the next service in the workspace that isn't already on screen.
-        const visible = this.layout.visibleServiceIds();
-        const next = this.activeServices(loadConfig().activeWorkspaceId).find(
-          (s) => !visible.has(s.id),
-        );
-        if (next) this.openService(next.id, { newPane: true });
-        break;
-      }
-
-      case 'focus-pane':
-        // Ignore a stale pane id rather than pointing focus at nothing.
-        if (!this.layout.find(command.paneId)) break;
-        this.layout.focusedPaneId = command.paneId;
-        this.focusActivePane();
-        this.saveLayout();
-        this.sync();
-        break;
-
-      case 'cycle-pane':
-        this.layout.cycleFocus(command.delta);
-        this.focusActivePane();
-        this.saveLayout();
-        this.sync();
-        break;
-
-      case 'close-pane':
-        // Closing the last pane means closing the window — otherwise ⌘W is a no-op and the window
-        // can't be dismissed from the keyboard at all.
-        if (this.layout.panes.length === 1) {
-          this.win.close();
-          break;
-        }
-        this.layout.close(command.paneId);
-        this.relayout();
-        this.saveLayout();
-        break;
-
-      case 'create-workspace': {
-        const id = updateConfigReturning((c) => createWorkspace(c, command.name));
-        this.dispatch({ type: 'set-workspace', workspaceId: id });
-        break;
-      }
-
-      case 'rename-workspace':
-        updateConfig((c) => renameWorkspace(c, command.workspaceId, command.name));
-        this.sync();
-        break;
-
-      case 'delete-workspace': {
-        const result = updateConfigReturning((c) => deleteWorkspace(c, command.workspaceId));
-        if (!result.deleted) break;
-        if (result.rehomed.length) {
-          console.log(`[workspace] rehomed ${result.rehomed.length} orphaned service(s)`);
-        }
-        // The active workspace may have changed under us; rebuild from whatever it is now.
-        this.layout.panes = [];
-        this.layout.focusedPaneId = null;
-        this.restoreLayout();
-        this.relayout();
-        break;
-      }
-
-      case 'sync-now':
-        void this.configSync.reconcile();
-        break;
-
-      case 'resolve-sync':
-        void this.configSync.resolve(command.winner);
-        break;
-
-      case 'reset-preferences': {
-        // Per section or wholesale. Until now a bad rail position or zoom was only recoverable by
-        // hand-editing config.json — which for a setting that can make the window unusable is not
-        // a recovery path at all.
-        updateConfig((c) => {
-          c.preferences = resetPreferences(c.preferences, command.section);
-        });
-        this.applyAllPreferenceEffects();
-        this.relayout();
-        this.sync();
-        break;
-      }
-
-      case 'reveal-path':
-        // Restricted to paths we actually surfaced. The renderer is a separate process and this is
-        // an IPC boundary — an arbitrary path from a message would be a way to probe the disk.
-        if (quarantinedConfigs().includes(command.path)) shell.showItemInFolder(command.path);
-        break;
-
-      case 'purge-orphan-partitions':
-        this.purgeOrphanPartitions();
-        break;
-
-      case 'reorder-workspaces':
-        updateConfig((c) => reorderWorkspaces(c, command.workspaceIds));
-        this.sync();
-        break;
-
-      case 'set-workspace':
-        // Save the outgoing workspace's arrangement before switching, so ⌘⌥1/⌘⌥2 round-trips.
-        this.saveLayout();
-        updateConfig((c) => {
-          c.activeWorkspaceId = command.workspaceId;
-        });
-        this.overlay.close();
-        this.layout.panes = [];
-        this.layout.focusedPaneId = null;
-        this.restoreLayout();
-        this.relayout();
-        break;
-
-      case 'navigate': {
-        const pane = this.layout.focused();
-        if (pane) this.services.navigate(pane.serviceId, command.direction);
-        break;
-      }
-
-      case 'open-palette':
-        // Toggle, but only against itself — ⌘K while the picker is open should switch to the
-        // palette rather than dismiss.
-        if (this.overlay.currentMode === 'palette') {
-          this.overlay.close();
-          this.focusActivePane();
-        } else {
-          this.openOverlay('palette');
-        }
-        break;
-
-      case 'open-connections':
-        this.openOverlay('connections');
-        break;
-
-      case 'open-shortcuts':
-        // A toggle, like the palette: the chord that opens the sheet also shuts it.
-        if (this.overlay.currentMode === 'shortcuts') {
-          this.overlay.close();
-          this.focusActivePane();
-        } else {
-          this.openOverlay('shortcuts');
-        }
-        break;
-
-      case 'close-overlay': {
-        // Reports false when nothing was open, so Escape falls through to the page.
-        const wasOpen = this.overlay.isOpen;
-        if (wasOpen) {
-          this.overlay.close();
-          this.focusActivePane();
-        }
-        return wasOpen;
-      }
-
-      case 'add-service': {
-        const svc = updateConfigReturning((c) =>
-          addService(
-            c,
-            makeInstance(c, command.catalogId, { forceNewAccount: command.forceNewAccount }),
-          ),
-        );
-        this.overlay.close();
-        this.openService(svc.id, { newPane: false });
-        this.flash(svc.id);
-        break;
-      }
-
-      case 'add-custom-service': {
-        if (!isWebUrl(command.url)) {
-          console.warn(`[command] add-custom-service refused: not an http(s) URL`);
-          break;
-        }
-        const svc = updateConfigReturning((c) => addService(c, makeCustomInstance(c, command)));
-        this.overlay.close();
-        this.openService(svc.id, { newPane: false });
-        this.flash(svc.id);
-        break;
-      }
-
-      case 'move-item':
-        this.mutateWorkspace((w) => moveItemTo(w, command.activeId, command.overId));
-        break;
-
-      case 'toggle-rail':
-        this.toggleRail();
-        break;
-
-      case 'begin-tile-drag':
-        this.beginTileDrag(command.serviceId);
-        break;
-
-      case 'drag-tile-to':
-        this.moveTileDrag(command.from, command.x, command.y);
-        break;
-
-      case 'drop-tile':
-        this.dropTile(command.from, command.x, command.y);
-        break;
-
-      case 'cancel-tile-drag':
-        this.endTileDrag();
-        break;
-
-      case 'create-folder': {
-        let folderId = '';
-        this.mutateWorkspace((w) => {
-          folderId = createFolder(w, command.name, command.serviceIds);
-        });
-        // Straight into naming it, where the rail can edit in place. Every folder used to stay
-        // "New folder": the name was a placeholder and nothing afterwards asked for a real one.
-        // Not elsewhere — an ordinary rail would answer by opening Settings, every time.
-        const { compactRail, railPosition } = loadConfig().preferences.appearance;
-        const vertical = railPosition === 'left' || railPosition === 'right';
-        if (folderId && compactRail && vertical) {
-          this.dispatch({ type: 'begin-rename-folder', folderId });
-        }
-        break;
-      }
-
-      case 'rename-folder': {
-        // Every workspace, not just the active one: Settings lists the folders of all of them, and
-        // an id names exactly one folder wherever it lives.
-        const name = command.name.trim();
-        if (!name) break;
-        updateConfig((c) => {
-          for (const w of c.workspaces) {
-            const folder = findFolder(w, command.folderId);
-            if (folder) folder.name = name;
-          }
-        });
-        this.sync();
-        break;
-      }
-
-      case 'delete-folder':
-        this.mutateWorkspace((w) => deleteFolder(w, command.folderId));
-        break;
-
-      case 'toggle-folder':
-        this.mutateWorkspace((w) => {
-          const folder = findFolder(w, command.folderId);
-          if (folder) folder.collapsed = !folder.collapsed;
-        });
-        break;
-
-      case 'move-to-folder':
-        this.mutateWorkspace((w) => moveToFolder(w, command.serviceId, command.folderId));
-        break;
-
-      case 'show-folder-menu': {
-        const ws = this.activeWorkspace(loadConfig().activeWorkspaceId);
-        const folder = ws && findFolder(ws, command.folderId);
-        if (folder) showFolderMenu(this.win, folder, (c: Command) => this.dispatch(c));
-        break;
-      }
-
-      case 'rebind': {
-        // Revalidated here, not trusted from the renderer: `rebind` refuses an unknown action or an
-        // unbindable chord, and returns the map unchanged rather than throwing.
-        updateConfig((c) => {
-          c.preferences.keyboard.bindings = rebind(
-            c.preferences.keyboard.bindings,
-            command.actionId,
-            command.chord,
-          );
-        });
-        // `sync()` redraws the menu — see `refreshMenuIfRebound`, which is what makes an imported
-        // or synced config update it too.
-        this.sync();
-        break;
-      }
-
-      case 'update-service': {
-        // Validated rather than assigned straight through: this was a bare `Object.assign`, so any
-        // field and any value reached config verbatim. See `sanitiseServicePatch`.
-        const patch = sanitiseServicePatch(command.patch);
-        updateConfig((c) => {
-          const svc = c.services.find((s) => s.id === command.serviceId);
-          if (!svc) return;
-          Object.assign(svc, patch);
-          // A mute or unmute set by hand — Settings' checkbox, "Until I unmute it" — ends any timed
-          // one. Otherwise a timer left from an earlier "for 1 hour" would lift a mute that is now
-          // meant to be indefinite.
-          if ('notificationLevel' in patch && !('mutedUntil' in patch)) delete svc.mutedUntil;
-          // Canonicalised on the way in — Settings sends what it captured, and a list holding
-          // `Meta+K` and `meta+k` would claim one chord twice and match neither reliably. Only
-          // when the patch actually carries it, so every other update leaves it alone.
-          if ('keyboardPassthrough' in patch) {
-            svc.keyboardPassthrough = normalisePassthrough(patch.keyboardPassthrough);
-          }
-        });
-        // Zoom applies live; CSS/JS and UA need a reload to take effect, so say so rather than
-        // silently doing half the job.
-        const runtime = this.services.get(command.serviceId);
-        const zoom = patch.zoom;
-        if (runtime && typeof zoom === 'number') runtime.view.webContents.setZoomFactor(zoom);
-        // Unread detection applies live too, and has to: the field is edited by someone looking at
-        // the page, and a selector you must reload to test is a selector nobody tunes. Muting also
-        // lands here, which is how it stops the page watching for a count it isn't allowed to set.
-        if ('unreadSelector' in patch || 'notificationLevel' in patch || 'notifications' in patch) {
-          // The old count came from the old rules, so it is now unattributable. Detection reports
-          // again within a frame or two if there is still something to report.
-          this.clearUnread(command.serviceId);
-          this.pushUnreadRules(command.serviceId);
-        }
-        this.sync();
-        break;
-      }
-
-      case 'rename-service':
-        updateConfig((c) => {
-          const svc = c.services.find((s) => s.id === command.serviceId);
-          if (svc) svc.name = command.name;
-        });
-        this.sync();
-        break;
-
-      case 'begin-rename-service':
-      case 'begin-rename-folder': {
-        // The field replaces the name, so there has to be a name on screen to replace. A collapsed
-        // compact rail is icons only — open it first, or the request lands somewhere invisible.
-        if (loadConfig().preferences.appearance.compactRail && !this.railExpanded) {
-          this.setRailExpanded(true);
-        }
-        const id = command.type === 'begin-rename-service' ? command.serviceId : command.folderId;
-        this.renameRequest = { id, nonce: this.renameRequest.nonce + 1 };
-        this.sync();
-        break;
-      }
-
-      case 'set-dnd':
-        updateConfig((c) => {
-          c.preferences.notifications.dnd = command.on;
-          c.preferences.notifications.dndUntil = command.on ? command.until : null;
-        });
-        this.sync();
-        break;
-
-      case 'mute-service':
-        updateConfig((c) => {
-          const svc = c.services.find((s) => s.id === command.serviceId);
-          if (!svc) return;
-          if (command.until === null) {
-            svc.notificationLevel = 'all';
-            delete svc.mutedUntil;
-          } else {
-            svc.notificationLevel = 'muted';
-            svc.mutedUntil = command.until;
-          }
-        });
-        // Same as muting from Settings: the page is told to stop (or start) watching for a count.
-        this.clearUnread(command.serviceId);
-        this.pushUnreadRules(command.serviceId);
-        this.sync();
-        break;
-
-      case 'toggle-maximise-pane':
-        this.layout.toggleMaximise();
-        this.relayout();
-        this.focusActivePane();
-        break;
-
-      case 'pop-out-service': {
-        const svc = loadConfig().services.find((s) => s.id === command.serviceId);
-        if (!svc) break;
-        // The page on screen, not the start page — popping out a call must not restart it.
-        const url = this.contentsForService(svc.id)?.getURL() || resolveUrl(svc);
-        // And only one copy: two of the same call, or of the same chat, is two sets of everything.
-        if (this.services.has(svc.id)) this.dispatch({ type: 'sleep-service', serviceId: svc.id });
-        popOut(svc, url);
-        break;
-      }
-
-      case 'reveal-download': {
-        const saved = downloadPath(command.id);
-        if (saved && fs.existsSync(saved)) shell.showItemInFolder(saved);
-        break;
-      }
-
-      case 'make-default-mail-app':
-        // Packaged only: unpackaged, this would register the bare Electron binary as your mail app.
-        if (app.isPackaged && !app.setAsDefaultProtocolClient('mailto')) {
-          console.warn('[mailto] macOS did not accept Hangar as the default email app');
-        }
-        this.sync();
-        break;
-
-      case 'reveal':
-        if (command.what === 'config') shell.showItemInFolder(configFilePath());
-        else if (fs.existsSync(LOG_FILE)) shell.showItemInFolder(LOG_FILE);
-        break;
-
-      case 'choose-folder': {
-        const purpose = command.purpose;
-        void dialog
-          .showOpenDialog({
-            title: purpose === 'sync' ? 'Choose the sync repository' : 'Choose a downloads folder',
-            properties: ['openDirectory', 'createDirectory'],
-          })
-          .then(({ canceled, filePaths }) => {
-            const folder = filePaths[0];
-            if (canceled || !folder) return;
-            this.dispatch({
-              type: 'set-preference',
-              path: purpose === 'sync' ? 'sync.repoPath' : 'downloads.folder',
-              value: folder,
-            });
-          })
-          .catch((err: unknown) => console.error('[settings] folder picker failed:', err));
-        break;
-      }
-
-      case 'mark-read':
-        this.clearUnread(command.serviceId);
-        this.sync();
-        break;
-
-      case 'move-to-workspace': {
-        const moved = updateConfigReturning((c) =>
-          moveServiceToWorkspace(c, command.serviceId, command.workspaceId),
-        );
-        if (!moved) break;
-        // Gone from this workspace, so gone from its panes too — a pane showing a service the rail
-        // no longer lists is exactly the stranded state `rehomeUnreachable` exists to prevent.
-        if (loadConfig().activeWorkspaceId !== command.workspaceId) {
-          for (const pane of this.layout.panes.filter((p) => p.serviceId === command.serviceId)) {
-            this.layout.close(pane.id);
-          }
-          this.saveLayout();
-          this.relayout();
-        }
-        this.sync();
-        break;
-      }
-
-      case 'remove-service':
-        this.removeService(command.serviceId);
-        break;
-
-      case 'rename-account':
-        updateConfig((c) => {
-          const account = c.accounts.find((a) => a.id === command.accountId);
-          if (account) account.label = command.label;
-        });
-        this.sync();
-        break;
-
-      case 'sign-out-account':
-        this.signOut(command.accountId).catch((err: unknown) =>
-          console.error(`[account] sign out of ${command.accountId} failed:`, err),
-        );
-        break;
-
-      case 'open-find': {
-        const pane = this.layout.focused();
-        const wc = pane && this.services.get(pane.serviceId)?.view.webContents;
-        const rect = pane ? this.paneRect(pane.id) : null;
-        if (wc && rect && pane) this.findBar.open(wc, rect, pane.serviceId);
-        break;
-      }
-
-      case 'close-find':
-        this.findBar.close();
-        this.focusActivePane();
-        break;
-
-      case 'find':
-        this.findBar.search(command.query, {
-          forward: command.forward ?? true,
-          findNext: command.findNext ?? false,
-        });
-        break;
-
-      case 'zoom': {
-        const pane = this.layout.focused();
-        const svc = pane && loadConfig().services.find((s) => s.id === pane.serviceId);
-        const runtime = pane && this.services.get(pane.serviceId);
-        if (!svc || !runtime) break;
-        const base = svc.zoom || 1;
-        const next =
-          command.direction === 'reset'
-            ? loadConfig().preferences.behaviour.defaultZoom
-            : Math.min(
-                2,
-                Math.max(
-                  0.5,
-                  Number((base + (command.direction === 'in' ? 0.1 : -0.1)).toFixed(2)),
-                ),
-              );
-        runtime.view.webContents.setZoomFactor(next);
-        // Persisted per service, so it survives a reload and a restart.
-        updateConfig((c) => {
-          const target = c.services.find((s) => s.id === svc.id);
-          if (target) target.zoom = next;
-        });
-        this.sync();
-        break;
-      }
-
-      case 'print': {
-        const pane = this.layout.focused();
-        this.services.get(pane?.serviceId ?? '')?.view.webContents.print();
-        break;
-      }
-
-      case 'clear-unread':
-        this.clearUnread(command.serviceId);
-        this.sync();
-        break;
-
-      case 'set-preference': {
-        const before = loadConfig().preferences.appearance.theme;
-        updateConfig((c) => {
-          // Rejected silently when the path is unknown or the type is wrong — see setPreference.
-          if (!setPreference(c.preferences, command.path, command.value)) {
-            console.warn(`[preferences] rejected ${command.path}`);
-          }
-        });
-        const after = loadConfig().preferences.appearance.theme;
-        // Renderers read `prefers-color-scheme`, which Electron drives from themeSource.
-        if (after !== before) nativeTheme.themeSource = after;
-        this.applyPreferenceEffect(command.path);
-        // Appearance changes affect pane geometry, so relayout before telling anyone.
-        this.relayout();
-        break;
-      }
-
-      case 'reload-service': {
-        const runtime = this.services.get(command.serviceId);
-        if (runtime && !runtime.view.webContents.isDestroyed()) runtime.view.webContents.reload();
-        break;
-      }
-
-      case 'sleep-service':
-        this.sleep(command.serviceId);
-        this.relayout();
-        break;
-
-      case 'sleep-others': {
-        const keep = this.layout.visibleServiceIds();
-        for (const [serviceId] of [...this.services.all()]) {
-          if (!keep.has(serviceId)) this.sleep(serviceId);
-        }
-        this.relayout();
-        break;
-      }
-
-      case 'show-service-menu': {
-        const svc = loadConfig().services.find((s) => s.id === command.serviceId);
-        if (!svc) break;
-        const workspace = this.activeWorkspace(loadConfig().activeWorkspaceId);
-        const folders = (workspace?.items ?? []).filter((i) => i.kind === 'folder');
-        const config = loadConfig();
-        showServiceMenu(
-          this.win,
-          svc,
-          {
-            isVisible: this.layout.visibleServiceIds().has(svc.id),
-            isSleeping: !this.services.has(svc.id),
-            folders: folders.map((f) => ({ id: f.id, name: f.name })),
-            currentFolderId: folders.find((f) => f.serviceIds.includes(svc.id))?.id ?? null,
-            unread: this.unread.get(svc.id),
-            // Where it is now, not where it started: the address worth copying is the page on screen.
-            currentUrl: this.contentsForService(svc.id)?.getURL() || resolveUrl(svc),
-            otherWorkspaces: config.workspaces
-              .filter((w) => w.id !== config.activeWorkspaceId)
-              .map((w) => ({ id: w.id, name: w.name })),
-          },
-          (c) => this.dispatch(c),
-        );
-        break;
-      }
-
-      case 'show-window':
-        this.showWindow();
-        break;
-
-      case 'export-config':
-        exportConfig(this.win).catch((err: unknown) => console.error('[transfer] export failed:', err));
-        break;
-
-      case 'import-config':
-        importConfig(this.win, () => {
-          // A fresh config means every view is stale — rebuild from scratch.
-          for (const [serviceId] of [...this.services.all()]) this.sleep(serviceId);
-          this.layout.panes = [];
-          this.layout.focusedPaneId = null;
-          this.restoreLayout();
-          this.relayout();
-        }).catch((err: unknown) => console.error('[transfer] import failed:', err));
-        break;
-
-      case 'show-rail-menu':
-        showRailMenu(this.win, (c) => this.dispatch(c));
-        break;
-
-      case 'show-workspace-menu': {
-        const config = loadConfig();
-        showWorkspaceMenu(
-          this.win,
-          config.workspaces.map((w) => ({
-            id: w.id,
-            name: w.name,
-            active: w.id === config.activeWorkspaceId,
-            unread: flattenServiceIds(w).reduce((sum, id) => sum + this.unread.get(id), 0),
-          })),
-          (c) => this.dispatch(c),
-        );
-        break;
-      }
-
-      case 'open-settings':
-        openSettingsWindow((wc) => this.registerConsumer(wc));
-        break;
+    return route(command, this.context);
+  }
+
+  /**
+   * What the command handlers may reach — see commands/context.ts. Getters for the members, so a
+   * handler always sees the current object, and closures for the methods, so AppWindow's own
+   * members stay private.
+   */
+  private readonly context: ShellContext = (() => {
+    // The getters need the instance, and inside a getter on an object literal `this` is the literal.
+    const self = this;
+    return {
+      get win() {
+        return self.win;
+      },
+      get layout() {
+        return self.layout;
+      },
+      get services() {
+        return self.services;
+      },
+      get overlay() {
+        return self.overlay;
+      },
+      get findBar() {
+        return self.findBar;
+      },
+      get configSync() {
+        return self.configSync;
+      },
+      dispatch: (c) => this.dispatch(c),
+      sync: () => this.sync(),
+      relayout: () => this.relayout(),
+      showWindow: () => this.showWindow(),
+      focusActivePane: () => this.focusActivePane(),
+      openOverlay: (mode) => this.openOverlay(mode),
+      openService: (id, options) => this.openService(id, options),
+      flash: (id) => this.flash(id),
+      saveLayout: () => this.saveLayout(),
+      rebuildPanes: () => this.rebuildPanes(),
+      paneRect: (id) => this.paneRect(id),
+      contentsForService: (id) => this.contentsForService(id),
+      activeWorkspace: (id) => this.activeWorkspace(id),
+      activeServices: (id) => this.activeServices(id),
+      mutateWorkspace: (mutate) => this.mutateWorkspace(mutate),
+      removeService: (id) => this.removeService(id),
+      sleep: (id) => this.sleep(id),
+      signOut: (id) => this.signOut(id),
+      purgeOrphanPartitions: () => this.purgeOrphanPartitions(),
+      registerConsumer: (wc) => this.registerConsumer(wc),
+      unreadOf: (id) => this.unread.get(id),
+      clearUnread: (id) => this.clearUnread(id),
+      pushUnreadRules: (id) => this.pushUnreadRules(id),
+      applyAllPreferenceEffects: () => this.applyAllPreferenceEffects(),
+      applyPreferenceEffect: (path) => this.applyPreferenceEffect(path),
+      toggleRail: () => this.toggleRail(),
+      beginRename: (id) => this.beginRename(id),
+      beginTileDrag: (id) => this.beginTileDrag(id),
+      moveTileDrag: (from, x, y) => this.moveTileDrag(from, x, y),
+      dropTile: (from, x, y) => this.dropTile(from, x, y),
+      endTileDrag: () => this.endTileDrag(),
+    };
+  })();
+
+  /** Throws the current panes away and rebuilds them from the active workspace's saved layout. */
+  private rebuildPanes(): void {
+    this.layout.panes = [];
+    this.layout.focusedPaneId = null;
+    this.layout.maximisedPaneId = null;
+    this.restoreLayout();
+  }
+
+  /**
+   * Asks the rail to put an item's name into an editable field. The field replaces the name, so
+   * there has to be a name on screen to replace: a collapsed compact rail is icons only, so it is
+   * opened first, or the request would land somewhere invisible.
+   */
+  private beginRename(id: string): void {
+    if (loadConfig().preferences.appearance.compactRail && !this.railExpanded) {
+      this.setRailExpanded(true);
     }
-    return true;
+    this.renameRequest = { id, nonce: this.renameRequest.nonce + 1 };
+    this.sync();
   }
 
   // --- tile drag --------------------------------------------------------------------------

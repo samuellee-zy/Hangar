@@ -13,7 +13,7 @@ import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
 import { AppWindow } from '@main/window/app-window';
 import { isInternalSender } from '@main/platform/renderer-url';
-import type { Command } from '@shared/types';
+import { commandProblem, isCommand } from '@core/commands';
 
 /**
  * Process entry point. Owns boot order, the single-instance lock, the IPC surface, and the two
@@ -236,8 +236,13 @@ function registerIpc(): void {
       ),
     };
   });
-  ipcMain.on('shell:command', (event, command: Command) => {
+  ipcMain.on('shell:command', (event, command: unknown) => {
     if (!fromApp(event, 'shell:command')) return;
+    // Shape-checked before it reaches dispatch — see core/commands.ts.
+    if (!isCommand(command)) {
+      console.warn(`[command] refused: ${commandProblem(command)}`);
+      return;
+    }
     // The renderer is a separate process, so an exception thrown here surfaces nowhere useful —
     // the click just appears to do nothing. Log the command and any failure explicitly.
     try {
