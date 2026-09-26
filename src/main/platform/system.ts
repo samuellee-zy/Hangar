@@ -24,9 +24,6 @@ import type { Preferences, ProxyConfig } from '@shared/types';
  * mechanisms at once would be worse than either: on a signed build they are two independent
  * registrations, and login would start Hangar twice with the single-instance lock discarding one.
  * So this is now a single line, and the read-back honesty moves with it.
- *
- * `startHidden` no longer has anything to do here — `setLoginItemSettings`' `openAsHidden` was only
- * ever a hint to that mechanism, and boot/index.ts hides the window itself on any launch.
  */
 export function applyLoginItem(prefs: Preferences): boolean {
   return applyLaunchAgent(prefs);

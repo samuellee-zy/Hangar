@@ -16,8 +16,6 @@ export function Behaviour({ behaviour }: { behaviour: Preferences['behaviour'] }
         <Toggle name="Relaunch if it stops unexpectedly"
                 note="Restarts Hangar after a crash or a force quit, never after you quit it. Needs launch at login, and applies from your next login"
                 path="behaviour.relaunchOnCrash" value={behaviour.relaunchOnCrash} />
-        <Toggle name="Start hidden" note="Launch to the tray rather than a window"
-                path="behaviour.startHidden" value={behaviour.startHidden} />
         <Toggle name="Close to tray" note="Closing the window keeps Hangar running"
                 path="behaviour.closeToTray" value={behaviour.closeToTray} />
         <Toggle name="Confirm before quitting" path="behaviour.confirmQuit"

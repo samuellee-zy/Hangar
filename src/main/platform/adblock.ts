@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, type Session } from 'electron';
+import { app, net, type Session } from 'electron';
 import { ElectronBlocker } from '@ghostery/adblocker-electron';
 
 /**
@@ -25,6 +25,12 @@ import { ElectronBlocker } from '@ghostery/adblocker-electron';
  * for a static, universal filter list and carries nothing about which services you use, and the
  * result is cached on disk so it happens roughly weekly rather than per launch. A failed fetch is
  * non-fatal — no blocking, services load as normal.
+ *
+ * **Chromium's `net.fetch`, not Node's global `fetch`.** Node's validates TLS against its own
+ * bundled CA list and ignores the macOS keychain and the system proxy, so on a machine whose network
+ * inspects TLS — a managed laptop, a corporate VPN — the lists failed with a bare "fetch failed"
+ * while every service page, going through Chromium, loaded fine. The first packaged build with the
+ * blocker in it shipped with blocking silently off for exactly that reason.
  */
 
 /** Refetched past this age. The lists themselves change daily; weekly is the usual compromise. */
@@ -52,7 +58,7 @@ function loadEngine(): Promise<ElectronBlocker> {
   dropStaleCache(file);
 
   const startedAt = Date.now();
-  engine = ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
+  engine = ElectronBlocker.fromPrebuiltAdsAndTracking((url: string) => net.fetch(url), {
     path: file,
     read: fs.promises.readFile,
     write: fs.promises.writeFile,

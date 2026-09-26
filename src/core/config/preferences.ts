@@ -30,7 +30,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
     hibernateAfterMinutes: 0,
     launchAtLogin: false,
     relaunchOnCrash: false,
-    startHidden: false,
     closeToTray: false,
     confirmQuit: false,
     defaultZoom: 1,

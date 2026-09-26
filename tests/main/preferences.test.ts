@@ -31,6 +31,15 @@ describe("defaults and merging", () => {
     assert.equal('fromTheFuture' in p.appearance, false);
   });
 
+  it('A STORED startHidden IS DROPPED — the setting was removed, not just hidden from Settings', () => {
+    // Removed in decision #96: hidden at every packaged start, with a Dock click that only focused
+    // and a tray that rendered blank, it left the app running with no way to reach it. Existing
+    // configs carry `startHidden: true`, and it must not survive into the merged preferences.
+    const p = withDefaults({ behaviour: { startHidden: true, closeToTray: true } });
+    assert.equal('startHidden' in p.behaviour, false);
+    assert.equal(p.behaviour.closeToTray, true, 'its neighbours are untouched');
+  });
+
   it('a corrupt preferences blob falls back to defaults instead of throwing', () => {
     assert.deepEqual(withDefaults('nonsense'), DEFAULT_PREFERENCES);
     assert.deepEqual(withDefaults(null), DEFAULT_PREFERENCES);

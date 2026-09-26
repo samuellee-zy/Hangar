@@ -1,7 +1,8 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { launch, type Harness } from './harness';
+import { launch, seedConfig, type Harness } from './harness';
 
 /**
  * The application lifecycle: cookie promotion on quit, and hibernation.
@@ -123,4 +124,108 @@ test('hibernateIdle unloads an idle background service', async () => {
 
   // Not asserting an exact count — the point is that the machinery is reachable and does something.
   expect(result.before).toBeGreaterThan(0);
+});
+
+// --- reaching the window --------------------------------------------------------------------
+//
+// "Running but never opens" (decision #96): the process was healthy and the window existed, but it
+// was hidden, the Dock click only *focused* it, and the tray icon rendered blank. Nothing failed,
+// so nothing was ever logged — these are the only things that can notice.
+
+type ShellHandle = { win: { close: () => void; isVisible: () => boolean; getBounds: () => unknown } };
+
+test('A DOCK CLICK SHOWS A WINDOW THAT WAS CLOSED TO THE TRAY', async () => {
+  h = await launch((origin) => seedConfig(origin, { preferences: { behaviour: { closeToTray: true } } }));
+  await h.rail();
+
+  const result = await h.app.evaluate(async ({ app }) => {
+    const shell = () => (globalThis as never as { __hangarShell?: ShellHandle }).__hangarShell;
+    const first = shell();
+    // Close-to-tray: this hides the window rather than destroying it.
+    first?.win.close();
+    await new Promise((r) => setTimeout(r, 500));
+    const hiddenAfterClose = first ? !first.win.isVisible() : null;
+
+    // What macOS sends for a Dock click, and for Finder or Spotlight opening a running app.
+    app.emit('activate');
+    await new Promise((r) => setTimeout(r, 500));
+
+    return {
+      hiddenAfterClose,
+      sameWindow: shell() === first,
+      visible: shell()?.win.isVisible() ?? false,
+    };
+  });
+
+  expect(result.hiddenAfterClose, 'close-to-tray should have hidden it, or this proves nothing').toBe(true);
+  expect(result.sameWindow, 'it was hidden, not destroyed — activate must reuse it').toBe(true);
+  expect(result.visible, 'activate only focused it before: an invisible, focused window').toBe(true);
+});
+
+test('`Hangar --quit` QUITS THE RUNNING COPY — gracefully, with no dialog, exit code 0', async () => {
+  // What `npm run install:local` sends before replacing the bundle. `confirmQuit` is on, so if the
+  // handoff went through the ordinary quit path it would stop on a dialog nobody is there to click,
+  // and the primary would never exit. Exit 0 matters too: under the LaunchAgent anything else is a
+  // crash, and launchd starts the copy being replaced straight back up.
+  h = await launch((origin) => seedConfig(origin, { preferences: { behaviour: { confirmQuit: true } } }));
+  await h.rail();
+
+  const electronBinary = await h.app.evaluate(() => process.execPath);
+  const primary = h.app.process();
+  const primaryExit = new Promise<number | null>((resolve) => primary.once('exit', (code) => resolve(code)));
+
+  const { ELECTRON_RUN_AS_NODE: _asNode, ...inherited } = process.env;
+  const second = spawn(electronBinary, [path.join(__dirname, '..', 'out', 'main', 'index.js'), '--quit'], {
+    env: { ...inherited, HANGAR_USER_DATA: h.userData },
+    stdio: 'ignore',
+  });
+  const secondExit = new Promise<number | null>((resolve) => second.once('exit', (code) => resolve(code)));
+
+  expect(await secondExit, 'the --quit process hands off and exits').toBe(0);
+  const code = await Promise.race([
+    primaryExit,
+    new Promise<'still running'>((r) => setTimeout(() => r('still running'), 15_000)),
+  ]);
+  expect(code, 'the running copy quits, and cleanly').toBe(0);
+});
+
+test('`Hangar --quit` WITH NOTHING RUNNING EXITS — it does not boot the app', async () => {
+  // Otherwise the install script's "quit whatever is there" step would *start* Hangar when nothing
+  // was running, holding the very bundle it is about to replace.
+  h = await launch();
+  await h.rail();
+  const electronBinary = await h.app.evaluate(() => process.execPath);
+  await h.close();
+
+  const { ELECTRON_RUN_AS_NODE: _asNode, ...inherited } = process.env;
+  const lone = spawn(electronBinary, [path.join(__dirname, '..', 'out', 'main', 'index.js'), '--quit'], {
+    env: { ...inherited, HANGAR_USER_DATA: path.join(h.userData, '..', `hangar-e2e-quit-${process.pid}`) },
+    stdio: 'ignore',
+  });
+  const code = await Promise.race([
+    new Promise<number | null>((resolve) => lone.once('exit', (c) => resolve(c))),
+    new Promise<'still running'>((r) => setTimeout(() => r('still running'), 10_000)),
+  ]);
+  if (code === 'still running') lone.kill('SIGKILL');
+  expect(code).toBe(0);
+});
+
+test('SAVED BOUNDS OFF EVERY DISPLAY OPEN ON-SCREEN — the unplugged-monitor case', async () => {
+  h = await launch((origin) =>
+    seedConfig(origin, { window: { x: 20_000, y: 20_000, width: 1200, height: 800 } }),
+  );
+  await h.rail();
+
+  const { bounds, workArea } = await h.app.evaluate(({ screen }) => {
+    const shell = (globalThis as never as { __hangarShell?: ShellHandle }).__hangarShell;
+    return {
+      bounds: shell?.win.getBounds() as { x: number; y: number; width: number; height: number },
+      workArea: screen.getPrimaryDisplay().workArea,
+    };
+  });
+
+  expect(bounds.x).toBeGreaterThanOrEqual(workArea.x);
+  expect(bounds.y).toBeGreaterThanOrEqual(workArea.y);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(workArea.x + workArea.width);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(workArea.y + workArea.height);
 });

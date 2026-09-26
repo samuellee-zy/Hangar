@@ -16,31 +16,36 @@ personal project shared publicly, not a product — see [Status](#status) for wh
 
 ## Quickstart
 
-Requires macOS and Node 22.12+ (CI runs 24).
+Requires macOS and Node 22.22.2+ (CI runs 24; `.nvmrc` pins it).
 
 ```bash
 npm install
+npm run install:local
 ```
 
-**Then fetch the Electron binary.** Electron 43 has no postinstall — it ships an explicit
-`install-electron` bin instead — so a fresh install leaves `node_modules/electron` with no binary
-and no `path.txt`. Running the `electron` CLI downloads on demand, but anything that resolves the
-path first (Playwright's `_electron.launch`, `electron-vite preview`) fails before that happens:
+`npm install` also fetches the Electron binary — Electron 43 has no postinstall of its own, so this
+package runs its `install-electron` for it. `install:local` builds for this Mac, signs it, and
+installs it into `/Applications`, replacing and restarting a running copy. Run it again after any
+change. The build itself needs no network.
+
+To run from the repo instead, without installing: `npm start` (which builds first) or `npm run dev`.
+
+### Signing, and why a local build needs it
+
+There is no Developer ID certificate. `install:local` signs each build anyway, because macOS
+**drops notifications for an unsigned app** without a word. By default it signs ad-hoc, which is
+enough for notifications, but macOS then asks again for camera and microphone after every rebuild.
+Run this once to make a local certificate, and those grants stick:
 
 ```bash
-npx install-electron
+npm run cert:local
 ```
 
-```bash
-npm run build && npm start
-```
-
-### Running an unsigned build
-
-There is no Developer ID certificate, so `npm run dist` produces an unsigned, un-notarised DMG.
-macOS will refuse to open it on a double-click. Right-click the app → **Open** → **Open**, once;
-after that it launches normally. Worth knowing that Homebrew stops accepting casks that fail
-Gatekeeper on **1 September 2026**, so distribution beyond "build it yourself" would need signing.
+A bundle you built yourself is not quarantined, so there is no Gatekeeper prompt. `npm run dist`
+still makes an unsigned DMG for someone else; on their Mac it opens via System Settings → Privacy &
+Security → **Open Anyway** (macOS 15 removed the right-click → Open bypass). Homebrew stopped
+accepting casks that fail Gatekeeper on **1 September 2026**, so distribution beyond "build it
+yourself" needs a Developer ID. Details: [packaging.md](docs/packaging.md).
 
 ## What it does
 
@@ -87,6 +92,8 @@ default: copy/paste, open-link-in-browser, and spelling suggestions.
 | `npm run typecheck` / `typecheck:tests` | Either half of `check`'s typechecking on its own |
 | `npm run check:boundaries` | `dependency-cruiser` alone |
 | `npm run graph` | Render the dependency graph to SVG. Needs Graphviz |
+| `npm run install:local` | Build for this Mac, sign, install into `/Applications`, restart it. The one to run after a change |
+| `npm run cert:local` | Once, optionally: a local signing certificate, so camera and microphone grants survive rebuilds |
 | `npm run dist` | Unsigned DMG into `dist/` |
 | `npm run dist:signed` | The same with a Developer ID, if you have one |
 | `npm run icons` | Re-vendor catalog icons from dashboard-icons |
@@ -166,7 +173,7 @@ that has never opened Gmail.
 
 **Built:** the shell (panes, palette, keyboard, application menu, context menus), accounts and
 multi-login, icons, the connection picker with custom URLs, folders, rail reordering, dragging a
-tile onto a pane, dragging one into and out of a folder, the compact rail's hover-expand, keyboard
+tile onto a pane, dragging one into and out of a folder, the compact rail's chevron, keyboard
 rebinding with per-service passthrough, unread from the page's own badge and from a sleeping
 service's own API, Web Push, the preferences system with a Settings window and reset-to-defaults,
 rail placement on any edge, theming, hibernation, `powerMonitor` handling, tray, git-backed config

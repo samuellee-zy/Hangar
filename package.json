@@ -5,6 +5,9 @@
   "description": "A unified workspace for web apps — one window, isolated sessions, no subscription.",
   "main": "out/main/index.js",
   "private": true,
+  "engines": {
+    "node": ">=22.22.2"
+  },
   "scripts": {
     "dev": "node scripts/run-electron.mjs electron-vite dev",
     "dev:isolated": "node scripts/run-electron.mjs --profile \"Hangar (dev)\" electron-vite dev",
@@ -21,7 +24,10 @@
     "icon": "node scripts/run-electron.mjs electron scripts/make-icon.mjs",
     "dist": "npm run build && npm run icon && electron-builder --mac -c.mac.identity=null",
     "dist:signed": "npm run build && npm run icon && electron-builder --mac",
-    "test:e2e": "npm run build && playwright test"
+    "install:local": "node scripts/install-local.mjs",
+    "cert:local": "node scripts/make-signing-cert.mjs",
+    "test:e2e": "npm run build && playwright test",
+    "postinstall": "install-electron"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   LAUNCH_AGENT_LABEL,
+  isInstalledCopy,
   launchAgentWanted,
   renderLaunchAgent,
 } from '@core/config/launch-agent';
@@ -50,7 +51,15 @@ export function applyLaunchAgent(prefs: Preferences): boolean {
       return !fs.existsSync(file);
     }
 
-    const wanted = renderLaunchAgent(prefs, { program: app.getPath('exe'), log: logPath() });
+    const program = app.getPath('exe');
+    // A copy outside Applications — a `dist/` build being tried out — leaves the job alone rather
+    // than repointing login at a directory the next build deletes. See `isInstalledCopy`.
+    if (!isInstalledCopy(program, os.homedir())) {
+      console.log(`[launch-agent] not claiming the login item from ${program} — not an installed copy`);
+      return false;
+    }
+
+    const wanted = renderLaunchAgent(prefs, { program, log: logPath() });
 
     // Skip an identical rewrite. This runs on every boot and every activate, and rewriting the file
     // each time would churn its mtime for no reason.

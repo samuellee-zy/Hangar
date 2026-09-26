@@ -180,10 +180,18 @@ Then inside `whenReady`:
 6. `applyUserAgent()` — first, because it reads `session.defaultSession`, which throws earlier, and
    it must land before any session or view exists
 7. `loadConfig()` → `nativeTheme.themeSource` → `installIconProtocol()`
-8. `new AppWindow()` → `installMenu()` → `applySystemPreferences()`, then hide the window if
-   `startHidden` is set. The menu is given a *getter* for the bindings rather than the bindings
-   themselves, so a rebind redraws it without this call site knowing anything about it
-9. The IPC surface, registered in one block so it can be read as a list
+8. `activate` and the IPC surface (`registerIpc()`, one block so it can be read as a list) —
+   **before** the window, so a throw while building it cannot leave a Dock icon that does nothing
+   and a rail with no `shell:get-state` handler ([decisions #96](decisions.md))
+9. `new AppWindow()` → `installMenu()` → `applySystemPreferences()`. Nothing hides the window at
+   boot. The menu is given a *getter* for the bindings rather than the bindings themselves, so a
+   rebind redraws it without this call site knowing anything about it
+
+Every route to the window — `activate` (Dock, Finder, Spotlight), `second-instance`, the Window and
+Dock menus' "Show Hangar" — goes through `ensureShell()`: build an `AppWindow` if there is none,
+then `showWindow()`, which re-checks the bounds against the current displays. `Hangar --quit` is the
+other half of the single-instance handoff: the running copy quits without its confirm dialog, which
+is how `scripts/install-local.mjs` replaces a copy that launchd is supervising.
 
 Then three background loops: session-cookie promotion every 60s, the hibernation sweep every 30s, and
 the endpoint poll every 30s. Each runs on a timer under `void`, so each catches its own rejection —

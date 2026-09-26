@@ -111,6 +111,7 @@ import { PushManager } from '@main/features/push-manager';
 import { EndpointPoller } from '@main/features/endpoint-poll';
 import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
+import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import type {
   Command,
   DomUnreadRule,
@@ -135,20 +136,17 @@ import type {
  * keyboard routing, z-order — has to be coordinated here rather than in the renderer.
  */
 
-const DEFAULT_BOUNDS = { width: 1440, height: 940 };
-
 /**
- * Saved bounds are only honoured if they still land on a connected display — otherwise unplugging
- * an external monitor strands the window offscreen with no way to get it back.
+ * Saved bounds are only honoured if the window's title strip still lands on a connected display —
+ * otherwise unplugging an external monitor strands the window offscreen with no way to get it back.
+ * The rule itself is in core; this supplies the displays.
  */
-function restoreBounds(saved: WindowBounds | undefined) {
-  if (!saved) return DEFAULT_BOUNDS;
-  const onAnyDisplay = screen.getAllDisplays().some(({ workArea }) => {
-    const overlapsX = saved.x < workArea.x + workArea.width && saved.x + saved.width > workArea.x;
-    const overlapsY = saved.y < workArea.y + workArea.height && saved.y + saved.height > workArea.y;
-    return overlapsX && overlapsY;
-  });
-  return onAnyDisplay ? saved : DEFAULT_BOUNDS;
+function restoreBounds(saved: WindowBounds | undefined): WindowBounds {
+  return reachableBounds(
+    saved,
+    screen.getAllDisplays().map((d) => d.workArea),
+    screen.getPrimaryDisplay().workArea,
+  );
 }
 
 /**
@@ -696,6 +694,14 @@ export class AppWindow {
 
   showWindow(): void {
     if (this.win.isMinimized()) this.win.restore();
+    // Checked again here, not only at construction. A window closed to the tray on an external
+    // monitor that is then unplugged comes back from `show()` exactly where it was — macOS only
+    // rescues windows that are visible when the display goes — so "show" put it nowhere.
+    if (!this.win.isFullScreen()) {
+      const current = this.win.getBounds();
+      const reachable = restoreBounds(current);
+      if (!sameBounds(current, reachable)) this.win.setBounds(reachable);
+    }
     this.win.show();
     this.win.focus();
   }
@@ -1677,8 +1683,24 @@ export class AppWindow {
     if (effect) this.runEffect(effect);
   }
 
-  /** Performs one effect. Which paths map to which effect is decided in core. */
+  /**
+   * Performs one effect, and contains its failure.
+   *
+   * Each one reaches outside the app — the file system, launchd, the menu bar, a network — and a
+   * throw from any of them used to escape into whatever called it. At boot that was
+   * `applySystemPreferences`, so a `new Tray()` that failed took down the rest of startup with it,
+   * and one broken effect in a reset skipped every effect after it.
+   */
   private runEffect(effect: PreferenceEffect): void {
+    try {
+      this.performEffect(effect);
+    } catch (err) {
+      console.error(`[effect] ${effect} failed:`, err);
+    }
+  }
+
+  /** Which paths map to which effect is decided in core. */
+  private performEffect(effect: PreferenceEffect): void {
     const prefs = loadConfig().preferences;
     switch (effect) {
       case 'login-item':
@@ -1686,7 +1708,10 @@ export class AppWindow {
         return;
 
       case 'proxy':
-        void applyProxy(allLiveSessions().values(), prefs);
+        // Async, so `runEffect`'s try/catch cannot see its rejection.
+        void applyProxy(allLiveSessions().values(), prefs).catch((err) =>
+          console.error('[effect] proxy failed:', err),
+        );
         return;
 
       case 'adblock':
@@ -1996,6 +2021,13 @@ export class AppWindow {
       // GC can collect it before the click handler ever fires and click-to-focus does nothing.
       this.liveNotifications.add(notification);
       notification.on('close', () => this.liveNotifications.delete(notification));
+      // The only evidence there will ever be. macOS delivers nothing to an unsigned bundle, and
+      // before this the banner simply never appeared — unread counted, the badge moved, and the
+      // log said nothing at all. Also released here: a failed notification never closes.
+      notification.on('failed', (_event, error) => {
+        console.error(`[notification] ${svc.name}: not delivered — ${error}`);
+        this.liveNotifications.delete(notification);
+      });
     }
 
     this.updateBadge();

@@ -73,25 +73,66 @@ function publishTestHandle(): void {
   (globalThis as { __hangarShell?: AppWindow | null }).__hangarShell = shell;
 }
 
+/**
+ * `Hangar --quit` asks the running copy to quit, without the confirm dialog, and exits.
+ *
+ * For `scripts/install-local.mjs`, which has to replace the bundle of a copy that is usually the
+ * launchd job. Killing it would count as an unsuccessful exit and launchd would start it again
+ * mid-copy; a graceful quit exits 0, and still promotes session cookies on the way out. AppleScript
+ * `quit` is graceful too, but goes through `confirmQuit` and so stops on a dialog.
+ *
+ * Carried as the lock's `additionalData` rather than parsed out of the forwarded argv, because it
+ * is ours to shape and Chromium's switch handling is not.
+ */
+const quitRequested = process.argv.includes('--quit');
+
 // A second copy fighting over the same partitions would corrupt cookie jars, so hand off to the
 // running instance instead.
-const gotLock = app.requestSingleInstanceLock();
+const gotLock = app.requestSingleInstanceLock({ quit: quitRequested });
 console.log(`[boot] single-instance lock: ${gotLock ? 'acquired' : 'denied — handing off and quitting'}`);
-if (!gotLock) {
+if (!gotLock || quitRequested) {
   // `app.quit()` before app-ready doesn't stop this module executing — everything below still
   // registered, and a second copy briefly raced the first over the same partitions, which is
   // exactly what corrupts a cookie jar. Exit outright instead.
+  //
+  // `--quit` with the lock acquired means nothing was running to quit, and booting the whole app
+  // in answer to "quit" would be exactly backwards.
   app.exit(0);
 }
 
 // Must precede app-ready, hence not inside whenReady with the rest of the setup.
 registerIconScheme();
 
-app.on('second-instance', () => {
-  // `showWindow()`, not a hand-rolled restore-and-focus. Under `closeToTray` the window is *hidden*
-  // rather than minimized, so restoring and focusing without showing it put focus on something
-  // invisible — relaunching from Spotlight looked like the app had died.
-  shell?.showWindow();
+/**
+ * The one way to put a window in front of the user: build one if there is none, then show it.
+ *
+ * `showWindow()`, never a bare `focus()`. Under `closeToTray` the window is *hidden* rather than
+ * minimized, and focusing a hidden window does nothing visible — which is how a Dock click, a
+ * Finder double-click and a Spotlight launch all came to look like the app had died while it sat
+ * there running (decision #96). `activate` and `second-instance` both land here so that the two can
+ * never drift apart again: they did once, when only one of them was fixed.
+ */
+function ensureShell(): void {
+  if (!shell) {
+    shell = new AppWindow();
+    trackWindow(shell);
+    publishTestHandle();
+    // Re-apply, or a rebuilt window has no global shortcut, no tray and no proxy. This was called
+    // once at boot and never again, so everything system-level died with the first ⌘W.
+    shell.applySystemPreferences();
+  }
+  shell.showWindow();
+}
+
+app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
+  if ((additionalData as { quit?: unknown } | null)?.quit === true) {
+    console.log('[boot] --quit from a second instance');
+    quitGracefully({ confirm: false });
+    return;
+  }
+  // Before ready there is nothing to show and nothing safe to build; the window is about to appear
+  // anyway, since nothing hides it at boot any more.
+  if (app.isReady()) ensureShell();
 });
 
 app.whenReady().then(() => {
@@ -100,25 +141,34 @@ app.whenReady().then(() => {
   const config = loadConfig();
   nativeTheme.themeSource = config.preferences.appearance.theme;
   installIconProtocol(() => loadConfig().services);
+
+  // Every route back to the window, and every IPC handler, is registered *before* the window is
+  // built. They were registered after it, so a throw anywhere in construction or in
+  // `applySystemPreferences` — `new Tray()` included — left a Dock icon that did nothing and a rail
+  // whose `shell:get-state` had no handler: a blank window with no way to recover it.
+  app.on('activate', () => ensureShell());
+  registerIpc();
+
   shell = new AppWindow();
   trackWindow(shell);
   publishTestHandle();
   // The bindings are read on every rebuild rather than captured, so `refreshMenu` after a rebind
   // redraws against the new map without this call site knowing anything about it.
+  //
+  // `show-window` is answered here rather than by the shell, because the menu outlives it: after ⌘W
+  // with close-to-tray off there is no shell to dispatch to, and "Show Hangar" has to build one.
   installMenu(
-    (command) => shell?.dispatch(command) ?? false,
+    (command) => {
+      if (command.type !== 'show-window') return shell?.dispatch(command) ?? false;
+      ensureShell();
+      return true;
+    },
     () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS
   );
   shell.applySystemPreferences();
-  // "Launch to the tray rather than a window" — the emphasis is on *launch*. The setting exists so
-  // that logging in doesn't throw a window at you, and it was being applied to every start,
-  // including one a person had just typed. `npm run dev` then produced no window, no error and no
-  // clue: the app booted perfectly, loaded its rail and its services, and hid.
-  //
-  // A development run is never the unattended login it is guarding against, so it never hides.
-  const startHidden = config.preferences.behaviour.startHidden && app.isPackaged;
-  if (startHidden) shell.win.hide();
+});
 
+function registerIpc(): void {
   ipcMain.handle('shell:get-state', () => shell?.state() ?? null);
   ipcMain.handle('overlay:get-mode', () => shell?.overlayOpen ?? null);
   // Memory readout for Settings, so the hibernation setting has a visible consequence.
@@ -196,22 +246,7 @@ app.whenReady().then(() => {
       console.error('[unread] failed:', err);
     }
   });
-
-  // Without clearing `shell` on close, ⌘W would destroy the window while leaving a live-looking
-  // reference behind — `activate` would then no-op and the dock icon became a dead end.
-  app.on('activate', () => {
-    if (!shell) {
-      shell = new AppWindow();
-      trackWindow(shell);
-      publishTestHandle();
-      // Re-apply, or the rebuilt window has no global shortcut, no tray and no proxy. This was
-      // called once at boot and never again, so everything system-level died with the first ⌘W.
-      shell.applySystemPreferences();
-    } else {
-      shell.win.focus();
-    }
-  });
-});
+}
 
 // --- session durability --------------------------------------------------------------------
 // Session cookies never reach disk, so without this a restart signs you out of anything that
@@ -312,18 +347,33 @@ powerMonitor.on('resume', () => {
   shell?.refreshAfterWake(suspendedFor);
 });
 
-app.on('before-quit', (event) => {
-  if (isQuitting()) return;
-  event.preventDefault();
+/**
+ * How long a quit waits for cookie promotion before going anyway.
+ *
+ * Unbounded, a `cookies.get` or `flushStore` that stalls — the log has network-service crashes in
+ * it — meant ⌘Q never finished, and the user's next move was Force Quit. Under the LaunchAgent
+ * that is an unsuccessful exit, so launchd started it straight back up. A normal promotion takes
+ * tens of milliseconds; three seconds is generous and still reads as "quitting", not "hung".
+ */
+const QUIT_PERSIST_TIMEOUT_MS = 3_000;
 
-  if (loadConfig().preferences.behaviour.confirmQuit) {
-    const { response } = { response: dialog.showMessageBoxSync({
+/**
+ * Quit, promoting session cookies first. Returns without quitting if the user cancels the confirm.
+ *
+ * `confirm: false` is for `--quit`, which a script sends: there is no one there to click the
+ * dialog, and a dialog nobody answers is a quit that never happens.
+ */
+function quitGracefully({ confirm }: { confirm: boolean }): void {
+  if (isQuitting()) return;
+
+  if (confirm && loadConfig().preferences.behaviour.confirmQuit) {
+    const response = dialog.showMessageBoxSync({
       type: 'question',
       buttons: ['Quit', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
       message: 'Quit Hangar?',
-    }) };
+    });
     // Cancelling must leave the app fully usable — no half-quit state.
     if (response !== 0) return;
   }
@@ -334,9 +384,25 @@ app.on('before-quit', (event) => {
   // persistAll MUST finish before anything tears down sessions. It promotes session cookies to
   // persistent ones, which is the whole reason you stay signed in across a restart — disposing
   // first would sign the user out of everything, the exact failure Phase 1 exists to prevent.
-  void persistAll()
+  //
+  // "Finish" is bounded, though: see QUIT_PERSIST_TIMEOUT_MS. The minute-by-minute loop has already
+  // promoted everything older than a minute, so a timeout here loses at most that last minute.
+  const timeout = new Promise<void>((resolve) =>
+    setTimeout(() => {
+      console.warn(`[quit] cookie promotion still running after ${QUIT_PERSIST_TIMEOUT_MS}ms — quitting anyway`);
+      resolve();
+    }, QUIT_PERSIST_TIMEOUT_MS).unref()
+  );
+  void Promise.race([persistAll(), timeout])
     .catch((err) => console.error('[quit] cookie promotion failed:', err))
     .finally(() => app.quit());
+}
+
+app.on('before-quit', (event) => {
+  // The second pass — `app.quit()` from `quitGracefully` itself — is let through.
+  if (isQuitting()) return;
+  event.preventDefault();
+  quitGracefully({ confirm: true });
 });
 
 // macOS convention: closing the window doesn't quit. Also avoids Electron's default

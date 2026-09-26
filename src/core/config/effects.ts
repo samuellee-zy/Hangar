@@ -49,11 +49,7 @@ export const ALL_PREFERENCE_EFFECTS: readonly PreferenceEffect[] = [
  */
 export function preferenceEffectFor(path: string): PreferenceEffect | null {
   // `relaunchOnCrash` too: it is a key in the same launchd job that `launchAtLogin` writes.
-  if (
-    path === 'behaviour.launchAtLogin' ||
-    path === 'behaviour.relaunchOnCrash' ||
-    path === 'behaviour.startHidden'
-  ) {
+  if (path === 'behaviour.launchAtLogin' || path === 'behaviour.relaunchOnCrash') {
     return 'login-item';
   }
   if (path.startsWith('network.proxy')) return 'proxy';

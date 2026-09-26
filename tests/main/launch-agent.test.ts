@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   LAUNCH_AGENT_LABEL,
+  isInstalledCopy,
   launchAgentWanted,
   renderLaunchAgent,
 } from '@core/config/launch-agent';
@@ -103,5 +104,27 @@ describe('the plist itself', () => {
       expect(plist.match(/<dict>/g)?.length).toBe(plist.match(/<\/dict>/g)?.length);
       expect(plist.match(/<key>/g)?.length).toBe(plist.match(/<\/key>/g)?.length);
     }
+  });
+});
+
+describe('which copy may claim the login item', () => {
+  const home = '/Users/alice';
+
+  it('the copy in /Applications, or in ~/Applications, may', () => {
+    expect(isInstalledCopy('/Applications/Hangar.app/Contents/MacOS/Hangar', home)).toBe(true);
+    expect(isInstalledCopy('/Users/alice/Applications/Hangar.app/Contents/MacOS/Hangar', home)).toBe(true);
+    expect(isInstalledCopy('/Users/alice/Applications/Hangar.app/Contents/MacOS/Hangar', `${home}/`)).toBe(true);
+  });
+
+  it('A dist/ BUILD BEING TRIED OUT MAY NOT — it would repoint login at a directory the next build deletes', () => {
+    expect(
+      isInstalledCopy('/Users/alice/Projects/hangar/dist/mac-arm64/Hangar.app/Contents/MacOS/Hangar', home)
+    ).toBe(false);
+  });
+
+  it('neither may a copy run from the DMG, or anything that merely mentions Applications', () => {
+    expect(isInstalledCopy('/Volumes/Hangar 0.1.0/Hangar.app/Contents/MacOS/Hangar', home)).toBe(false);
+    expect(isInstalledCopy('/Users/bob/Applications/Hangar.app/Contents/MacOS/Hangar', home)).toBe(false);
+    expect(isInstalledCopy('/tmp/Applications/Hangar.app/Contents/MacOS/Hangar', home)).toBe(false);
   });
 });

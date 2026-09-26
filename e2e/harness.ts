@@ -117,9 +117,6 @@ export async function launch(
     env: {
       ...inherited,
       HANGAR_USER_DATA: userData,
-      // Keep the diagnostic probe out of the way — it drives the app itself and would race the
-      // test.
-      HANGAR_PROBE: '',
     },
   });
 

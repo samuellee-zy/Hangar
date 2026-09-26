@@ -4,10 +4,13 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after **Phase 6** (stability audit: config-sync lifecycle, teardown, renderer split),
-plus the long-running work: crash resilience, waking from sleep, and launch at login without a
-signature. Enforced module boundaries, a packaged DMG verified end to end, and every shipped control
-does something.
+Last updated after **Phase 7** (2026-09-26): the installed app ran with no reachable window, which
+led to removing `startHidden`, fixing the Dock and tray routes back, and a one-command signed local
+install — [decisions #96](decisions.md). A full audit of what remains is **§13**; it supersedes the
+older lists below wherever they overlap.
+
+Before that, **Phase 6** (stability audit: config-sync lifecycle, teardown, renderer split), plus
+the long-running work: crash resilience, waking from sleep, and launch at login without a signature.
 
 **Test counts are deliberately not written here.** They drifted three times — this page once claimed
 327 in one place and 262 in another while the suite ran 392, then said 700 while it ran 690. Run
@@ -221,7 +224,8 @@ Not bugs; things that will look like bugs later.
 
 ## 8. Suggested order
 
-If picking this up fresh:
+If picking this up fresh, start with **§13.1–13.3** — two security holes a dropped link or a page
+can reach, and reliability bugs that are live in the log today. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -310,5 +314,211 @@ ones hardened with tests. The one worth naming is the first.
   open-source binary cannot hold, or somewhere to keep a personal token that git sync will not
   publish ([decisions #91](decisions.md)).
 - **V8 snapshots** — measure first; startup may already be fine.
-- **Signing** — ruled out. Note that Homebrew ends support for casks failing Gatekeeper on
-  **1 Sept 2026**, so a cask is no longer a signing-free distribution route.
+- **Developer ID signing** — ruled out. Homebrew ended support for casks failing Gatekeeper on
+  **1 Sept 2026**, so a cask is no longer a signing-free distribution route. (Local builds *are*
+  signed now, ad-hoc or with a self-signed certificate — [packaging.md](packaging.md).)
+
+---
+
+## 13. Phase 7 audit (2026-09-26) — what is still open
+
+A read-through of main, preload, renderer, packaging and docs, done after the reachability fix
+(#96). Each item names where it lives and what the fix is. Severity: **P1** is wrong behaviour or a
+hole a page can reach; **P2** is cost, polish, or latent. Nothing in this section is fixed yet.
+
+### 13.1 Security (P1)
+
+- **Internal views can be navigated, and IPC trusts any sender.** The rail, empty view, overlay,
+  find bar, drag layer (`app-window.ts`, `overlay.ts`, `find-bar.ts`, `drag-layer.ts`) and Settings
+  (`settings-window.ts`) all load `sidebar.cjs`, and none blocks `will-navigate` or sets a
+  `setWindowOpenHandler` — those guards exist only for service views (`session.ts:141,188`).
+  Dropping a link on the rail navigates it to a remote page that still has `window.hangar`, and
+  `shell:command` (`boot/index.ts`, `registerIpc`) never checks `event.sender`: that page could
+  send `update-service` with `customJs` and inject script into Gmail. **Fix:** deny navigation and
+  window-open on every internal webContents; accept `shell:*` and `app:*` only from a sender whose
+  `senderFrame.url` is the app's own renderer URL.
+- **`shell.openExternal` takes any scheme** (`session.ts:153,175`, `context-menu.ts:54,86`):
+  `file:`, `smb:`, `x-apple.systempreferences:`. **Fix:** allow http(s), mailto, tel and an explicit
+  list of app schemes (zoommtg, msteams, slack); rate-limit per service.
+- **`will-redirect` ignores `isMainFrame`** (`session.ts:198`), so any iframe redirecting off the
+  allowlist is cancelled and bounced to the browser — silent sign-in iframes included.
+- **Permissions ignore the requesting origin** (`session.ts:74-84`): a third-party iframe in a
+  catalog service is granted media and clipboard silently, and `allowMedia` is captured from the
+  first service to create the partition, so toggling it needs a restart. **Screen sharing cannot
+  work at all** — there is no `setDisplayMediaRequestHandler`.
+- **A `file:` custom URL makes an allowlist of `['']`**, which then matches every `file:`, `data:`
+  and `about:` URL (`session.ts:52-61`; main doesn't validate `add-custom-service`). **Fix:** http(s)
+  only, in main, and `isAllowedHost` refuses an empty host.
+- **The page can widen its own allowlist** after you decline: `lastBlockedHost` survives "Back to
+  X", and `__hangar.allowHost()` is callable from page script (`boot/index.ts`, `service:allow-host`).
+  **Fix:** only honour it from the `data:` error page's frame, and clear it on retry.
+- Smaller: `customJs` travels through git sync; export writes FCM registrations and the Firebase key
+  to disk (`transfer.ts:33-37`); `openOnComplete` opens any file type; Toggle DevTools ships in the
+  production View menu; service views lack `safeDialogs`.
+
+### 13.2 Reliability (P1)
+
+- **The ad blocker covers only the first session** — *confirmed live*, every boot:
+  `Attempted to register a second handler for '@ghostery/adblocker/inject-cosmetic-filters'`.
+  ghostery's `BlockingContext.enable()` calls `ipcMain.handle` per session and throws on the second,
+  *after* marking it enabled and registering its preload but *before* its `webRequest` listeners.
+  Disabling any one session removes the handlers for all of them. **Fix** (`adblock.ts`): the
+  handlers delegate to the one shared engine, so remove them before each `enableBlockingInSession`
+  and re-register after a `disableBlockingInSession` while other sessions remain enabled — tracked
+  in a module-level `Set<Session>`.
+- **Offline, a failing service reloads every second, forever** (`service-manager.ts:141-179`,
+  `recovery.ts:44-56`): `did-finish-load` fires for Chromium's error page and resets the failure
+  count, so the backoff never advances. 627 consecutive failures on the Teams sign-in URL, 96% of a
+  1 MB log. **Fix:** reset only after a load has held ~30s; for `ERR_INTERNET_DISCONNECTED`, wait
+  for the network instead of a timer.
+- **An unhandled rejection freezes the main process** behind a modal `showErrorBox`
+  (`logging.ts:129-132`), and several promises float: `openExternal` (rejects for a scheme with no
+  handler), `push-manager.ts:114`, `service-manager.ts:189`. **Fix:** log rejections; keep the dialog
+  for true uncaught exceptions; add the missing `.catch`es.
+- **No crash recovery for internal views** — a rail renderer crash is a permanently blank rail. No
+  `child-process-gone` logging either, though the log has GPU and network-service crashes.
+- **The global shortcut dies with the first rebuilt window**: `releaseGlobalShortcut` never resets
+  `registered`, so re-applying the same accelerator returns early (`system.ts:105-120`).
+- **Custom CSS/JS edits need a sleep and wake**, because `dom-ready` closes over the `svc` from view
+  creation (`service-manager.ts:188`); the "needs a reload" note is wrong.
+- **The proxy never reverts to "system"** (`system.ts:38-53` returns early), and choosing http/socks
+  applies `http://:0` at once, cutting every service off until a host is typed (`Network.tsx:22`).
+- **Unread is cleared while the window is hidden**: `relayout()` marks pane services read on every
+  sweep (`app-window.ts` ~844). Clear on window focus/show instead.
+- **The Dock badge goes stale after removing a service** — cleared directly rather than through
+  `clearUnread()` (`app-window.ts` ~1506).
+- **Hiding a fullscreen window leaves a black Space** (close handler, `app-window.ts` ~272).
+- **The log never rotates** and carries MSAL `login_hint`/`state` query strings. Fixing the reload
+  loop removes almost all of its volume; then copy-and-truncate at boot past ~5 MB, strip queries.
+- **Quit blocks logout**: `confirmQuit`'s sync dialog also runs for a system shutdown.
+
+### 13.3 UI bugs (P1)
+
+- **Folders cannot be renamed.** Rename… opens Settings, which has no folder section, and nothing
+  sends `rename-folder` (`context-menu.ts:229`). Reuse the rail's inline service rename.
+- **The Add-connection focus trap never engages**: the picker renders nothing until state arrives,
+  and `useFocusTrap` runs once, on that empty first render (`AddConnection.tsx:35`,
+  `useFocusTrap.ts:19`).
+- **Number fields clamp per keystroke** (`PreferenceControls.tsx:160`): a rail size can't be typed
+  (min 56 turns "7" into 56), and every keystroke writes the config and relays out. Use
+  `CommitOnBlur`, as zoom and proxy port already do.
+- **Destructive buttons have no confirm or undo** in Settings: Remove, Sign out (wipes cookies),
+  Delete workspace, Reset all. The context-menu path does confirm.
+- **"Custom connection hosts" is read-only**, while two hints tell you to add hosts there;
+  `update-service` already accepts them.
+- **`~` isn't expanded in the sync path**, though the placeholder is `~/code/dotfiles`
+  (`features/sync.ts:374`).
+- **Tray, palette and the rail's live unread see only the active workspace**; the Dock badge counts
+  all of them, so tray and Dock disagree and ⌘K can't reach another workspace's service.
+- Stale rename can reopen on a rail reload (`Rail.tsx:39`, `app-window.ts:185`).
+
+### 13.4 Performance (P2)
+
+- **Every `sync()` rebroadcasts full state to every surface** — on each resize event and each page
+  load start/stop — and does a `readdirSync` of userData for quarantined configs each time
+  (`app-window.ts` ~443, ~668; `store.ts:138`). Coalesce to one per frame, skip identical payloads,
+  cache the quarantine list, memoise rail rows.
+- **Cookie promotion every 60s for every partition**, even hidden and unchanged. Dirty-track via
+  `cookies.on('changed')`, flush every ~5 min plus suspend and quit.
+- **`backgroundThrottling: false` on every view** (`service-manager.ts:94`); throttle views not in a
+  visible pane of a visible window.
+- **Synchronous copy+fsync+rename on every pane focus** and every push message (`store.ts:168`);
+  debounce ~500ms, flush on quit.
+- Overlay, find bar and drag views are never released; `liveNotifications` can grow; visible panes
+  never hibernate even when the window has been hidden for days.
+- `react`, `react-dom` and `@dnd-kit/*` are `dependencies`, so they are bundled into the renderer
+  *and* shipped again in the asar. Move them to `devDependencies`.
+
+### 13.5 Accessibility (P2)
+
+- ~15 inputs without labels: global shortcut, proxy host/port, downloads folder, workspace/service/
+  account names, per-service zoom, picker search and custom URL/name, palette, find bar and its
+  glyph-only ↑ ↓ ✕ buttons.
+- Drag-and-drop announcements say "press space" (the key is ⌃Space) and read raw UUIDs; ⌃Space is
+  also macOS's input-source switch, so keyboard reordering is swallowed with two input sources.
+- The palette is not a combobox/listbox, and shows "No matches" before state loads.
+- No `prefers-reduced-motion`: loading/waking pulses loop forever. The refused-shortcut message and
+  find-bar match count aren't live regions.
+
+### 13.6 Structure (P2)
+
+`app-window.ts` is ~2,050 lines with a ~55-case `dispatch`. A split along seams it already has:
+`WindowController` (bounds, show/hide), `PaneController` (relayout, open, sleep), `CommandRouter`
+(a handler map with schema-validated input), `AttentionCenter` (unread, badge, notifications, push,
+endpoint poll), `PreferenceEffects`, `TileDragController`, and a scheduler for the timers in
+`boot/index.ts`.
+
+### 13.7 UI/UX enhancements
+
+- **Onboarding.** A first-run grid of ~8 one-click services and a line explaining accounts ("a
+  second Gmail is a second account"); import from Rambox/Ferdium; a nothing-open state that lists
+  sleeping services with Wake; a per-service loading splash; a toast offering **Allow host** when
+  navigation is blocked (#94), instead of the log being the only evidence.
+- **Discoverability.** A ⌘/ cheat sheet from the live keymap. ⌘K as a real command palette —
+  actions with their chords, settings sections, DND, "Add Gmail", services across all workspaces
+  with unread and recency. Tile tooltips with ⌘1–9 and ⌥-click. Shortcut hints that follow rebinding
+  (hard-coded in `EmptyState.tsx`, `Rail.tsx`, `Palette.tsx`, `Connections.tsx`).
+- **Rail.** A workspace switcher (colour/emoji, unread roll-up, drag to reorder — the command
+  exists, nothing sends it; new workspaces are all called "Workspace"). Folder rename and colour.
+  Tile menu: Mark read, Mute 1h/until tomorrow, Copy URL, Move to workspace. A visible sleeping glyph
+  and loading ring (closes §4.1). Badge cap at `99+` and a numbers/dot/off style.
+- **Panes.** Optional header (name, back/forward, reload, pop out, close); a focus ring on the
+  focused pane; resizable splitters with remembered ratios; rows vs columns; drag to swap; maximise
+  a pane; **pop a service out into its own window** (calls).
+- **Settings.** A sidebar with search. **One page per service** — URL override (which also unlocks
+  self-hosted GitLab/Jira/Mattermost), colour, zoom, hibernate, mute, unread selector, passthrough,
+  custom CSS/JS, user agent, hosts, cookie lifetime, mic/camera — every field already accepted by
+  `patch.ts`, but today the same services are listed five times and most fields can't be edited.
+  Native folder pickers for downloads and the sync repo; inline status for shortcut, proxy and sync
+  path; timed DND (`dndUntil` is in the schema, never read); undo toasts; About with version, log
+  path and Reveal config (the hard-coded config path is wrong under a redirected profile).
+- **Settings rows that don't reflect their dependencies**: rail size and labels are ignored for a
+  compact or horizontal rail; relaunch-on-crash stays enabled with launch at login off; Show tray
+  icon reads unchecked while close-to-tray forces one.
+- **Polish.** No "loading" state before the first broadcast (the empty view says "No connections
+  yet" to people who have some); Add-connection has no no-results state, name-only search ("twitter"
+  won't find X), no arrow-key grid navigation; non-destructive buttons styled as dangerous (Add
+  workspace, Export/Import, Default).
+
+### 13.8 Capabilities (what Rambox, Wavebox and Shift have)
+
+- **Link routing** — open links for chosen domains in a chosen service instead of the browser.
+- **Default mail handler** — `mailto:` opens a compose in the mail service; there is no protocol
+  handling at all today.
+- **Browser extensions** — 1Password, Bitwarden, Grammarly via `session.loadExtension`; the ad
+  blocker already proves per-session injection.
+- **Tabs within a service** — several Notion pages or Docs at once.
+- **Notification history** per service, in the tray or palette; main already sees every one.
+- **Quiet hours** per service, and workspaces that switch on a schedule.
+- **A downloads list** with progress; today files land silently.
+- **Self-hosted variants** of catalog entries: GitLab, Mattermost, Rocket.Chat, Nextcloud, Jira
+  Server.
+
+### 13.9 Catalog
+
+- **Microsoft's move to `cloud.microsoft`**: Outlook, OneDrive, SharePoint and To Do lack it in
+  their allowed hosts (`catalog.ts:316-338`) though Teams and Copilot have it — the Notion
+  `.so → .com` failure again, waiting to happen. Jira and Confluence share a URL. Monday and Loom
+  have no icon.
+- **Additions with demand**: Google Messages and Voice, YouTube and YouTube Music, iCloud Mail and
+  Calendar, Yahoo, Zoho, HEY and Tuta mail, Mastodon (instance URL), Zendesk, Intercom, HubSpot,
+  Front, Word/Excel/OneNote online, Webex, Bitbucket, Azure DevOps, Canva.
+- Unread selectors are still missing for Notion, Jira, Confluence, Trello, Asana, ClickUp, Monday
+  (§8).
+
+### 13.10 Tests
+
+- The Settings window is never driven by Playwright; the Add-connection focus trap, number-field
+  typing, proxy mode switching, a `~` sync path, destructive-button confirms, tray counts across
+  workspaces and the badge after removing a service are all untested.
+- No automated accessibility checks (axe) on any surface; nothing bounds the broadcast count.
+- The catalog test checks each entry allows its own URL, not where that URL *redirects* — an opt-in
+  network test would have caught Notion and would catch `cloud.microsoft`.
+- One unit test failed once during this phase and did not reproduce in four further runs; which one
+  was not captured. Worth a `--retry=0 --repeat` sweep.
+
+### 13.11 Housekeeping
+
+`spikes/google-login/sessions` is ~808 MB of **real cookie jars** (gitignored, but live
+credentials on disk); `out-check/` and the stale August DMGs in `dist/` can go.
+

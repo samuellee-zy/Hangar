@@ -1,27 +1,35 @@
 import { Menu, Tray, app, nativeImage } from 'electron';
+import { TRAY_GLYPH_POINTS, trayGlyphBitmap } from '@main/features/tray-glyph';
 import type { Command, ShellState } from '@shared/types';
 
 /**
  * Menu-bar presence: unread count, a jump list, DND, and a way back to the window when it's hidden.
  *
- * The tray is what makes "close to tray" and "start hidden" safe to offer — without it, either
- * setting could leave the app running with no way to reach it.
+ * The tray is what makes "close to tray" safe to offer — without it, the setting could leave the
+ * app running with no way to reach it. It is not the only way back: the Dock icon, the Window
+ * menu and the Dock menu all show the window too (decision #96).
  */
 
 let tray: Tray | null = null;
 
-/** A template image so macOS inverts it correctly in light and dark menu bars. */
+/**
+ * A template image so macOS inverts it correctly in light and dark menu bars.
+ *
+ * Both resolutions, or a Retina menu bar upscales the 1x and the glyph goes soft. See tray-glyph.ts
+ * for why this is pixels and not the SVG it used to be.
+ */
 function icon(): Electron.NativeImage {
-  // 16pt rounded square outline, drawn rather than shipped as an asset so there's no file to keep
-  // in sync with the app icon.
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
-    <rect x="2" y="2" width="12" height="12" rx="3" fill="none" stroke="black" stroke-width="1.6"/>
-    <rect x="5" y="5" width="6" height="6" rx="1.5" fill="black"/>
-  </svg>`;
-  const image = nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
-  );
+  const size = TRAY_GLYPH_POINTS;
+  const image = nativeImage.createFromBitmap(trayGlyphBitmap(1), { width: size, height: size });
+  image.addRepresentation({
+    scaleFactor: 2,
+    width: size * 2,
+    height: size * 2,
+    buffer: nativeImage.createFromBitmap(trayGlyphBitmap(2), { width: size * 2, height: size * 2 }).toPNG(),
+  });
   image.setTemplateImage(true);
+  // Loud, because the failure it guards is silent: an empty image is a tray nobody can see.
+  if (image.isEmpty()) console.warn('[tray] icon image is empty — the menu-bar item will be invisible');
   return image;
 }
 

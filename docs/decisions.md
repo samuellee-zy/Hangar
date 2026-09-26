@@ -1794,6 +1794,10 @@ compensating for anything any more.
 
 ### `startHidden` applies to a launch, not to every start
 
+> **Superseded by [#96](#96-an-unreachable-window-is-worse-than-a-window-at-login).** The setting
+> has been removed. The reasoning below held for development runs and missed what it did to the
+> installed app.
+
 Reported as "nothing is loaded when I run `npm run dev`". Nothing was wrong with the build: the
 probe log showed a complete, healthy boot — window bounds restored on-screen at 1440×940, the rail
 renderer finished loading 0.33s in, Teams committed its URL at 4.65s — and `focusedWindow: false`
@@ -1901,3 +1905,70 @@ existing behaviour and needs nothing added now that the background does not also
 
 The traffic-light reasoning above is unchanged and now has a second reason to hold: 48px is still
 under the 52pt span, so the top strip is reserved in both states either way.
+
+## 96. An unreachable window is worse than a window at login
+
+Reported as "it doesn't open up at all even though it's running". It was running: main, four
+renderers, GPU and network service, a healthy boot in the log. It had no visible window, and nothing
+the user did could produce one. Four things combined, and the first is the one this repo's own docs
+recommended:
+
+1. **`startHidden` hid every packaged start.** The note above gated it on `app.isPackaged`, which
+   fixed `npm run dev` and left every launch of the installed app hidden. `docs/packaging.md` told
+   you to turn it on.
+2. **`activate` only focused.** A Dock click, a Finder double-click and a Spotlight launch of a
+   running app all arrive as `activate`, and its handler called `win.focus()` when a window existed.
+   Focusing a hidden window does nothing visible. `second-instance` had been fixed to call
+   `showWindow()` for exactly this reason — "relaunching from Spotlight looked like the app had
+   died" — but on macOS LaunchServices activates the running copy rather than starting a second
+   one, so `second-instance` never fires for any of those.
+3. **The tray was blank.** Its icon was an SVG handed to `nativeImage.createFromDataURL`, which
+   decodes PNG and JPEG and nothing else. With no unread its title was `''` too: a zero-width item.
+   The tray was the route back every other part of the design leaned on ("the tray is what makes
+   close to tray and start hidden safe to offer"), and it could not be seen or clicked.
+4. **Force Quit made it worse.** Under the LaunchAgent with relaunch-on-crash, a force quit is an
+   unsuccessful exit, so launchd started it again 30 seconds later — hidden. The log has three boots
+   in the same minute.
+
+**What changed.**
+
+- **`startHidden` is gone**, not re-gated. The precise condition — "this start came from the login
+  item" — is detectable (a flag in the plist's `ProgramArguments`), but the setting's whole value is
+  one window you didn't ask for at login, and its failure mode is an app you can't reach. Those are
+  not comparable costs. Close to tray stays: it hides a window you *just* closed, and the ways back
+  now work. The stored key is dropped by `withDefaults`, which keeps only keys the defaults define,
+  so no migration was needed.
+- **`ensureShell()`** is the single way to put a window in front of the user — build one if there
+  is none, then `showWindow()`. `activate`, `second-instance` and the menu's "Show Hangar" all call
+  it, so they cannot drift apart again.
+- **Every route back is registered before the window is built**, and each preference effect is
+  wrapped on its own. A throw from `new Tray()` in `applySystemPreferences` used to escape boot
+  before `activate` or any IPC handler existed.
+- **The tray glyph is pixels** (`features/tray-glyph.ts`), rasterised from signed distances at 1x
+  and 2x, with a warning in the log if the image is ever empty.
+- **More than one way back**: Window → Show Hangar, and the Dock icon's right-click menu, neither of
+  which depends on the menu bar having room for the tray.
+- **Bounds are re-checked on show**, not only at construction, and the check itself is stricter
+  (`core/workspace/window-bounds.ts`): the title strip must be on a display, not any one pixel of
+  the window, and the size is clamped to the display. A window closed to the tray on a monitor that
+  is later unplugged used to come back from `show()` exactly where it was.
+- **Quit is bounded.** Cookie promotion gets three seconds, not forever, so a stalled flush no
+  longer turns ⌘Q into Force Quit into a launchd relaunch.
+
+**Signing, found on the way.** `npm run dist` passes `identity=null`, which makes electron-builder
+skip signing entirely, and Electron 43 documents that macOS does not deliver notifications to an
+unsigned app. Nothing logged it — `Notification` has a `failed` event and nothing listened. It does
+now, and `npm run install:local` signs every local build: with a self-signed "Hangar Local"
+certificate if `npm run cert:local` has made one, ad-hoc otherwise. Ad-hoc is a hash of the bundle,
+so camera and microphone grants are asked again after each rebuild; the certificate is the same
+identity every time. See docs/packaging.md.
+
+**Installing over a running copy.** The installed copy is usually the launchd job, so it cannot
+simply be killed — that is a crash, and launchd restarts it mid-copy. `Hangar --quit` asks the
+running copy to quit through the single-instance handoff: no confirm dialog, cookies promoted, exit
+0. It travels as the lock's `additionalData` rather than a parsed argv, and with nothing running a
+`--quit` exits before boot rather than starting the app it was meant to stop.
+
+**One more guard.** Every packaged copy rewrote the LaunchAgent to point at itself on boot, so trying
+out a build straight from `dist/` repointed login at the build directory. Only a copy in an
+Applications folder may claim it now (`isInstalledCopy`).

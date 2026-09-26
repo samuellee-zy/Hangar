@@ -17,7 +17,6 @@ import { DEFAULT_PREFERENCES, withDefaults } from '@core/config/preferences';
 describe('mapping a path to its effect', () => {
   it('every login-item path maps to it — they are all one launchd job', () => {
     assert.equal(preferenceEffectFor('behaviour.launchAtLogin'), 'login-item');
-    assert.equal(preferenceEffectFor('behaviour.startHidden'), 'login-item');
     // Without this, turning relaunch on writes the preference and never touches the plist, so it
     // takes effect the next time some *other* login-item setting happens to change.
     assert.equal(preferenceEffectFor('behaviour.relaunchOnCrash'), 'login-item');
@@ -80,7 +79,6 @@ describe('the effect list stays in step with the mapping', () => {
     const paths = [
       'behaviour.launchAtLogin',
       'behaviour.relaunchOnCrash',
-      'behaviour.startHidden',
       'network.proxy.mode',
       'network.blockAds',
       'behaviour.globalShortcut',

@@ -115,8 +115,27 @@ function build(): void {
       submenu: [...items('view'), { type: 'separator' }, { role: 'toggleDevTools' }],
     },
     // Deliberately no { role: 'close' } anywhere — that's the binding that was stealing ⌘W.
-    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] },
+    //
+    // "Show Hangar" because `role: 'front'` only raises windows that are *visible*. A window closed
+    // to the tray is hidden, and with the menu bar showing Hangar's menus and no window at all,
+    // there was nothing here that could bring it back.
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { label: 'Show Hangar', click: send({ type: 'show-window' }) },
+        { role: 'front' },
+      ],
+    },
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+
+  // Right-clicking the Dock icon: one more route back that doesn't depend on the tray being
+  // visible — on a notched MacBook a crowded menu bar hides extras behind the camera housing.
+  app.dock?.setMenu(
+    Menu.buildFromTemplate([{ label: 'Show Hangar', click: send({ type: 'show-window' }) }])
+  );
 }

@@ -324,7 +324,6 @@ export interface Preferences {
      * because launchd can only supervise a process it started — see core/config/launch-agent.ts.
      */
     relaunchOnCrash: boolean;
-    startHidden: boolean;
     closeToTray: boolean;
     confirmQuit: boolean;
     defaultZoom: number;
