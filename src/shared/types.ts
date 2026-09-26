@@ -507,6 +507,7 @@ export type Command =
   | { type: 'set-workspace'; workspaceId: string }
   | { type: 'navigate'; direction: 'back' | 'forward' }
   | { type: 'open-palette' }
+  | { type: 'open-shortcuts' }
   | { type: 'open-connections' }
   | { type: 'close-overlay' }
   | { type: 'add-service'; catalogId: string; forceNewAccount?: boolean }
@@ -592,7 +593,7 @@ export type Command =
   | { type: 'update-service'; serviceId: string; patch: Partial<ServiceInstance> };
 
 /** What the overlay is currently being used for. One view, three jobs. */
-export type OverlayMode = 'palette' | 'connections';
+export type OverlayMode = 'palette' | 'connections' | 'shortcuts';
 
 /**
  * The nonce exists so reopening the overlay in the *same* mode still remounts the renderer.

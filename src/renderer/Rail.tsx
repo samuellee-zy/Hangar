@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { brightenForDark } from './accent';
+import { badgeText } from './badge';
+import { withChord } from './chords';
 import { CommitOnBlur } from './CommitOnBlur';
 import { FolderTile } from './FolderTile';
 import { ServiceIcon } from './ServiceIcon';
@@ -76,6 +78,8 @@ export function Rail() {
   const panel = compactRail && state.railExpanded && !horizontal;
   const labelled = panel || (showLabels && !compact && !horizontal);
   const byId = new Map(state.services.map((s) => [s.id, s]));
+  // ⌘1–9 follow the flattened visual order, which is what `services` is.
+  const position = new Map(state.services.slice(0, 9).map((s, i) => [s.id, i + 1]));
   // Every workspace, like the Dock badge: a message in another workspace is still one to hear about.
   const totalUnread = state.allServices.reduce((sum, s) => sum + s.unread, 0);
   const send = window.hangar.send;
@@ -177,7 +181,7 @@ export function Rail() {
             .join(', ')}
           // Identity lives in the accent and the icon; the tile surface carries state only.
           style={{ ['--accent' as string]: brightenForDark(svc.color) }}
-          title={
+          title={[
             svc.sleeping
               ? `${svc.name} — asleep, click to wake`
               : svc.loading
@@ -186,8 +190,13 @@ export function Rail() {
                   // nothing. The one thing not discoverable there is that it can be edited.
                   panel
                   ? `${svc.name} — double-click to rename`
-                  : svc.name
-          }
+                  : svc.name,
+            // The two ways to reach a tile that nothing on screen mentions.
+            position.has(svc.id) ? `⌘${position.get(svc.id)}` : null,
+            '⌥-click to open beside',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
           onContextMenu={(e) => {
             e.preventDefault();
             send({ type: 'show-service-menu', serviceId: svc.id });
@@ -217,7 +226,7 @@ export function Rail() {
               twice is worse than once. The live region below handles the *change*. */}
           {svc.unread > 0 && (
             <span className="rail-badge" aria-hidden="true">
-              {svc.unread}
+              {badgeText(svc.unread)}
             </span>
           )}
         </button>
@@ -383,7 +392,7 @@ export function Rail() {
       <div className="rail-footer">
         <button
           className="rail-item rail-add"
-          title="Add a connection (⌘N)"
+          title={withChord(state, 'Add a connection', 'add-connection')}
           aria-label="Add a connection"
           onClick={() => send({ type: 'open-connections' })}
         >
@@ -399,7 +408,7 @@ export function Rail() {
         {/* ⌘, works but is undiscoverable — the gear is how most people will find Settings. */}
         <button
           className="rail-item rail-add rail-settings"
-          title="Settings (⌘,)"
+          title={withChord(state, 'Settings', 'settings')}
           aria-label="Settings"
           onClick={() => send({ type: 'open-settings' })}
         >

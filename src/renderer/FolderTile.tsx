@@ -1,3 +1,4 @@
+import { badgeText } from './badge';
 import type { RailItem, ServiceView } from '@shared/types';
 
 /**
@@ -58,7 +59,7 @@ export function FolderTile({
       )}
       {unread > 0 && (
         <span className="rail-badge" aria-hidden="true">
-          {unread}
+          {badgeText(unread)}
         </span>
       )}
     </button>

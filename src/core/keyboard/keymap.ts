@@ -94,6 +94,7 @@ export function isBindable(chord: Chord | null): chord is Chord {
 }
 
 export type ActionId =
+  | 'shortcuts'
   | 'palette'
   | 'add-connection'
   | 'settings'
@@ -130,6 +131,15 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'open-settings' },
     menu: 'app',
     defaultChord: primaryChord(','),
+  },
+  // A sheet of every shortcut, read from the live keymap — so it can't advertise a chord you have
+  // since moved, which the hard-coded hints around the app did.
+  {
+    id: 'shortcuts',
+    label: 'Keyboard shortcuts',
+    command: { type: 'open-shortcuts' },
+    menu: 'app',
+    defaultChord: primaryChord('/'),
   },
   {
     id: 'add-connection',

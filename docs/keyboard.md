@@ -7,7 +7,8 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 
 | Key | Action |
 | --- | --- |
-| `⌘K` | Command palette — services and workspaces |
+| `⌘/` | Every shortcut on one sheet, read from the live keymap |
+| `⌘K` | Command palette — services in every workspace, and workspaces |
 | `⌘N` | Add a connection |
 | `⌘,` | Settings |
 | `⌘F` | Find in page — `↵` next, `⇧↵` previous, `esc` closes |

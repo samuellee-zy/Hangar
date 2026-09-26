@@ -967,6 +967,25 @@ kbd {
   opacity: 0.5;
 }
 
+/* A mark as well as the dimming, because 50% opacity alone reads as "disabled" — and clicking a
+   sleeping tile is exactly what wakes it. A small crescent in the corner the badge doesn't use. */
+.rail-item.is-sleeping::after {
+  content: '☾';
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.rail.is-panel .rail-item.is-sleeping::after {
+  position: static;
+  margin-left: auto;
+  order: 2;
+}
+
 .rail-item.is-sleeping:hover,
 .rail-item.is-sleeping:focus-visible {
   opacity: 1;
@@ -1162,6 +1181,100 @@ kbd {
   color: var(--muted);
 }
 
+/* First run: a handful of one-click starters in a grid, sized for a pane rather than a sheet. */
+.starter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 96px);
+  gap: 8px;
+  margin: 4px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.starter-grid button,
+.wake-list button {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.starter-grid button {
+  flex-direction: column;
+  gap: 6px;
+  width: 96px;
+  padding: 12px 6px;
+  font-size: 12px;
+}
+
+.starter-grid button:hover,
+.wake-list button:hover {
+  border-color: var(--muted);
+}
+
+.starter-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.starter-initials {
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--tile);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Nothing open: the workspace's own services, one click each. */
+.wake-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(320px, 100%);
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.wake-list button {
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.wake-list .rail-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.wake-name {
+  flex: 1;
+}
+
+.wake-state {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.wake-unread {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #ff453a;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
 /* --- route error boundary ----------------------------------------------------------------- */
 
 /*
@@ -1322,4 +1435,61 @@ kbd {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* --- shortcut sheet ------------------------------------------------------------------------- */
+
+.shortcut-sheet {
+  max-height: min(560px, 86vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+}
+
+.shortcut-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.shortcut-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.shortcut-list {
+  margin: 0;
+  padding: 4px 16px 12px;
+  overflow-y: auto;
+}
+
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.shortcut-row dd {
+  margin: 0;
+}
+
+.shortcut-row kbd {
+  font: 12px ui-monospace, Menlo, monospace;
+}
+
+.shortcut-row .unbound {
+  color: var(--muted);
+  font-size: 12px;
 }

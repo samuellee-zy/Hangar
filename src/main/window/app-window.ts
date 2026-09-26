@@ -1148,6 +1148,16 @@ export class AppWindow {
         this.openOverlay('connections');
         break;
 
+      case 'open-shortcuts':
+        // A toggle, like the palette: the chord that opens the sheet also shuts it.
+        if (this.overlay.currentMode === 'shortcuts') {
+          this.overlay.close();
+          this.focusActivePane();
+        } else {
+          this.openOverlay('shortcuts');
+        }
+        break;
+
       case 'close-overlay': {
         // Reports false when nothing was open, so Escape falls through to the page.
         const wasOpen = this.overlay.isOpen;
