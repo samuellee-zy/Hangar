@@ -758,3 +758,37 @@ test('A RESIZE STORM DOES NOT BROADCAST A STORM — the rail is sent state only 
   const received = await rail.evaluate(() => (window as unknown as { __received: number }).__received);
   expect(received, `${received} broadcasts for 30 resizes that changed nothing it draws`).toBeLessThanOrEqual(2);
 });
+
+test('WITH LINK ROUTING ON, A LINK TO ANOTHER OF YOUR SERVICES OPENS THERE — not in the browser', async () => {
+  // One fixture server under two names: service "one" lives on 127.0.0.1, service "two" on
+  // localhost. A link from one to two's host is off one's allowlist, so it leaves one — and with
+  // routing on it should land in two's pane rather than being handed to the system browser.
+  h = await launch((origin) => {
+    const localhost = origin.replace('127.0.0.1', 'localhost');
+    const config = seedConfig(origin, { preferences: { behaviour: { routeLinks: true } } }) as {
+      services: Array<{ id: string; url: string; allowedHosts: string[] }>;
+    };
+    config.services[1]!.url = `${localhost}/unread`;
+    config.services[1]!.allowedHosts = ['localhost'];
+    return config;
+  });
+  await h.rail();
+  const localhost = h.fixture.origin.replace('127.0.0.1', 'localhost');
+
+  const opened = await h.app.evaluate(async ({ shell, webContents }, target) => {
+    const openedExternally: string[] = [];
+    const original = shell.openExternal;
+    shell.openExternal = async (url: string) => {
+      openedExternally.push(url);
+    };
+    const one = webContents.getAllWebContents().find((c) => c.getURL().startsWith('http://127.0.0.1'));
+    await one?.executeJavaScript(`window.open(${JSON.stringify(target)}, '_blank'); true`);
+    await new Promise((r) => setTimeout(r, 2500));
+    shell.openExternal = original;
+    const two = webContents.getAllWebContents().find((c) => c.getURL().startsWith(target));
+    return { openedExternally, landedIn: two?.getURL() ?? null };
+  }, `${localhost}/unread/routed`);
+
+  expect(opened.openedExternally, 'it must not have gone to the browser').toEqual([]);
+  expect(opened.landedIn).toBe(`${localhost}/unread/routed`);
+});

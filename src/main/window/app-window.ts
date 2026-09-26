@@ -71,7 +71,8 @@ import {
   releaseGlobalShortcut,
   globalShortcutStatus,
 } from '@main/platform/system';
-import { allLiveSessions, clearBlockedHost, hostBlockedFor } from '@main/platform/session';
+import { allLiveSessions, clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
+import { routable, routeTarget } from '@core/services/routing';
 import { setAdBlocking } from '@main/platform/adblock';
 import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
 import { isQuitting } from '@main/platform/quit-state';
@@ -336,6 +337,7 @@ export class AppWindow {
     // The single funnel: every config write schedules a reconcile. Sync previously fired only from
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
+    setLinkRouter((url, fromServiceId) => this.routeLink(url, fromServiceId));
 
     // Safe to start here despite `onApplied` touching panes: `reconcile` awaits `git --version`
     // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
@@ -733,6 +735,25 @@ export class AppWindow {
     // Nothing to redraw before the first broadcast — `installMenu` has just built it, or hasn't
     // run yet and will build it against these same bindings.
     if (!first) refreshMenu();
+  }
+
+  /**
+   * A link leaving `fromServiceId`: opened in the service it belongs to, when link routing is on and
+   * one of yours matches (see core/services/routing.ts). Returns whether it took the link.
+   */
+  private routeLink(url: string, fromServiceId: string): boolean {
+    const config = loadConfig();
+    if (!config.preferences.behaviour.routeLinks) return false;
+    const target = routeTarget(url, routable(config.services, resolveUrl), fromServiceId);
+    if (!target) return false;
+    const name = config.services.find((s) => s.id === target)?.name ?? target;
+    console.log(`[nav] routed a link to ${name}`);
+    this.dispatch({ type: 'focus-service', serviceId: target });
+    const wc = this.contentsForService(target);
+    wc?.loadURL(url).catch(() => {
+      // Reported through did-fail-load, which decides what happens next.
+    });
+    return true;
   }
 
   /**
@@ -2048,6 +2069,7 @@ export class AppWindow {
     this.flashTimer = null;
 
     releaseGlobalShortcut();
+    setLinkRouter(null);
     destroyTray();
     closeSettingsWindow();
     // Drop the config hook, or a write after teardown schedules a reconcile against a window that

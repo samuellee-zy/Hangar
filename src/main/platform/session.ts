@@ -224,6 +224,23 @@ export function sessionFor(svc: ServiceInstance): Session {
 }
 
 /**
+ * Where a link leaving a service can go instead of the browser — another of your services — or
+ * null to leave it to the browser. Set by the window, which knows the services and the preference;
+ * returns whether it took the link.
+ */
+type LinkRouter = (url: string, fromServiceId: string) => boolean;
+let routeLink: LinkRouter | null = null;
+export function setLinkRouter(router: LinkRouter | null): void {
+  routeLink = router;
+}
+
+/** Hands a link to the router, or to the system browser when the router declines it. */
+function leave(url: string, svc: ServiceInstance): void {
+  if (routeLink?.(url, svc.id)) return;
+  openExternalSafely(url, svc.name);
+}
+
+/**
  * The host of the most recent navigation we both blocked *and* showed a blocked page for, per
  * service. The blocked page's Allow button carries no argument; this is what it means.
  *
@@ -280,8 +297,8 @@ export function attachNavigationGuards(
         },
       };
     }
-    console.log(`[nav] ${svc.name}: popup ${redactUrl(url)} not on allowlist — opened in browser`);
-    openExternalSafely(url, svc.name);
+    console.log(`[nav] ${svc.name}: popup ${redactUrl(url)} not on allowlist — leaving the service`);
+    leave(url, svc);
     return { action: 'deny' };
   });
 
@@ -302,7 +319,9 @@ export function attachNavigationGuards(
    */
   const refuse = (url: string, via: string): boolean => {
     if (isAllowedHost(current(), url)) return false;
-    console.log(`[nav] ${svc.name}: ${hostOf(url)} not on allowlist (${via}) — opened in browser`);
+    console.log(`[nav] ${svc.name}: ${hostOf(url)} not on allowlist (${via}) — leaving the service`);
+    // Routed to another of your services, the pane stays where it was: the link went somewhere.
+    if (routeLink?.(url, svc.id)) return true;
     openExternalSafely(url, svc.name);
 
     // The pane is only replaced when it holds nothing worth keeping. Clicking an external link in

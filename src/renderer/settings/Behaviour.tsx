@@ -54,6 +54,9 @@ export function Behaviour({
                 disabled={!behaviour.launchAtLogin} />
         <Toggle name="Close to tray" note="Closing the window keeps Hangar running"
                 path="behaviour.closeToTray" value={behaviour.closeToTray} />
+        <Toggle name="Open links in your services"
+                note="A link to Jira from Slack opens in your Jira, not the browser — when you have that service here"
+                path="behaviour.routeLinks" value={behaviour.routeLinks} />
         <Toggle name="Confirm before quitting" path="behaviour.confirmQuit"
                 value={behaviour.confirmQuit} />
         <Num name="Default zoom" note="Applied to newly added services"

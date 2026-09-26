@@ -338,6 +338,8 @@ export interface Preferences {
      */
     relaunchOnCrash: boolean;
     closeToTray: boolean;
+    /** Open a link that leaves a service in another of your services when it belongs there. */
+    routeLinks: boolean;
     confirmQuit: boolean;
     defaultZoom: number;
     spellcheckLanguages: string[];
