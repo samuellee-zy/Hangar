@@ -224,8 +224,8 @@ Not bugs; things that will look like bugs later.
 
 ## 8. Suggested order
 
-If picking this up fresh, the P1s in §13 are closed; the P2s (§13.4–13.6) and the enhancements
-(§13.7–13.9) are what remain. Then:
+If picking this up fresh: §13 is mostly closed, and what remains in it is listed there with the
+reason each is open — `CommandRouter` (§13.6) is the one worth doing first. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -389,82 +389,80 @@ refused-shortcut message is an alert and the find-bar count is a status region.
 Still open from §4.3: pane landmark roles, and a real VoiceOver pass — both need the app running
 under VoiceOver rather than more code first.
 
-### 13.6 Structure (P2)
+### 13.6 Structure (P2) — started
 
-`app-window.ts` is ~2,050 lines with a ~55-case `dispatch`. A split along seams it already has:
-`WindowController` (bounds, show/hide), `PaneController` (relayout, open, sleep), `CommandRouter`
-(a handler map with schema-validated input), `AttentionCenter` (unread, badge, notifications, push,
-endpoint poll), `PreferenceEffects`, `TileDragController`, and a scheduler for the timers in
+`AttentionCenter` (`window/attention.ts`) now owns unread, banners, the badge, push delivery and the
+recent list, behind a seven-method host interface. `app-window.ts` is ~2,300 lines and still has
+the ~650-line `dispatch`. The rest of the split, along the seams it already has: `CommandRouter` (a
+handler map, input schema-validated — the next one worth doing, since `dispatch` is most of the
+file), `WindowController` (bounds, show/hide, focus ring), `PaneController` (relayout, open,
+sleep), `PreferenceEffects`, `TileDragController`, and a scheduler for the timers in
 `boot/index.ts`.
 
-### 13.7 UI/UX enhancements
+### 13.7 UI/UX enhancements — mostly done
 
-- **Onboarding.** A first-run grid of ~8 one-click services and a line explaining accounts ("a
-  second Gmail is a second account"); import from Rambox/Ferdium; a nothing-open state that lists
-  sleeping services with Wake; a per-service loading splash; a toast offering **Allow host** when
-  navigation is blocked (#94), instead of the log being the only evidence.
-- **Discoverability.** A ⌘/ cheat sheet from the live keymap. ⌘K as a real command palette —
-  actions with their chords, settings sections, DND, "Add Gmail", services across all workspaces
-  with unread and recency. Tile tooltips with ⌘1–9 and ⌥-click. Shortcut hints that follow rebinding
-  (hard-coded in `EmptyState.tsx`, `Rail.tsx`, `Palette.tsx`, `Connections.tsx`).
-- **Rail.** A workspace switcher (colour/emoji, unread roll-up, drag to reorder — the command
-  exists, nothing sends it; new workspaces are all called "Workspace"). Folder rename and colour.
-  Tile menu: Mark read, Mute 1h/until tomorrow, Copy URL, Move to workspace. A visible sleeping glyph
-  and loading ring (closes §4.1). Badge cap at `99+` and a numbers/dot/off style.
-- **Panes.** Optional header (name, back/forward, reload, pop out, close); a focus ring on the
-  focused pane; resizable splitters with remembered ratios; rows vs columns; drag to swap; maximise
-  a pane; **pop a service out into its own window** (calls).
-- **Settings.** A sidebar with search. **One page per service** — URL override (which also unlocks
-  self-hosted GitLab/Jira/Mattermost), colour, zoom, hibernate, mute, unread selector, passthrough,
-  custom CSS/JS, user agent, hosts, cookie lifetime, mic/camera — every field already accepted by
-  `patch.ts`, but today the same services are listed five times and most fields can't be edited.
-  Native folder pickers for downloads and the sync repo; inline status for shortcut, proxy and sync
-  path; timed DND (`dndUntil` is in the schema, never read); undo toasts; About with version, log
-  path and Reveal config (the hard-coded config path is wrong under a redirected profile).
-- **Settings rows that don't reflect their dependencies**: rail size and labels are ignored for a
-  compact or horizontal rail; relaunch-on-crash stays enabled with launch at login off; Show tray
-  icon reads unchecked while close-to-tray forces one.
-- **Polish.** No "loading" state before the first broadcast (the empty view says "No connections
-  yet" to people who have some); Add-connection has no no-results state, name-only search ("twitter"
-  won't find X), no arrow-key grid navigation; non-destructive buttons styled as dangerous (Add
-  workspace, Export/Import, Default).
+Shipped: first-run starters and a nothing-open list (empty view); a ⌘/ shortcut sheet; shortcut
+hints read from the live keymap; tile tooltips with ⌘N and ⌥-click; 99+ badges and a sleeping mark;
+a workspace switcher in the rail; tile menu Mark read / Mute ▸ / Copy address / Move to workspace /
+Open in separate window; timed DND; a picker with alias search, no-results, Enter and arrow keys;
+Settings in groups with search, per-service start page / colour / TTL / UA / CSS / JS, About with
+real paths, folder pickers, a recorded global shortcut with status, and rows that say when they do
+nothing; maximise-pane (⌘⇧↵) and a focus ring. Decisions #99–#101 and the commit log carry the
+detail.
 
-### 13.8 Capabilities (what Rambox, Wavebox and Shift have)
+Not done:
 
-- **Link routing** — open links for chosen domains in a chosen service instead of the browser.
-- **Default mail handler** — `mailto:` opens a compose in the mail service; there is no protocol
-  handling at all today.
-- **Browser extensions** — 1Password, Bitwarden, Grammarly via `session.loadExtension`; the ad
-  blocker already proves per-session injection.
-- **Tabs within a service** — several Notion pages or Docs at once.
-- **Notification history** per service, in the tray or palette; main already sees every one.
-- **Quiet hours** per service, and workspaces that switch on a schedule.
-- **A downloads list** with progress; today files land silently.
-- **Self-hosted variants** of catalog entries: GitLab, Mattermost, Rocket.Chat, Nextcloud, Jira
-  Server.
+- **Resizable splitters, pane headers, drag-to-swap panes.** Layout is still columns or 2×2 with
+  equal cells. Ratios would live in `Layout` and persist with the layout; headers need a view per
+  pane in the chrome.
+- **Import from Rambox or Ferdium.** Rambox 2 keeps services in its account and in browser
+  storage, not in a file (its `Settings.json` has only app settings); Ferdium keeps them in SQLite,
+  which needs a native dependency. Worth doing against a real export, not a guessed format.
+- **A per-service loading splash.** The tile's pulse says "waking"; the pane itself is blank until
+  the first paint.
+- **Undo toasts.** Destructive actions confirm instead (two-click buttons, #99).
+- **A "blocked host" toast.** Not needed: the blocked page already offers Allow in the one case
+  that matters (a sign-in step), and an external link opening in the browser is not a failure.
+- **Spelling languages.** The preference and its effect exist, but `setSpellCheckerLanguages` is a
+  no-op on macOS — the system spellchecker picks the language — so a control would do nothing here.
 
-### 13.9 Catalog
+### 13.8 Capabilities — mostly done
 
-- **Microsoft's move to `cloud.microsoft`**: Outlook, OneDrive, SharePoint and To Do lack it in
-  their allowed hosts (`catalog.ts:316-338`) though Teams and Copilot have it — the Notion
-  `.so → .com` failure again, waiting to happen. Jira and Confluence share a URL. Monday and Loom
-  have no icon.
-- **Additions with demand**: Google Messages and Voice, YouTube and YouTube Music, iCloud Mail and
-  Calendar, Yahoo, Zoho, HEY and Tuta mail, Mastodon (instance URL), Zendesk, Intercom, HubSpot,
-  Front, Word/Excel/OneNote online, Webex, Bitbucket, Azure DevOps, Canva.
-- Unread selectors are still missing for Notion, Jira, Confluence, Trello, Asana, ClickUp, Monday
-  (§8).
+Shipped: link routing to the service a link belongs to (opt-in); Hangar as the default email app,
+composing in Gmail, Outlook or Yahoo; notification history in the tray; pop-out windows; a
+downloads list; self-hosted variants through a per-service start page (which brings its host with
+it).
+
+Not done:
+
+- **Browser extensions.** `session.loadExtension` exists, but Electron implements only part of the
+  extension API and not native messaging, which is how 1Password and Bitwarden talk to their
+  desktop apps. The popular ones would load and not work.
+- **Several tabs within one service.** A service is one view today; this is a data-model change
+  (a service owning an ordered list of views) through the pane, rail and hibernation code.
+- **Quiet hours per service, and scheduled workspaces.** Timed mute (#99-era) is the mechanism;
+  a schedule is a recurring version of it evaluated on the same 30-second sweep.
+
+### 13.9 Catalog — done for now
+
+`cloud.microsoft` on every Microsoft 365 entry, with a test; 19 new entries (Google Messages and
+Voice, Webex, YouTube and YouTube Music, Threads, Mastodon, Bitbucket, Azure DevOps, HubSpot,
+Intercom, Front, Canva, iCloud / Yahoo / Zoho / HEY / Tuta mail, Microsoft 365); `aliases` for
+search. The new entries have no vendored icon yet (they capture a favicon on first load) —
+`npm run icons` with slugs added, from a machine with network. Monday and Loom still have no icon
+upstream, and unread selectors for Notion, Jira, Confluence, Trello, Asana, ClickUp and Monday still
+need a real signed-in page each (§8).
 
 ### 13.10 Tests
 
-- The Settings window is never driven by Playwright; the Add-connection focus trap, number-field
-  typing, proxy mode switching, a `~` sync path, destructive-button confirms, tray counts across
-  workspaces and the badge after removing a service are all untested.
-- No automated accessibility checks (axe) on any surface; nothing bounds the broadcast count.
-- The catalog test checks each entry allows its own URL, not where that URL *redirects* — an opt-in
-  network test would have caught Notion and would catch `cloud.microsoft`.
-- One unit test failed once during this phase and did not reproduce in four further runs; which one
-  was not captured. Worth a `--retry=0 --repeat` sweep.
+Added in Phase 7: the reachability, quit and bounds tests (#96); rail navigation and IPC-sender
+tests (#97); crash recovery, hidden-window unread and broadcast-storm tests (#98, #100); link
+routing, mailto, pop-out, notification history and maximise tests; and unit tests for every new
+pure rule. Each new E2E test was run against its bug put back.
+
+Still open: axe checks on the renderer surfaces; the Settings window under Playwright; an opt-in
+catalog test that follows redirects (would have caught Notion and `cloud.microsoft`, needs network).
+One unit test failed once and never again in a dozen runs; which one was not captured.
 
 ### 13.11 Housekeeping
 

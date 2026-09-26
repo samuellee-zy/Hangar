@@ -64,16 +64,27 @@ their favicon captured from the page itself.
 
 **Notifications.** A service's own notifications are intercepted and attributed, so the dock badge,
 tray count and folder roll-ups all reflect real unread. Do Not Disturb silences the banner but keeps
-counting; muting a service does neither.
+counting; muting a service does neither. Both can be timed — for an hour, until tomorrow — and the
+tray keeps the last few notifications you missed.
+
+**Links and mail.** A link that leaves one service can open in the service it belongs to — a Jira
+ticket from Slack in your Jira — instead of the browser (opt-in). Hangar can also be your default
+email app: `mailto:` links anywhere on the Mac open a new message in Gmail, Outlook or Yahoo here.
+
+**Panes and windows.** Maximise the focused pane (⌘⇧↵), with a ring marking which one has focus;
+pop any service into a window of its own, still signed in — for a call beside something else.
 
 **Configurable.** Rail on any edge, theme, density, rail size, labels, hibernation, tray, launch at
-login, global shortcut, proxy, downloads, per-service zoom and custom CSS/JS.
+login, global shortcut, proxy, downloads, and per service: start page (including a self-hosted
+copy), colour, zoom, how long to stay signed in, user agent, extra allowed hosts, custom CSS/JS.
+Settings is grouped and searchable; ⌘/ lists every shortcut.
 
 **Web Push** — a hibernated service can still reach you, so sleeping one is a saving rather than
 silence. Needs a free Firebase project of your own; see [push.md](docs/push.md) for why.
 
 **Browser affordances.** Find in page (⌘F) with match counts, zoom per service (⌘+/−/0), print,
-and a window title that follows the focused service.
+a window title that follows the focused service, screen sharing through a picker, and a downloads
+list in the tray.
 
 **Right-click everywhere** — including inside the web views, where Electron gives you nothing by
 default: copy/paste, open-link-in-browser, and spelling suggestions.
