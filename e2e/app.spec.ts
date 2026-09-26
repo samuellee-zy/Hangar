@@ -792,3 +792,47 @@ test('WITH LINK ROUTING ON, A LINK TO ANOTHER OF YOUR SERVICES OPENS THERE — n
   expect(opened.openedExternally, 'it must not have gone to the browser').toEqual([]);
   expect(opened.landedIn).toBe(`${localhost}/unread/routed`);
 });
+
+test('POPPING A SERVICE OUT GIVES IT A WINDOW OF ITS OWN, signed in, and sleeps the pane copy', async () => {
+  h = await launch();
+  await h.rail();
+
+  const result = await h.app.evaluate(async ({ BrowserWindow, session }) => {
+    const shell = (globalThis as never as {
+      __hangarShell: { dispatch: (c: unknown) => boolean; state: () => { services: { id: string; sleeping: boolean }[] } };
+    }).__hangarShell;
+    // A cookie in the service's jar, to prove the window shares it rather than starting signed out.
+    await session.fromPartition('persist:acct-one').cookies.set({ url: 'http://127.0.0.1/', name: 'who', value: 'me' });
+    shell.dispatch({ type: 'pop-out-service', serviceId: 'one' });
+    await new Promise((r) => setTimeout(r, 1500));
+    const popped = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('One'));
+    const cookies = popped ? await popped.webContents.session.cookies.get({ name: 'who' }) : [];
+    return {
+      opened: Boolean(popped),
+      signedIn: cookies[0]?.value === 'me',
+      paneAsleep: shell.state().services.find((s) => s.id === 'one')?.sleeping ?? false,
+    };
+  });
+
+  expect(result.opened, 'a window titled after the service').toBe(true);
+  expect(result.signedIn, 'the same session as the pane').toBe(true);
+  expect(result.paneAsleep, 'only one copy running').toBe(true);
+});
+
+test('A NOTIFICATION YOU MISSED IS KEPT IN RECENT — one you were looking at is not', async () => {
+  h = await launch();
+  await h.rail();
+  const recent = await h.app.evaluate(async () => {
+    const shell = (globalThis as never as {
+      __hangarShell: {
+        handleNotification: (id: string, p: unknown) => void;
+        state: () => { recentNotifications?: { serviceId: string; title: string }[] };
+      };
+    }).__hangarShell;
+    // "two" is loaded but not in a pane, so it counts; "one" is on screen in the first pane.
+    shell.handleNotification('two', { title: 'Missed this', body: 'while away' });
+    shell.handleNotification('one', { title: 'Saw this', body: 'on screen' });
+    return shell.state().recentNotifications ?? [];
+  });
+  expect(recent.map((n) => n.title)).toEqual(['Missed this']);
+});

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { safeToAutoOpen } from '@core/runtime/downloads';
 import { applyLaunchAgent } from '@main/platform/launch-agent';
-import type { Preferences, ProxyConfig } from '@shared/types';
+import type { DownloadEntry, Preferences, ProxyConfig } from '@shared/types';
 
 /**
  * Preferences that reach outside the app — the login item, the proxy, download handling and the
@@ -88,6 +88,54 @@ const downloadHandlerAttached = new WeakSet<Electron.Session>();
  * Downloads land in the configured folder without a prompt unless asked otherwise. Attaching per
  * session rather than globally, because each service has its own. Idempotent — see above.
  */
+/**
+ * Recent downloads, for the tray and Settings. A file used to land silently — no progress, and no
+ * way back to it afterwards short of opening the Downloads folder and hunting.
+ */
+const recent: DownloadEntry[] = [];
+let downloadsChanged: (() => void) | null = null;
+let nextDownloadId = 0;
+
+/** Newest first, at most ten. */
+export const recentDownloads = (): DownloadEntry[] => recent.slice(0, 10);
+export const onDownloadsChanged = (listener: (() => void) | null): void => {
+  downloadsChanged = listener;
+};
+export const downloadPath = (id: string): string | null => recent.find((d) => d.id === id)?.path || null;
+
+function track(item: Electron.DownloadItem): void {
+  const entry: DownloadEntry = {
+    id: String(++nextDownloadId),
+    name: item.getFilename(),
+    path: item.getSavePath(),
+    state: 'progressing',
+    received: 0,
+    total: item.getTotalBytes(),
+    at: Date.now(),
+  };
+  recent.unshift(entry);
+  recent.length = Math.min(recent.length, 20);
+  // Progress is throttled to whole percents; every chunk would be a broadcast per few KB.
+  let lastPercent = -1;
+  item.on('updated', () => {
+    entry.received = item.getReceivedBytes();
+    entry.total = item.getTotalBytes();
+    entry.path = item.getSavePath() || entry.path;
+    const percent = entry.total ? Math.floor((entry.received / entry.total) * 100) : -1;
+    if (percent !== lastPercent) {
+      lastPercent = percent;
+      downloadsChanged?.();
+    }
+  });
+  item.once('done', (_e, state) => {
+    entry.state = state;
+    entry.path = item.getSavePath() || entry.path;
+    entry.received = item.getReceivedBytes();
+    downloadsChanged?.();
+  });
+  downloadsChanged?.();
+}
+
 export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Preferences): void {
   if (downloadHandlerAttached.has(ses)) return;
   downloadHandlerAttached.add(ses);
@@ -100,6 +148,7 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
       // twice silently destroyed the first copy. Reproduce it ourselves.
       item.setSavePath(uniqueDownloadPath(folder, item.getFilename()));
     }
+    track(item);
     item.once('done', (_e, state) => {
       if (state !== 'completed' || !prefs.openOnComplete) return;
       const saved = item.getSavePath();

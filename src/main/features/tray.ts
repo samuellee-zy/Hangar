@@ -67,6 +67,8 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
     services.map((s) => [s.id, s.name, s.unread]),
     state.preferences.notifications.dnd,
     state.preferences.notifications.dndUntil,
+    (state.recentNotifications ?? []).map((n) => n.at),
+    (state.downloads ?? []).map((d) => [d.id, d.state, d.received]),
   ]);
   if (signature === lastSignature) return;
   lastSignature = signature;
@@ -88,6 +90,10 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
         },
       })),
       { type: 'separator' },
+      ...(() => {
+        const extras = [...recentMenu(state, dispatch), ...downloadsMenu(state, dispatch)];
+        return extras.length ? [...extras, { type: 'separator' as const }] : [];
+      })(),
       dndMenu(state, dispatch),
       {
         label: 'Sleep background services',
@@ -123,4 +129,50 @@ function dndMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron
       { label: 'Until I turn it off', type: 'radio', checked: dnd && dndUntil === null, click: set(true, null) },
     ],
   };
+}
+
+const clip = (text: string, max = 48) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/**
+ * The last few notifications, so a banner you missed — or one DND held back — can still be found
+ * and followed to the service that sent it.
+ */
+function recentMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron.MenuItemConstructorOptions[] {
+  const recent = state.recentNotifications ?? [];
+  if (recent.length === 0) return [];
+  const nameOf = (id: string) => state.allServices.find((s) => s.id === id)?.name ?? '';
+  return [
+    {
+      label: 'Recent notifications',
+      submenu: recent.slice(0, 10).map((n) => ({
+        label: clip(`${nameOf(n.serviceId)}: ${n.title}`),
+        sublabel: n.body ? clip(n.body, 60) : undefined,
+        click: () => {
+          dispatch({ type: 'show-window' });
+          dispatch({ type: 'focus-service', serviceId: n.serviceId });
+        },
+      })),
+    },
+  ];
+}
+
+/** Recent downloads, with progress, each a way back to the file. */
+function downloadsMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron.MenuItemConstructorOptions[] {
+  const downloads = state.downloads ?? [];
+  if (downloads.length === 0) return [];
+  const status = (d: NonNullable<ShellState['downloads']>[number]) => {
+    if (d.state === 'completed') return '';
+    if (d.state === 'progressing') return d.total ? ` — ${Math.floor((d.received / d.total) * 100)}%` : ' — downloading';
+    return ` — ${d.state}`;
+  };
+  return [
+    {
+      label: 'Downloads',
+      submenu: downloads.map((d) => ({
+        label: clip(`${d.name}${status(d)}`),
+        enabled: d.state === 'completed',
+        click: () => dispatch({ type: 'reveal-download', id: d.id }),
+      })),
+    },
+  ];
 }

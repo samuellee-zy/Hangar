@@ -127,11 +127,21 @@ async function divergeWhileClosed(clone: string): Promise<string> {
   local.services[0].name = 'RenamedLocally';
   fs.writeFileSync(configPath, JSON.stringify(local, null, 2));
 
+  // Written until it sticks. Closing the app does not quite mean its last reconcile is finished — a
+  // write landing just after `close()` resolved put the repo file back as it was, leaving "nothing to
+  // commit" and a failure that had nothing to do with conflicts. The edit is staged only once it
+  // really differs from HEAD.
   const repoFile = path.join(clone, 'hangar.config.json');
-  const remote = JSON.parse(fs.readFileSync(repoFile, 'utf8'));
-  remote.services[0].name = 'RenamedInRepo';
-  fs.writeFileSync(repoFile, JSON.stringify(remote, null, 2));
-  git(clone, 'add', 'hangar.config.json');
+  for (let attempt = 0; ; attempt++) {
+    const remote = JSON.parse(fs.readFileSync(repoFile, 'utf8'));
+    remote.services[0].name = 'RenamedInRepo';
+    fs.writeFileSync(repoFile, JSON.stringify(remote, null, 2));
+    git(clone, 'add', 'hangar.config.json');
+    const staged = git(clone, 'diff', '--cached', '--name-only').trim();
+    if (staged) break;
+    if (attempt >= 20) throw new Error('the repo file kept reverting after the app closed');
+    await new Promise((r) => setTimeout(r, 150));
+  }
   git(clone, 'commit', '-m', 'remote edit');
   git(clone, 'push');
 

@@ -40,6 +40,7 @@ import { DragLayer } from '@main/features/drag-layer';
 import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
+import { closePopOuts, popOut } from '@main/features/popout';
 import { deleteCachedIcon } from '@main/features/icons';
 import {
   installWebContextMenu,
@@ -70,6 +71,9 @@ import {
   applyProxy,
   releaseGlobalShortcut,
   globalShortcutStatus,
+  downloadPath,
+  onDownloadsChanged,
+  recentDownloads,
 } from '@main/platform/system';
 import { allLiveSessions, clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
 import { routable, routeTarget } from '@core/services/routing';
@@ -200,6 +204,8 @@ export class AppWindow {
   private unread = new UnreadCounts();
   /** Held so GC can't collect a banner before its click handler runs. */
   private liveNotifications = new Set<Notification>();
+  /** Newest first, capped. In memory only — never written, never synced. */
+  private recentNotifications: NonNullable<ShellState['recentNotifications']> = [];
   private flashTimer: NodeJS.Timeout | null = null;
 
   /**
@@ -339,6 +345,7 @@ export class AppWindow {
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
     setLinkRouter((url, fromServiceId) => this.routeLink(url, fromServiceId));
+    onDownloadsChanged(() => this.sync());
 
     // Safe to start here despite `onApplied` touching panes: `reconcile` awaits `git --version`
     // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
@@ -461,6 +468,8 @@ export class AppWindow {
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
       isDefaultMailApp: app.isPackaged && app.isDefaultProtocolClient('mailto'),
+      recentNotifications: this.recentNotifications.slice(0, 10),
+      downloads: recentDownloads(),
     });
   }
 
@@ -1426,6 +1435,23 @@ export class AppWindow {
         this.sync();
         break;
 
+      case 'pop-out-service': {
+        const svc = loadConfig().services.find((s) => s.id === command.serviceId);
+        if (!svc) break;
+        // The page on screen, not the start page — popping out a call must not restart it.
+        const url = this.contentsForService(svc.id)?.getURL() || resolveUrl(svc);
+        // And only one copy: two of the same call, or of the same chat, is two sets of everything.
+        if (this.services.has(svc.id)) this.dispatch({ type: 'sleep-service', serviceId: svc.id });
+        popOut(svc, url);
+        break;
+      }
+
+      case 'reveal-download': {
+        const saved = downloadPath(command.id);
+        if (saved && fs.existsSync(saved)) shell.showItemInFolder(saved);
+        break;
+      }
+
       case 'make-default-mail-app':
         // Packaged only: unpackaged, this would register the bare Electron binary as your mail app.
         if (app.isPackaged && !app.setAsDefaultProtocolClient('mailto')) {
@@ -2105,6 +2131,8 @@ export class AppWindow {
 
     releaseGlobalShortcut();
     setLinkRouter(null);
+    onDownloadsChanged(null);
+    closePopOuts();
     destroyTray();
     closeSettingsWindow();
     // Drop the config hook, or a write after teardown schedules a reconcile against a window that
@@ -2303,6 +2331,16 @@ export class AppWindow {
     });
 
     if (decision.count) this.unread.increment(serviceId);
+    // Counted ones only: a message you were looking at as it arrived isn't one you missed.
+    if (decision.count) {
+      this.recentNotifications.unshift({
+        serviceId,
+        title: payload.title || svc.name,
+        body: payload.body ?? '',
+        at: Date.now(),
+      });
+      this.recentNotifications.length = Math.min(this.recentNotifications.length, 30);
+    }
 
     if (decision.banner) {
       const notification = new Notification({

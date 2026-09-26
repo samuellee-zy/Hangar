@@ -423,6 +423,18 @@ export type ServiceView = ServiceInstance & {
   unread: number;
 };
 
+export interface DownloadEntry {
+  id: string;
+  name: string;
+  /** Where it was saved, once known. */
+  path: string;
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
+  received: number;
+  /** 0 when the server didn't say. */
+  total: number;
+  at: number;
+}
+
 /** Everything the rail renders. The renderer holds no state of its own — it draws this. */
 export interface ShellState {
   /** Services in the active workspace, flattened in visual order — drives ⌘1..9 and the palette. */
@@ -471,6 +483,13 @@ export interface ShellState {
   about?: { version: string; configPath: string; logPath: string };
   /** Whether macOS sends `mailto:` links to Hangar. */
   isDefaultMailApp?: boolean;
+  /**
+   * The last few notifications, newest first. In memory only: nothing about what your services
+   * said is ever written to disk or synced.
+   */
+  recentNotifications?: Array<{ serviceId: string; title: string; body: string; at: number }>;
+  /** Recent downloads, newest first. */
+  downloads?: DownloadEntry[];
   /** Whether the global shortcut actually registered — "taken" means another app owns it. */
   globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
   panes: Pane[];
@@ -538,6 +557,8 @@ export type Command =
   | { type: 'mark-read'; serviceId: string }
   | { type: 'reveal'; what: 'config' | 'log' }
   | { type: 'make-default-mail-app' }
+  | { type: 'pop-out-service'; serviceId: string }
+  | { type: 'reveal-download'; id: string }
   /** Opens a folder picker and writes the choice to that preference. */
   | { type: 'choose-folder'; purpose: 'downloads' | 'sync' }
   | { type: 'move-to-workspace'; serviceId: string; workspaceId: string }

@@ -201,6 +201,10 @@ export function showServiceMenu(
         label: 'Open in new pane',
         click: () => dispatch({ type: 'open-in-new-pane', serviceId: svc.id }),
       },
+      {
+        label: 'Open in separate window',
+        click: () => dispatch({ type: 'pop-out-service', serviceId: svc.id }),
+      },
       { type: 'separator' },
       {
         label: 'Mark as read',

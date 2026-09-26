@@ -72,6 +72,8 @@ export interface ProjectionInput {
   about?: { version: string; configPath: string; logPath: string };
   globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
   isDefaultMailApp?: boolean;
+  recentNotifications?: ShellState['recentNotifications'];
+  downloads?: ShellState['downloads'];
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
 }
@@ -113,6 +115,8 @@ export function projectShellState(input: ProjectionInput): ShellState {
     about: input.about,
     globalShortcutStatus: input.globalShortcutStatus,
     isDefaultMailApp: input.isDefaultMailApp,
+    recentNotifications: input.recentNotifications,
+    downloads: input.downloads,
     services: activeServicesOf(config, config.activeWorkspaceId).map(view),
     workspaces: config.workspaces,
     railItems: activeWorkspaceOf(config, config.activeWorkspaceId)?.items ?? [],
