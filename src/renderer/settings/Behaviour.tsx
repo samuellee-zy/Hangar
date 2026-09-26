@@ -1,8 +1,41 @@
-import { CommitOnBlur } from '../CommitOnBlur';
+import { useState } from 'react';
+import { toAccelerator } from '@shared/keyboard';
 import { Num, Toggle } from '../PreferenceControls';
-import type { Preferences } from '@shared/types';
+import { ChordCapture } from './Keyboard';
+import type { Preferences, ShellState } from '@shared/types';
 
-export function Behaviour({ behaviour }: { behaviour: Preferences['behaviour'] }) {
+/** Electron's `Command+Shift+H`, shown the way macOS writes it. */
+const showAccelerator = (accel: string) =>
+  accel
+    .replace(/(Command|Cmd|CommandOrControl|CmdOrCtrl)\+/gi, '⌘')
+    .replace(/(Control|Ctrl)\+/gi, '⌃')
+    .replace(/(Alt|Option)\+/gi, '⌥')
+    .replace(/Shift\+/gi, '⇧');
+
+const STATUS_NOTE: Record<NonNullable<ShellState['globalShortcutStatus']>, string> = {
+  off: 'Summons or hides Hangar from anywhere',
+  active: 'Works from any app',
+  taken: 'Another app already uses this — choose a different one',
+  invalid: "macOS won't accept this as a global shortcut — choose a different one",
+};
+
+export function Behaviour({
+  behaviour,
+  shortcutStatus = 'off',
+}: {
+  behaviour: Preferences['behaviour'];
+  shortcutStatus?: ShellState['globalShortcutStatus'];
+}) {
+  // Recorded rather than typed. It was a free-text field for an Electron accelerator string, and
+  // what it did with a typo — or a chord another app owned — was write a line to the log.
+  const [capturing, setCapturing] = useState(false);
+  const setShortcut = (value: string | null) => {
+    setCapturing(false);
+    window.hangar.send({ type: 'set-preference', path: 'behaviour.globalShortcut', value });
+  };
+  const current = behaviour.globalShortcut;
+  const failed = shortcutStatus === 'taken' || shortcutStatus === 'invalid';
+
   return (
     <section>
       <h2>Behaviour</h2>
@@ -29,22 +62,35 @@ export function Behaviour({ behaviour }: { behaviour: Preferences['behaviour'] }
         <li className="pref">
           <span className="pref-label">
             <span className="pref-name">Global shortcut</span>
-            <span className="pref-note">
-              Summons or hides Hangar from anywhere. e.g. Cmd+Shift+H — blank to disable
+            <span className={`pref-note${failed ? ' refused' : ''}`} role={failed ? 'alert' : undefined}>
+              {current ? STATUS_NOTE[shortcutStatus] : STATUS_NOTE.off}
             </span>
           </span>
-          <CommitOnBlur
-            aria-label="Global shortcut"
-            placeholder="Cmd+Shift+H"
-            value={behaviour.globalShortcut ?? ''}
-            onCommit={(accel) =>
-              window.hangar.send({
-                type: 'set-preference',
-                path: 'behaviour.globalShortcut',
-                value: accel.trim() || null,
-              })
-            }
-          />
+          <span style={{ display: 'flex', gap: 8 }}>
+            {capturing ? (
+              <ChordCapture
+                onCapture={(chord) => {
+                  const accel = toAccelerator(chord);
+                  if (accel) setShortcut(accel);
+                  else setCapturing(false);
+                }}
+                onCancel={() => setCapturing(false)}
+              />
+            ) : (
+              <button
+                className="chord"
+                aria-label={current ? `Global shortcut ${showAccelerator(current)}, change` : 'Set a global shortcut'}
+                onClick={() => setCapturing(true)}
+              >
+                {current ? showAccelerator(current) : 'Set…'}
+              </button>
+            )}
+            {current && !capturing && (
+              <button className="secondary" onClick={() => setShortcut(null)}>
+                Clear
+              </button>
+            )}
+          </span>
         </li>
       </ul>
     </section>

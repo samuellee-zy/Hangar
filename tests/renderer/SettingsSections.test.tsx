@@ -297,3 +297,36 @@ describe('more per service', () => {
     expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { customCss: '.ad{display:none}' } });
   });
 });
+
+describe('the global shortcut', () => {
+  it('IS RECORDED, NOT TYPED — pressing the keys stores an accelerator Electron accepts', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    render(<Behaviour behaviour={DEFAULT_PREFERENCES.behaviour} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Set a global shortcut' }));
+    await userEvent.keyboard('{Meta>}{Shift>}h{/Shift}{/Meta}');
+    expect(sent).toContainEqual({
+      type: 'set-preference',
+      path: 'behaviour.globalShortcut',
+      value: 'Shift+Command+H',
+    });
+  });
+
+  it('SAYS WHEN ANOTHER APP ALREADY HAS IT — that used to reach the log and nowhere else', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    render(
+      <Behaviour
+        behaviour={{ ...DEFAULT_PREFERENCES.behaviour, globalShortcut: 'Command+Shift+Space' }}
+        shortcutStatus="taken"
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Another app already uses this');
+    expect(screen.getByRole('button', { name: /Global shortcut ⌘⇧Space/ })).toBeInTheDocument();
+  });
+
+  it('Clear removes it', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    render(<Behaviour behaviour={{ ...DEFAULT_PREFERENCES.behaviour, globalShortcut: 'Command+H' }} shortcutStatus="active" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(sent).toContainEqual({ type: 'set-preference', path: 'behaviour.globalShortcut', value: null });
+  });
+});

@@ -70,6 +70,7 @@ export interface ProjectionInput {
   flashServiceId?: string | null;
   renameRequest?: { id: string; nonce: number } | null;
   about?: { version: string; configPath: string; logPath: string };
+  globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
 }
@@ -109,6 +110,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     flashServiceId: input.flashServiceId,
     renameRequest: input.renameRequest,
     about: input.about,
+    globalShortcutStatus: input.globalShortcutStatus,
     services: activeServicesOf(config, config.activeWorkspaceId).map(view),
     workspaces: config.workspaces,
     railItems: activeWorkspaceOf(config, config.activeWorkspaceId)?.items ?? [],

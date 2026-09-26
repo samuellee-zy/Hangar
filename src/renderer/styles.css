@@ -1619,3 +1619,27 @@ kbd {
   font: 12px ui-monospace, Menlo, monospace;
   resize: vertical;
 }
+
+/* The workspace switcher: a quieter tile than a service's, so it reads as navigation rather than
+   as one more thing to open. */
+.rail-workspace {
+  border: 1px solid var(--line);
+  background: transparent;
+  margin-bottom: 6px;
+}
+
+.rail-workspace-mark {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+/* Messages in another workspace: a muted badge, since they are not on this rail to act on. */
+.rail-badge.is-elsewhere {
+  background: var(--muted);
+}
+
+.settings .pref-note.refused {
+  color: #ff6b60;
+}

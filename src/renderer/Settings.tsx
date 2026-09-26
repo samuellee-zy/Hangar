@@ -39,7 +39,7 @@ const GROUPS: Group[] = [
     render: (s) => (
       <>
         <Appearance appearance={s.preferences.appearance} closeToTray={s.preferences.behaviour.closeToTray} />
-        <Behaviour behaviour={s.preferences.behaviour} />
+        <Behaviour behaviour={s.preferences.behaviour} shortcutStatus={s.globalShortcutStatus} />
       </>
     ),
   },

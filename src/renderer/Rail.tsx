@@ -82,6 +82,15 @@ export function Rail() {
   const position = new Map(state.services.slice(0, 9).map((s, i) => [s.id, i + 1]));
   // Every workspace, like the Dock badge: a message in another workspace is still one to hear about.
   const totalUnread = state.allServices.reduce((sum, s) => sum + s.unread, 0);
+
+  // The workspace switcher, when there is more than one to switch between. Its badge is unread in
+  // the *other* workspaces — the ones whose tiles aren't on this rail to show their own.
+  const workspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+  const here = new Set(state.services.map((s) => s.id));
+  const unreadElsewhere = state.allServices
+    .filter((s) => !here.has(s.id))
+    .reduce((sum, s) => sum + s.unread, 0);
+  const switcher = state.workspaces.length > 1 && workspace;
   const send = window.hangar.send;
 
   // Every draggable row in visual order, open folders' members included. One flat list because
@@ -267,6 +276,35 @@ export function Rail() {
           traffic lights — `chromeFor` puts them in the top strip whichever way it is sized — so
           there is nothing to clear and the strip would only be dead space. */}
       <div className="rail-drag" hidden={compactRail} />
+
+      {switcher && (
+        <button
+          className="rail-item rail-workspace"
+          aria-label={[
+            `Workspace ${workspace.name}`,
+            unreadElsewhere > 0 ? `${unreadElsewhere} unread in other workspaces` : null,
+            'switch workspace',
+          ]
+            .filter(Boolean)
+            .join(', ')}
+          title={`${workspace.name} — switch workspace (⌘⌥1…9)`}
+          onClick={() => send({ type: 'show-workspace-menu' })}
+        >
+          <span className="rail-workspace-mark" aria-hidden="true">
+            {workspace.name.trim().slice(0, 2).toUpperCase() || '··'}
+          </span>
+          {panel && (
+            <span className="rail-label" aria-hidden="true">
+              {workspace.name}
+            </span>
+          )}
+          {unreadElsewhere > 0 && (
+            <span className="rail-badge is-elsewhere" aria-hidden="true">
+              {badgeText(unreadElsewhere)}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* The tiles are drawn in both states. Only the labels come and go. */}
       <SortableRailList

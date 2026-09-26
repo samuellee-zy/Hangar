@@ -16,7 +16,7 @@ import type { ShellState } from '@shared/types';
  */
 
 /** Listens for one keystroke. Escape or a click elsewhere gives up. */
-function ChordCapture({
+export function ChordCapture({
   onCapture,
   onCancel,
 }: {

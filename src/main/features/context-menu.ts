@@ -319,3 +319,30 @@ export function showRailMenu(window: BaseWindow, dispatch: Dispatch): void {
     window,
   );
 }
+
+/**
+ * Switching workspace from the rail. ⌘⌥1…9 worked and nothing on screen said so, or said which
+ * workspace you were in, or that another one had messages waiting — this is all three.
+ */
+export function showWorkspaceMenu(
+  window: BaseWindow,
+  workspaces: Array<{ id: string; name: string; unread: number; active: boolean }>,
+  dispatch: Dispatch,
+): void {
+  popup(
+    [
+      ...workspaces.map((w, i) => ({
+        label: w.unread > 0 ? `${w.name}  (${w.unread})` : w.name,
+        type: 'radio' as const,
+        checked: w.active,
+        // Shown, not registered — the same reason as the app menu: ⌘⌥n is dispatched elsewhere.
+        ...(i < 9 ? { accelerator: `CmdOrCtrl+Alt+${i + 1}`, registerAccelerator: false } : {}),
+        click: () => dispatch({ type: 'set-workspace', workspaceId: w.id }),
+      })),
+      { type: 'separator' },
+      { label: 'New workspace', click: () => dispatch({ type: 'create-workspace', name: 'Workspace' }) },
+      { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings' }) },
+    ],
+    window,
+  );
+}

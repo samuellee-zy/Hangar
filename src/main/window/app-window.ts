@@ -45,6 +45,7 @@ import {
   installWebContextMenu,
   showFolderMenu,
   showRailMenu,
+  showWorkspaceMenu,
   showServiceMenu,
 } from '@main/features/context-menu';
 import { exportConfig, importConfig } from '@main/features/transfer';
@@ -68,6 +69,7 @@ import {
   applyLoginItem,
   applyProxy,
   releaseGlobalShortcut,
+  globalShortcutStatus,
 } from '@main/platform/system';
 import { allLiveSessions, clearBlockedHost, hostBlockedFor } from '@main/platform/session';
 import { setAdBlocking } from '@main/platform/adblock';
@@ -77,6 +79,7 @@ import {
   createFolder,
   deleteFolder,
   findFolder,
+  flattenServiceIds,
   moveItemTo,
   moveToFolder,
 } from '@core/workspace/folders';
@@ -453,6 +456,7 @@ export class AppWindow {
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
+      globalShortcutStatus: globalShortcutStatus(),
     });
   }
 
@@ -1582,6 +1586,21 @@ export class AppWindow {
       case 'show-rail-menu':
         showRailMenu(this.win, (c) => this.dispatch(c));
         break;
+
+      case 'show-workspace-menu': {
+        const config = loadConfig();
+        showWorkspaceMenu(
+          this.win,
+          config.workspaces.map((w) => ({
+            id: w.id,
+            name: w.name,
+            active: w.id === config.activeWorkspaceId,
+            unread: flattenServiceIds(w).reduce((sum, id) => sum + this.unread.get(id), 0),
+          })),
+          (c) => this.dispatch(c),
+        );
+        break;
+      }
 
       case 'open-settings':
         openSettingsWindow((wc) => this.registerConsumer(wc));

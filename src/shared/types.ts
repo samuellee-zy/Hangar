@@ -465,6 +465,8 @@ export interface ShellState {
   renameRequest?: { id: string; nonce: number } | null;
   /** For Settings → About: the running version and where its files really are. */
   about?: { version: string; configPath: string; logPath: string };
+  /** Whether the global shortcut actually registered — "taken" means another app owns it. */
+  globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
   panes: Pane[];
   focusedPaneId: string | null;
   activeWorkspaceId: string | null;
@@ -566,6 +568,7 @@ export type Command =
   | { type: 'sleep-service'; serviceId: string }
   | { type: 'show-service-menu'; serviceId: string }
   | { type: 'show-rail-menu' }
+  | { type: 'show-workspace-menu' }
   | { type: 'create-folder'; name: string; serviceIds?: string[] }
   | { type: 'rename-folder'; folderId: string; name: string }
   | { type: 'delete-folder'; folderId: string }

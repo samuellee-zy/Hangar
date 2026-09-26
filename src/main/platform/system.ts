@@ -124,6 +124,14 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
 let registered: string | null = null;
 let registeredToggle: (() => void) | null = null;
 
+/**
+ * How the last attempt to register went, for Settings to show. "Taken" and "invalid" used to go to
+ * the log and nowhere else, so a shortcut that another app already owned just silently didn't work.
+ */
+export type GlobalShortcutStatus = 'off' | 'active' | 'taken' | 'invalid';
+let status: GlobalShortcutStatus = 'off';
+export const globalShortcutStatus = (): GlobalShortcutStatus => status;
+
 export function applyGlobalShortcut(accelerator: string | null, toggle: () => void): void {
   // Same chord *and* same handler. The chord alone was the check, so after ⌘W rebuilt the window
   // the new one's `applySystemPreferences` was told "already registered" — and the shortcut kept
@@ -132,13 +140,19 @@ export function applyGlobalShortcut(accelerator: string | null, toggle: () => vo
   registeredToggle = null;
   if (registered) globalShortcut.unregister(registered);
   registered = null;
+  status = 'off';
   if (!accelerator) return;
   try {
     if (globalShortcut.register(accelerator, toggle)) {
       registered = accelerator;
       registeredToggle = toggle;
-    } else console.warn(`[shortcut] ${accelerator} is already taken by another app`);
+      status = 'active';
+    } else {
+      status = 'taken';
+      console.warn(`[shortcut] ${accelerator} is already taken by another app`);
+    }
   } catch (err) {
+    status = 'invalid';
     console.error('[shortcut] invalid accelerator:', err);
   }
 }
@@ -152,6 +166,7 @@ export const releaseGlobalShortcut = () => {
   globalShortcut.unregisterAll();
   registered = null;
   registeredToggle = null;
+  status = 'off';
 };
 
 export { session };

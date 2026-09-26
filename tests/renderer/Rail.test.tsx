@@ -483,3 +483,34 @@ describe('the add and settings buttons', () => {
     expect(sent).toContainEqual({ type: 'open-settings' });
   });
 });
+
+describe('the workspace switcher', () => {
+  const two = (over: Partial<ShellState> = {}) => {
+    const gmail = svc('gmail');
+    const figma = svc('figma', { unread: 3 });
+    return state({
+      services: [gmail],
+      allServices: [gmail, figma],
+      railItems: [{ kind: 'service', id: 'gmail' }],
+      workspaces: [
+        { id: 'w', name: 'Work', items: [{ kind: 'service', id: 'gmail' }] },
+        { id: 'd', name: 'Design', items: [{ kind: 'service', id: 'figma' }] },
+      ],
+      activeWorkspaceId: 'w',
+      ...over,
+    });
+  };
+
+  it('IS THERE WITH TWO WORKSPACES, says which one this is, and counts unread in the others', async () => {
+    await renderRail(two());
+    const button = screen.getByRole('button', { name: /^Workspace Work/ });
+    expect(button).toHaveAccessibleName('Workspace Work, 3 unread in other workspaces, switch workspace');
+    await userEvent.click(button);
+    expect(sent).toContainEqual({ type: 'show-workspace-menu' });
+  });
+
+  it('is not there with one workspace — there is nothing to switch to', async () => {
+    await renderRail(state({ workspaces: [{ id: 'w', name: 'All', items: [] }] }));
+    expect(screen.queryByRole('button', { name: /^Workspace/ })).not.toBeInTheDocument();
+  });
+});
