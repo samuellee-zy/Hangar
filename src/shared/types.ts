@@ -463,6 +463,8 @@ export interface ShellState {
    * nonce changes — so an unrelated broadcast arriving mid-edit cannot restart the edit.
    */
   renameRequest?: { id: string; nonce: number } | null;
+  /** For Settings → About: the running version and where its files really are. */
+  about?: { version: string; configPath: string; logPath: string };
   panes: Pane[];
   focusedPaneId: string | null;
   activeWorkspaceId: string | null;
@@ -526,6 +528,9 @@ export type Command =
   /** `until` null unmutes; a number mutes until then. */
   | { type: 'mute-service'; serviceId: string; until: number | null }
   | { type: 'mark-read'; serviceId: string }
+  | { type: 'reveal'; what: 'config' | 'log' }
+  /** Opens a folder picker and writes the choice to that preference. */
+  | { type: 'choose-folder'; purpose: 'downloads' | 'sync' }
   | { type: 'move-to-workspace'; serviceId: string; workspaceId: string }
   | { type: 'open-connections' }
   | { type: 'close-overlay' }

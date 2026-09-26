@@ -20,9 +20,9 @@ export function openSettingsWindow(register: (wc: Electron.WebContents) => void)
   }
 
   win = new BrowserWindow({
-    width: 720,
+    width: 880,
     height: 640,
-    minWidth: 560,
+    minWidth: 680,
     minHeight: 420,
     title: 'Hangar Settings',
     titleBarStyle: 'hiddenInset',

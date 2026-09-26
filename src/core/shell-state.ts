@@ -69,6 +69,7 @@ export interface ProjectionInput {
   syncStatus: SyncStatus;
   flashServiceId?: string | null;
   renameRequest?: { id: string; nonce: number } | null;
+  about?: { version: string; configPath: string; logPath: string };
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
 }
@@ -85,8 +86,10 @@ export function projectShellState(input: ProjectionInput): ShellState {
     return {
       ...svc,
       initials: entry?.initials ?? svc.name.slice(0, 2),
-      // Custom connections carry their own colour; catalog ones take the brand hex.
-      color: entry?.color ?? svc.color ?? '#666',
+      // The service's own colour when it has one — every custom connection does, and a catalog one
+      // does once someone picks a colour in Settings — and otherwise the brand hex. Brand first
+      // made a chosen colour do nothing, which is how two Gmail tiles stayed the same red.
+      color: svc.color ?? entry?.color ?? '#666',
       loading: runtime?.loading ?? false,
       // No runtime *is* the definition of asleep — there's no separate flag to disagree with.
       sleeping: !runtime,
@@ -105,6 +108,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     allServices: config.services.map(view),
     flashServiceId: input.flashServiceId,
     renameRequest: input.renameRequest,
+    about: input.about,
     services: activeServicesOf(config, config.activeWorkspaceId).map(view),
     workspaces: config.workspaces,
     railItems: activeWorkspaceOf(config, config.activeWorkspaceId)?.items ?? [],

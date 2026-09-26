@@ -266,3 +266,34 @@ describe('web push readiness', () => {
     expect(screen.getByDisplayValue('AIzaSecret')).toHaveAttribute('type', 'password');
   });
 });
+
+describe('more per service', () => {
+  it('A SELF-HOSTED START PAGE BRINGS ITS HOST WITH IT — or it would open in the browser', async () => {
+    const { PerService } = await import('../../src/renderer/settings/Connections');
+    render(<PerService state={state({ allServices: [svc('gitlab', { catalogId: 'gitlab' })] })} />);
+    const field = screen.getByLabelText('Start page for gitlab');
+    await userEvent.type(field, 'git.acme.io/dashboard{Enter}');
+    expect(sent).toContainEqual({
+      type: 'update-service',
+      serviceId: 'gitlab',
+      patch: { url: 'https://git.acme.io/dashboard', extraAllowedHosts: ['git.acme.io'] },
+    });
+  });
+
+  it('a start page on an already-allowed host changes only the URL', async () => {
+    const { PerService } = await import('../../src/renderer/settings/Connections');
+    render(<PerService state={state({ allServices: [svc('gitlab', { catalogId: 'gitlab' })] })} />);
+    await userEvent.type(screen.getByLabelText('Start page for gitlab'), 'https://gitlab.com/acme{Enter}');
+    expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gitlab', patch: { url: 'https://gitlab.com/acme' } });
+  });
+
+  it('custom CSS commits when you leave the box, not per keystroke', async () => {
+    const { PerService } = await import('../../src/renderer/settings/Connections');
+    render(<PerService state={state({ allServices: [svc('gmail')] })} />);
+    const area = screen.getByLabelText('Custom CSS for gmail');
+    await userEvent.type(area, '.ad{{display:none}');
+    expect(sent.filter((c) => (c as { type: string }).type === 'update-service')).toEqual([]);
+    await userEvent.tab();
+    expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { customCss: '.ad{display:none}' } });
+  });
+});

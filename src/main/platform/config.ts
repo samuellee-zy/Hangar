@@ -15,6 +15,9 @@ export const CUSTOM_CATALOG_ID = '__custom';
 
 const configPaths = () => pathsFor(app.getPath('userData'));
 
+/** Where config.json actually is — which moves with `HANGAR_USER_DATA`, so About can't hard-code it. */
+export const configFilePath = (): string => configPaths().main;
+
 export function makeInstance(
   config: Config,
   catalogId: string,

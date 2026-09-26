@@ -14,8 +14,11 @@ export function Behaviour({ behaviour }: { behaviour: Preferences['behaviour'] }
                 note="Starts Hangar when you log in. Takes effect from your next login"
                 path="behaviour.launchAtLogin" value={behaviour.launchAtLogin} />
         <Toggle name="Relaunch if it stops unexpectedly"
-                note="Restarts Hangar after a crash or a force quit, never after you quit it. Needs launch at login, and applies from your next login"
-                path="behaviour.relaunchOnCrash" value={behaviour.relaunchOnCrash} />
+                note={behaviour.launchAtLogin
+                  ? 'Restarts Hangar after a crash or a force quit, never after you quit it. Applies from your next login'
+                  : 'Needs Launch at login — launchd can only restart what it started'}
+                path="behaviour.relaunchOnCrash" value={behaviour.relaunchOnCrash}
+                disabled={!behaviour.launchAtLogin} />
         <Toggle name="Close to tray" note="Closing the window keeps Hangar running"
                 path="behaviour.closeToTray" value={behaviour.closeToTray} />
         <Toggle name="Confirm before quitting" path="behaviour.confirmQuit"

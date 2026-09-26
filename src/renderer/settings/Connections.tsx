@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import { catalogById } from '@shared/catalog';
+import { NumberField } from '../PreferenceControls';
 import { CommitOnBlur } from '../CommitOnBlur';
 import { ConfirmButton } from '../ConfirmButton';
-import type { ShellState } from '@shared/types';
+import type { ServiceInstance, ServiceView, ShellState } from '@shared/types';
 
 /**
  * The sections that list what you've actually connected, rather than preference rows.
@@ -243,7 +245,8 @@ export function PerService({ state }: { state: ShellState }) {
     <section>
       <h2>Per-service</h2>
       <p className="hint">
-        Zoom applies immediately. Custom CSS, JS and user agent need a reload of that service.
+        Zoom applies immediately; custom CSS and JavaScript on the next page load. A user agent
+        applies to the whole account once its services are next woken.
       </p>
       <ul className="rows">
         {state.allServices.map((svc) => (
@@ -340,6 +343,140 @@ export function PerService({ state }: { state: ShellState }) {
           </li>
         ))}
       </ul>
+      {/* Everything else a service can be told — each field one `update-service` already accepted
+          and Settings had no way to send. */}
+      <h3>More per service</h3>
+      <ul className="rows">
+        {state.allServices.map((svc) => (
+          <ServiceMore key={svc.id} svc={svc} />
+        ))}
+      </ul>
     </section>
+  );
+}
+
+/** A textarea that commits on blur, for CSS and JS — both far too long for an input. */
+function CommitArea({
+  value,
+  onCommit,
+  ...area
+}: {
+  value: string;
+  onCommit: (next: string) => void;
+} & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange' | 'onBlur'>) {
+  const [draft, setDraft] = useState(value);
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setDraft(value);
+  }, [value]);
+  return (
+    <textarea
+      className="field code"
+      spellCheck={false}
+      rows={4}
+      {...area}
+      value={draft}
+      onFocus={() => (editing.current = true)}
+      onChange={(e) => {
+        editing.current = true;
+        setDraft(e.target.value);
+      }}
+      onBlur={() => {
+        editing.current = false;
+        if (draft !== value) onCommit(draft);
+      }}
+    />
+  );
+}
+
+function ServiceMore({ svc }: { svc: ServiceView }) {
+  const entry = catalogById(svc.catalogId);
+  const send = (patch: Partial<ServiceInstance>) =>
+    window.hangar.send({ type: 'update-service', serviceId: svc.id, patch });
+
+  /**
+   * A different start page — which is also how a catalog entry points at a self-hosted copy:
+   * GitLab, Jira or Mattermost on your own domain. That domain is added to the service's extra
+   * hosts in the same change, or the page it now opens on would be sent to the browser.
+   */
+  const setUrl = (raw: string) => {
+    const text = raw.trim();
+    if (!text) return;
+    const url = text.includes('://') ? text : `https://${text}`;
+    let host: string;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      return;
+    }
+    const allowed = [...(svc.allowedHosts ?? entry?.allowedHosts ?? []), ...(svc.extraAllowedHosts ?? [])];
+    const covered = allowed.some((h) => host === h || host.endsWith(`.${h}`));
+    send(covered ? { url } : { url, extraAllowedHosts: [...(svc.extraAllowedHosts ?? []), host] });
+  };
+
+  return (
+    <li className="service-more">
+      <details>
+        <summary>{svc.name}</summary>
+        <div className="service-more-fields">
+          <label>
+            <span>Start page</span>
+            <CommitOnBlur
+              aria-label={`Start page for ${svc.name}`}
+              placeholder={entry?.url ?? svc.url ?? 'https://'}
+              value={svc.url ?? ''}
+              onCommit={setUrl}
+            />
+          </label>
+          <label>
+            <span>Colour</span>
+            <input
+              type="color"
+              aria-label={`Colour for ${svc.name}`}
+              value={/^#[0-9a-f]{6}$/i.test(svc.color) ? svc.color : '#666666'}
+              onChange={(e) => send({ color: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>Keep signed in for</span>
+            <NumberField
+              aria-label={`Days to keep ${svc.name} signed in`}
+              value={svc.cookieTtlDays ?? 30}
+              min={0}
+              max={400}
+              onCommit={(days) => send({ cookieTtlDays: days })}
+            />
+            <span className="meta">days · 0 leaves its cookies alone</span>
+          </label>
+          <label>
+            <span>User agent</span>
+            <CommitOnBlur
+              aria-label={`User agent for ${svc.name}`}
+              placeholder="Hangar's default"
+              allowEmpty
+              value={svc.userAgent ?? ''}
+              onCommit={(ua) => send({ userAgent: ua })}
+            />
+          </label>
+          <label className="stack">
+            <span>Custom CSS — applied on every page load</span>
+            <CommitArea
+              aria-label={`Custom CSS for ${svc.name}`}
+              placeholder="/* e.g. hide a banner */"
+              value={svc.customCss ?? ''}
+              onCommit={(css) => send({ customCss: css })}
+            />
+          </label>
+          <label className="stack">
+            <span>Custom JavaScript — runs in the page, and stays on this Mac (it never syncs)</span>
+            <CommitArea
+              aria-label={`Custom JavaScript for ${svc.name}`}
+              value={svc.customJs ?? ''}
+              onCommit={(js) => send({ customJs: js })}
+            />
+          </label>
+        </div>
+      </details>
+    </li>
   );
 }

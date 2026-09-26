@@ -93,6 +93,14 @@ export function Downloads({ downloads }: { downloads: Preferences['downloads'] }
               })
             }
           />
+          {/* A picker as well as the field: typing a path by hand is how the sync repo ended up
+              holding a `~` nothing expanded. */}
+          <button
+            className="secondary"
+            onClick={() => window.hangar.send({ type: 'choose-folder', purpose: 'downloads' })}
+          >
+            Choose…
+          </button>
         </li>
       </ul>
     </section>

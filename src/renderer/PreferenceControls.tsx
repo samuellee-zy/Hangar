@@ -66,12 +66,15 @@ export function Toggle({
   path,
   value,
   pending,
+  disabled,
 }: {
   name: string;
   note?: string;
   path: string;
   value: boolean;
   pending?: boolean;
+  /** Off because another setting makes this one meaningless — the note should say which. */
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
@@ -81,7 +84,7 @@ export function Toggle({
         {...describedBy(id, note, pending)}
         type="checkbox"
         checked={value}
-        disabled={pending}
+        disabled={pending || disabled}
         onChange={(e) => set(path, e.target.checked)}
       />
     </Row>
@@ -132,6 +135,7 @@ export function Num({
   max,
   step = 1,
   pending,
+  disabled,
 }: {
   name: string;
   note?: string;
@@ -141,6 +145,8 @@ export function Num({
   max: number;
   step?: number;
   pending?: boolean;
+  /** Off because another setting makes this one meaningless — the note should say which. */
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
@@ -152,7 +158,7 @@ export function Num({
         min={min}
         max={max}
         step={step}
-        disabled={pending}
+        disabled={pending || disabled}
         onCommit={(n) => set(path, n)}
       />
     </Row>

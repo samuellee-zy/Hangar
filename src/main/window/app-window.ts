@@ -22,6 +22,7 @@ import {
   updateConfig,
   updateConfigReturning,
   quarantinedConfigs,
+  configFilePath,
   onConfigSaved,
   saveConfig,
 } from '@main/platform/config';
@@ -117,6 +118,7 @@ import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import { resolveRepoPath } from '@core/config/sync';
 import { isWebUrl } from '@core/runtime/urls';
+import { LOG_FILE } from '@main/platform/log-file';
 import type {
   Command,
   DomUnreadRule,
@@ -450,6 +452,7 @@ export class AppWindow {
       flashServiceId: this.flashServiceId,
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
+      about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
     });
   }
 
@@ -1370,6 +1373,31 @@ export class AppWindow {
         this.pushUnreadRules(command.serviceId);
         this.sync();
         break;
+
+      case 'reveal':
+        if (command.what === 'config') shell.showItemInFolder(configFilePath());
+        else if (fs.existsSync(LOG_FILE)) shell.showItemInFolder(LOG_FILE);
+        break;
+
+      case 'choose-folder': {
+        const purpose = command.purpose;
+        void dialog
+          .showOpenDialog({
+            title: purpose === 'sync' ? 'Choose the sync repository' : 'Choose a downloads folder',
+            properties: ['openDirectory', 'createDirectory'],
+          })
+          .then(({ canceled, filePaths }) => {
+            const folder = filePaths[0];
+            if (canceled || !folder) return;
+            this.dispatch({
+              type: 'set-preference',
+              path: purpose === 'sync' ? 'sync.repoPath' : 'downloads.folder',
+              value: folder,
+            });
+          })
+          .catch((err: unknown) => console.error('[settings] folder picker failed:', err));
+        break;
+      }
 
       case 'mark-read':
         this.clearUnread(command.serviceId);

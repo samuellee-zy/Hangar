@@ -668,6 +668,60 @@ kbd {
   user-select: none;
 }
 
+/* With the sidebar: the window scrolls the content column, not itself. The top padding clears the
+   inset traffic lights, which sit over the nav. */
+.settings.has-nav {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-nav {
+  padding: 46px 10px 16px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.settings-nav ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-nav button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-nav button:hover {
+  background: var(--tile-hover);
+}
+
+.settings-nav button.is-current {
+  background: var(--tile);
+  font-weight: 500;
+}
+
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-content {
+  padding: 46px 28px 32px;
+  overflow-y: auto;
+}
+
 .settings h1 {
   font-size: 20px;
   font-weight: 500;
@@ -1518,4 +1572,50 @@ kbd {
 
 .custom-form .hint.refused {
   color: #ff6b60;
+}
+
+/* Per-service extras: one disclosure per service, so the long fields stay out of the way. */
+.settings .service-more {
+  display: block;
+  padding: 6px 0;
+}
+
+.settings .service-more summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.service-more-fields {
+  display: grid;
+  gap: 10px;
+  padding: 10px 0 6px 14px;
+}
+
+.service-more-fields label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.service-more-fields label > span:first-child {
+  width: 130px;
+  flex: none;
+  color: var(--muted);
+}
+
+.service-more-fields label.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.service-more-fields label.stack > span:first-child {
+  width: auto;
+}
+
+.settings textarea.code {
+  width: 100%;
+  box-sizing: border-box;
+  font: 12px ui-monospace, Menlo, monospace;
+  resize: vertical;
 }
