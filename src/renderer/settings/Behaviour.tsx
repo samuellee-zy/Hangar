@@ -31,6 +31,8 @@ export function Behaviour({ behaviour }: { behaviour: Preferences['behaviour'] }
             </span>
           </span>
           <CommitOnBlur
+            aria-label="Global shortcut"
+            placeholder="Cmd+Shift+H"
             value={behaviour.globalShortcut ?? ''}
             onCommit={(accel) =>
               window.hangar.send({

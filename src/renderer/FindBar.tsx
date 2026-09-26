@@ -36,6 +36,7 @@ export function FindBar() {
     <div className="findbar">
       <input
         ref={inputRef}
+        aria-label="Find in page"
         placeholder="Find in page"
         value={query}
         onChange={(e) => {
@@ -48,17 +49,20 @@ export function FindBar() {
           if (e.key === 'Enter') search(query, !e.shiftKey, true);
         }}
       />
-      <span className="findbar-count">
+      {/* A status region, so the count is read out as it changes rather than only when found. */}
+      <span className="findbar-count" role="status" aria-live="polite">
         {query && result ? (result.total ? `${result.active}/${result.total}` : 'none') : ''}
       </span>
-      <button title="Previous (⇧↵)" onClick={() => search(query, false, true)}>
-        ↑
+      {/* Glyph-only, so each needs a name of its own: "↑" is not something a screen reader says
+          usefully, and `title` is not an accessible name. */}
+      <button title="Previous (⇧↵)" aria-label="Previous match" onClick={() => search(query, false, true)}>
+        <span aria-hidden="true">↑</span>
       </button>
-      <button title="Next (↵)" onClick={() => search(query, true, true)}>
-        ↓
+      <button title="Next (↵)" aria-label="Next match" onClick={() => search(query, true, true)}>
+        <span aria-hidden="true">↓</span>
       </button>
-      <button title="Close (esc)" onClick={close}>
-        ✕
+      <button title="Close (esc)" aria-label="Close find" onClick={close}>
+        <span aria-hidden="true">✕</span>
       </button>
     </div>
   );

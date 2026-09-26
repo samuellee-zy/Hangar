@@ -22,6 +22,7 @@ export function Workspaces({ state }: { state: ShellState }) {
         {state.workspaces.map((ws) => (
           <li key={ws.id}>
             <CommitOnBlur
+              aria-label={`Workspace name, ${ws.name}`}
               value={ws.name}
               onCommit={(name) =>
                 window.hangar.send({ type: 'rename-workspace', workspaceId: ws.id, name })
@@ -117,6 +118,7 @@ export function Connections({ state }: { state: ShellState }) {
         {state.allServices.map((svc) => (
           <li key={svc.id}>
             <CommitOnBlur
+              aria-label={`Connection name, ${svc.name}`}
               value={svc.name}
               onCommit={(name) =>
                 window.hangar.send({ type: 'rename-service', serviceId: svc.id, name })
@@ -151,6 +153,7 @@ export function Accounts({ state }: { state: ShellState }) {
           return (
             <li key={account.id}>
               <CommitOnBlur
+                aria-label={`Account name, ${account.label}`}
                 value={account.label}
                 onCommit={(label) =>
                   window.hangar.send({ type: 'rename-account', accountId: account.id, label })
@@ -321,6 +324,7 @@ export function PerService({ state }: { state: ShellState }) {
                 step={0.1}
                 style={{ width: 66 }}
                 title="Zoom"
+                aria-label={`Zoom for ${svc.name}`}
                 value={String(svc.zoom)}
                 onCommit={(next) => {
                   const zoom = Number(next);

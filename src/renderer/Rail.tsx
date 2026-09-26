@@ -263,6 +263,11 @@ export function Rail() {
       <SortableRailList
         ids={rows}
         horizontal={horizontal}
+        nameOf={(id) => {
+          if (byId.has(id)) return byId.get(id)!.name;
+          const folder = state.railItems.find((item) => item.id === id);
+          return folder?.kind === 'folder' ? `folder ${folder.name}` : 'item';
+        }}
         onMove={({ activeId, overId }) => send({ type: 'move-item', activeId, overId })}
         canDropOnPane={(id) => byId.has(id)}
       >

@@ -2167,3 +2167,28 @@ the asar. dependency-cruiser's no-dev-deps rule now exempts `src/renderer/` for 
 on a timer inside the page, and throttling would let the count lag by up to a minute. That trade
 wants a battery measurement first, not a guess.
 
+## 101. Names, keys and motion
+
+The accessibility findings from the audit, all of them small and all of them the difference between
+a control a screen reader can use and one it can't.
+
+- **About fifteen controls had no accessible name**: the global shortcut, the proxy host and port,
+  the downloads folder, every workspace, connection and account name field, per-service zoom
+  (titled "Zoom" — a title is not a name), the Add Connection search and custom URL/name fields, and
+  the find bar's input and its ↑ ↓ ✕ buttons, which a screen reader read as the glyphs. All are
+  labelled now, and the glyphs are hidden behind real names.
+- **Reordering from the keyboard used a key macOS takes.** dnd-kit's lift is on ⌃Space so that Space
+  can open a tile (#25), and ⌃Space is also the default shortcut for switching input source: with
+  two keyboard layouts, reordering never reached the rail. ⌥↑/⌥↓ (⌥←/→ on a horizontal rail) now
+  moves the focused tile one step without lifting it, and a status region says where it went. The
+  handler stops the key even at the end of a list, because a folder member's wrapper is inside the
+  folder's and the folder would otherwise move instead.
+- **Drag announcements said the wrong thing.** dnd-kit's defaults told you to press Space — which
+  opens the service — and named the tile by its id, a UUID. The instructions now give the keys that
+  work, and the announcements use the tile's name.
+- **Nothing honoured "Reduce motion".** The loading pulse and waking shimmer looped for as long as a
+  service was loading. Under `prefers-reduced-motion` every animation and transition collapses to
+  its end state; none of them carry information that isn't also shown statically.
+- **Two messages were only visible**: the refused-shortcut explanation is an alert now, and the
+  find-bar's match count is a status region, read out as it changes.
+

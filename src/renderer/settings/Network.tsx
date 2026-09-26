@@ -82,6 +82,8 @@ export function Downloads({ downloads }: { downloads: Preferences['downloads'] }
             <span className="pref-note">Blank uses your system Downloads folder</span>
           </span>
           <CommitOnBlur
+            aria-label="Downloads folder"
+            placeholder="~/Downloads"
             value={downloads.folder ?? ''}
             onCommit={(folder) =>
               window.hangar.send({

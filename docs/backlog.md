@@ -379,16 +379,15 @@ Still open, deliberately:
 - The overlay, find bar and drag views are kept after first use on purpose: they are reused, and
   rebuilding one per open would cost a renderer load each time.
 
-### 13.5 Accessibility (P2)
+### 13.5 Accessibility (P2) — closed
 
-- ~15 inputs without labels: global shortcut, proxy host/port, downloads folder, workspace/service/
-  account names, per-service zoom, picker search and custom URL/name, palette, find bar and its
-  glyph-only ↑ ↓ ✕ buttons.
-- Drag-and-drop announcements say "press space" (the key is ⌃Space) and read raw UUIDs; ⌃Space is
-  also macOS's input-source switch, so keyboard reordering is swallowed with two input sources.
-- The palette is not a combobox/listbox, and shows "No matches" before state loads.
-- No `prefers-reduced-motion`: loading/waking pulses loop forever. The refused-shortcut message and
-  find-bar match count aren't live regions.
+In [decisions #101](decisions.md): every input and glyph-only button has an accessible name; the
+tiles reorder with ⌥ and an arrow, and drag announcements use names and the real keys; the palette
+is a combobox over a listbox (#99); `prefers-reduced-motion` stops the looping animations; the
+refused-shortcut message is an alert and the find-bar count is a status region.
+
+Still open from §4.3: pane landmark roles, and a real VoiceOver pass — both need the app running
+under VoiceOver rather than more code first.
 
 ### 13.6 Structure (P2)
 

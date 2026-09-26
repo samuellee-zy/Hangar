@@ -50,6 +50,7 @@ export function AddConnection() {
         <input
           autoFocus
           className="palette-input"
+          aria-label="Search services"
           placeholder="Search services…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -179,6 +180,7 @@ function CustomForm({ onCancel }: { onCancel: () => void }) {
     <div className="custom-form">
       <input
         className="field"
+        aria-label="Website address"
         placeholder="example.com"
         value={url}
         autoFocus
@@ -187,6 +189,7 @@ function CustomForm({ onCancel }: { onCancel: () => void }) {
       />
       <input
         className="field"
+        aria-label="Name"
         placeholder={host ? `Name (default: ${host})` : 'Name'}
         value={name}
         onChange={(e) => setName(e.target.value)}

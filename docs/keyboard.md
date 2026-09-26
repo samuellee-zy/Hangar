@@ -23,7 +23,8 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 | `⌘⌥1`…`⌘⌥9` | Switch workspace |
 | `Escape` | Close the overlay |
 | `⌥`-click a tile | Open alongside instead of replacing |
-| `⌃Space` on a tile | Lift for keyboard drag; arrows move, `⌃Space` drops, `Esc` cancels |
+| `⌥↑` / `⌥↓` on a tile | Move it one place up or down the rail (`⌥←` / `⌥→` on a top or bottom rail) |
+| `⌃Space` on a tile | Lift for keyboard drag; arrows move, `⌃Space` drops, `Esc` cancels. Also macOS's input-source switch — with two keyboard layouts, use `⌥` and an arrow instead |
 
 Plus one optional **global** shortcut, set in Settings, to summon or hide the window from anywhere.
 
