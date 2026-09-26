@@ -15,6 +15,7 @@ import {
   serialise,
   validateIncoming,
   decideSync,
+  resolveRepoPath,
   restoreLocalPreferences,
   parseRemote,
   probeUrlFor,
@@ -458,5 +459,25 @@ describe('the override does not travel', () => {
     // Writing "yes, I know this is public" into the public repo would be its own small absurdity,
     // and on the second machine it would pre-authorise a repo that machine never looked at.
     expect(serialise(withOverride)).not.toContain('allowPublicRepo');
+  });
+});
+
+describe('the repo path as typed', () => {
+  const home = '/Users/alice';
+
+  it("THE PLACEHOLDER'S OWN FORM WORKS — ~/code/dotfiles was used verbatim and was not a repository", () => {
+    expect(resolveRepoPath('~/code/dotfiles', home)).toBe('/Users/alice/code/dotfiles');
+    expect(resolveRepoPath('~', home)).toBe('/Users/alice');
+  });
+
+  it('a relative path is from the home folder, not from / — which is where a Finder launch runs', () => {
+    expect(resolveRepoPath('code/dotfiles', home)).toBe('/Users/alice/code/dotfiles');
+  });
+
+  it('absolute paths pass through; blank means sync is off', () => {
+    expect(resolveRepoPath('/srv/config', home)).toBe('/srv/config');
+    expect(resolveRepoPath('   ', home)).toBeNull();
+    expect(resolveRepoPath(undefined, home)).toBeNull();
+    expect(resolveRepoPath('  ~/x  ', `${home}/`)).toBe('/Users/alice/x');
   });
 });

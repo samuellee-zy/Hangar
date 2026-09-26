@@ -157,3 +157,33 @@ describe('adding a second account', () => {
     });
   });
 });
+
+describe('the focus trap', () => {
+  it('TAB STAYS IN THE PICKER — the trap was set up before the picker existed, and never engaged', async () => {
+    // Bait outside the dialog, or `dialog.contains(activeElement)` is trivially true (see the
+    // Palette tests for how that once let a disabled trap pass).
+    const before = document.createElement('button');
+    before.textContent = 'before';
+    document.body.prepend(before);
+
+    // State arrives after the first render, exactly as it does in the app.
+    setShellState(state());
+    render(<AddConnection />);
+    await act(async () => {});
+    const after = document.createElement('button');
+    after.textContent = 'after';
+    document.body.append(after);
+
+    const dialog = screen.getByRole('dialog');
+    for (const shift of [false, true]) {
+      (dialog.querySelector('input') as HTMLElement).focus();
+      for (let i = 0; i < 60; i++) {
+        await userEvent.tab({ shift });
+        expect(document.activeElement, `escaped after ${i + 1} (shift: ${shift})`).not.toBe(before);
+        expect(document.activeElement, `escaped after ${i + 1} (shift: ${shift})`).not.toBe(after);
+      }
+    }
+    before.remove();
+    after.remove();
+  });
+});

@@ -12,6 +12,7 @@ import {
   rehomeUnreachable,
   renameWorkspace,
   reorderWorkspaces,
+  workspaceHolding,
 } from '@core/workspace/workspaces';
 
 
@@ -141,5 +142,26 @@ describe('layout cleanup', () => {
     c.layouts = { w1: { panes: [], focusedPaneId: null } };
     deleteWorkspace(c, 'w1'); // the last workspace — refused
     assert.deepEqual(Object.keys(c.layouts), ['w1']);
+  });
+});
+
+describe('which workspace holds a service', () => {
+  it('the active one when it is there, even if another holds it too', () => {
+    const c = config(ws('w1', 'a', 'b'), ws('w2', 'b'));
+    c.activeWorkspaceId = 'w2';
+    assert.equal(workspaceHolding(c, 'b'), 'w2');
+  });
+
+  it('otherwise the first that has it — including inside a folder', () => {
+    const c = config(ws('w1', 'a'), {
+      id: 'w2',
+      name: 'w2',
+      items: [{ kind: 'folder', id: 'f', name: 'F', collapsed: true, serviceIds: ['z'] }],
+    });
+    assert.equal(workspaceHolding(c, 'z'), 'w2');
+  });
+
+  it('null for a service no workspace holds', () => {
+    assert.equal(workspaceHolding(config(ws('w1', 'a')), 'nope'), null);
   });
 });

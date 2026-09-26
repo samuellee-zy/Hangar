@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
 /**
  * Thin wrappers over native inputs. They send a `set-preference` command and nothing else — main
@@ -145,24 +145,107 @@ export function Num({
   const id = useId();
   return (
     <Row id={id} name={name} note={note} pending={pending}>
-      <input
+      <NumberField
         id={id}
         {...describedBy(id, note, pending)}
-        type="number"
         value={value}
         min={min}
         max={max}
         step={step}
         disabled={pending}
-        style={{ width: 82 }}
-        // Clamped here as well as in main: a number input happily emits out-of-range values when
-        // typed rather than stepped.
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (Number.isFinite(n)) set(path, Math.min(max, Math.max(min, n)));
-        }}
+        onCommit={(n) => set(path, n)}
       />
     </Row>
+  );
+}
+
+/** How long a valid value sits before it is applied, so the spinner arrows still feel live. */
+const NUMBER_SETTLE_MS = 250;
+
+/**
+ * A number that can be typed.
+ *
+ * It clamped on every keystroke. With a minimum of 56, typing "7" on the way to "72" became 56 on the
+ * spot, and the next keystroke made it 566 — clamped to the maximum. A rail size could not be typed
+ * at all, and every keystroke also wrote the config and re-laid out the window.
+ *
+ * Now the text is yours while you type. A value is applied once it is a number *inside* the range,
+ * after a short pause; leaving the field — or Enter — clamps whatever is there, and Escape or an
+ * empty field puts the current value back.
+ */
+export function NumberField({
+  value,
+  min,
+  max,
+  onCommit,
+  ...input
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (next: number) => void;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'min' | 'max' | 'onChange' | 'onBlur' | 'type'>) {
+  const [draft, setDraft] = useState(String(value));
+  const editing = useRef(false);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Follow outside changes — a reset, a sync — but never while this is the field being typed in.
+  useEffect(() => {
+    if (!editing.current) setDraft(String(value));
+  }, [value]);
+  useEffect(() => () => {
+    if (settle.current) clearTimeout(settle.current);
+  }, []);
+
+  const cancelSettle = () => {
+    if (settle.current) clearTimeout(settle.current);
+    settle.current = null;
+  };
+
+  const finish = (text: string) => {
+    cancelSettle();
+    editing.current = false;
+    const n = Number(text);
+    if (text.trim() === '' || !Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, n));
+    setDraft(String(clamped));
+    if (clamped !== value) onCommit(clamped);
+  };
+
+  return (
+    <input
+      {...input}
+      type="number"
+      min={min}
+      max={max}
+      style={{ width: 82, ...input.style }}
+      value={draft}
+      onFocus={() => {
+        editing.current = true;
+      }}
+      onChange={(e) => {
+        editing.current = true;
+        const text = e.target.value;
+        setDraft(text);
+        cancelSettle();
+        const n = Number(text);
+        if (text.trim() !== '' && Number.isFinite(n) && n >= min && n <= max && n !== value) {
+          settle.current = setTimeout(() => onCommit(n), NUMBER_SETTLE_MS);
+        }
+      }}
+      onBlur={(e) => finish(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') finish((e.target as HTMLInputElement).value);
+        if (e.key === 'Escape') {
+          cancelSettle();
+          editing.current = false;
+          setDraft(String(value));
+        }
+      }}
+    />
   );
 }
 

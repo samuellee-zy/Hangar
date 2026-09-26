@@ -224,7 +224,8 @@ Not bugs; things that will look like bugs later.
 
 ## 8. Suggested order
 
-If picking this up fresh, start with **§13.3** — UI that doesn't do what it says. Then:
+If picking this up fresh, the P1s in §13 are closed; the P2s (§13.4–13.6) and the enhancements
+(§13.7–13.9) are what remain. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -350,25 +351,15 @@ fullscreen window leaves fullscreen first; the log rotates, is written for Finde
 Electron's own warnings have their query strings removed; logout no longer stops on the quit
 confirmation.
 
-### 13.3 UI bugs (P1)
+### 13.3 UI bugs (P1) — closed
 
-- **Folders cannot be renamed.** Rename… opens Settings, which has no folder section, and nothing
-  sends `rename-folder` (`context-menu.ts:229`). Reuse the rail's inline service rename.
-- **The Add-connection focus trap never engages**: the picker renders nothing until state arrives,
-  and `useFocusTrap` runs once, on that empty first render (`AddConnection.tsx:35`,
-  `useFocusTrap.ts:19`).
-- **Number fields clamp per keystroke** (`PreferenceControls.tsx:160`): a rail size can't be typed
-  (min 56 turns "7" into 56), and every keystroke writes the config and relays out. Use
-  `CommitOnBlur`, as zoom and proxy port already do.
-- **Destructive buttons have no confirm or undo** in Settings: Remove, Sign out (wipes cookies),
-  Delete workspace, Reset all. The context-menu path does confirm.
-- **"Custom connection hosts" is read-only**, while two hints tell you to add hosts there;
-  `update-service` already accepts them.
-- **`~` isn't expanded in the sync path**, though the placeholder is `~/code/dotfiles`
-  (`features/sync.ts:374`).
-- **Tray, palette and the rail's live unread see only the active workspace**; the Dock badge counts
-  all of them, so tray and Dock disagree and ⌘K can't reach another workspace's service.
-- Stale rename can reopen on a rail reload (`Rail.tsx:39`, `app-window.ts:185`).
+In [decisions #99](decisions.md): folders rename in place in an opened panel, from a Folders section
+in Settings otherwise, and a new folder asks for its name straight away; a reloaded rail no longer
+reopens the last rename; destructive buttons in Settings take two clicks and the harmless ones stop
+looking dangerous; the Add Connection focus trap engages; number fields can be typed into; allowed
+hosts are editable for every service; the sync path expands `~`; the tray, the palette and the
+rail's spoken count see every workspace, and focusing a service elsewhere switches to it; the
+remove dialog says what removal does.
 
 ### 13.4 Performance (P2)
 

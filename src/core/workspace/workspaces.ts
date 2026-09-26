@@ -78,3 +78,16 @@ export function rehomeUnreachable(config: Config): string[] {
   }
   return orphans;
 }
+
+/**
+ * The workspace a service lives in, preferring the active one when it is in several.
+ *
+ * For anything that can name a service from outside the rail — the tray, the palette, a
+ * notification — and so has to be able to reach one in a workspace you are not looking at.
+ */
+export function workspaceHolding(config: Config, serviceId: string): string | null {
+  const holds = (w: Config['workspaces'][number]) => flattenServiceIds(w).includes(serviceId);
+  const active = config.workspaces.find((w) => w.id === config.activeWorkspaceId);
+  if (active && holds(active)) return active.id;
+  return config.workspaces.find(holds)?.id ?? null;
+}

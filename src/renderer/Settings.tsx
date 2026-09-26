@@ -1,6 +1,6 @@
 import { Appearance } from './settings/Appearance';
 import { Behaviour } from './settings/Behaviour';
-import { Accounts, Connections, CustomHosts, PerService, Workspaces } from './settings/Connections';
+import { Accounts, Connections, CustomHosts, Folders, PerService, Workspaces } from './settings/Connections';
 import { Keyboard } from './settings/Keyboard';
 import { Downloads, Network } from './settings/Network';
 import { Notifications } from './settings/Notifications';
@@ -36,6 +36,7 @@ export function Settings() {
       <Notifications notifications={notifications} />
       <Unread state={state} />
       <Workspaces state={state} />
+      <Folders state={state} />
       <Network network={network} />
       <Downloads downloads={downloads} />
       <Connections state={state} />

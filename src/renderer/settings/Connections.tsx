@@ -1,5 +1,6 @@
 import { catalogById } from '@shared/catalog';
 import { CommitOnBlur } from '../CommitOnBlur';
+import { ConfirmButton } from '../ConfirmButton';
 import type { ShellState } from '@shared/types';
 
 /**
@@ -30,18 +31,18 @@ export function Workspaces({ state }: { state: ShellState }) {
               {ws.id === state.activeWorkspaceId ? 'active · ' : ''}
               {ws.items.length} item{ws.items.length === 1 ? '' : 's'}
             </span>
-            <button
-              className="danger"
+            <ConfirmButton
               disabled={state.workspaces.length <= 1}
               title={
                 state.workspaces.length <= 1
                   ? 'The last workspace cannot be deleted'
                   : `Delete ${ws.name}`
               }
-              onClick={() => window.hangar.send({ type: 'delete-workspace', workspaceId: ws.id })}
+              confirmLabel={`Delete ${ws.name}?`}
+              onConfirm={() => window.hangar.send({ type: 'delete-workspace', workspaceId: ws.id })}
             >
               Delete
-            </button>
+            </ConfirmButton>
           </li>
         ))}
         <li className="pref">
@@ -50,12 +51,53 @@ export function Workspaces({ state }: { state: ShellState }) {
             <span className="pref-note">Switch with ⌘⌥1…9</span>
           </span>
           <button
-            className="danger"
+            className="secondary"
             onClick={() => window.hangar.send({ type: 'create-workspace', name: 'Workspace' })}
           >
             Add
           </button>
         </li>
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Every folder in every workspace, renamable.
+ *
+ * The rail can only edit a name in place when it is an opened panel; an ordinary or horizontal rail
+ * has nowhere to put a text field, so right-click ▸ Rename… comes here. Before this section existed
+ * it came here too, to a page with no folders on it — every folder stayed "New folder" for good.
+ */
+export function Folders({ state }: { state: ShellState }) {
+  const folders = state.workspaces.flatMap((ws) =>
+    ws.items.flatMap((item) => (item.kind === 'folder' ? [{ ws, folder: item }] : [])),
+  );
+  if (folders.length === 0) return null;
+  const multipleWorkspaces = state.workspaces.length > 1;
+
+  return (
+    <section>
+      <h2>Folders</h2>
+      <p className="hint">
+        Make one from a tile's right-click menu. Ungrouping keeps the services.
+      </p>
+      <ul className="rows">
+        {folders.map(({ ws, folder }) => (
+          <li key={folder.id}>
+            <CommitOnBlur
+              aria-label={`Folder name, ${folder.name}`}
+              value={folder.name}
+              onCommit={(name) =>
+                window.hangar.send({ type: 'rename-folder', folderId: folder.id, name })
+              }
+            />
+            <span className="meta">
+              {multipleWorkspaces ? `${ws.name} · ` : ''}
+              {folder.serviceIds.length} service{folder.serviceIds.length === 1 ? '' : 's'}
+            </span>
+          </li>
+        ))}
       </ul>
     </section>
   );
@@ -81,12 +123,13 @@ export function Connections({ state }: { state: ShellState }) {
               }
             />
             <span className="meta">{labelFor(svc.accountId)}</span>
-            <button
-              className="danger"
-              onClick={() => window.hangar.send({ type: 'remove-service', serviceId: svc.id })}
+            <ConfirmButton
+              title={`Remove ${svc.name}`}
+              confirmLabel={`Remove ${svc.name}?`}
+              onConfirm={() => window.hangar.send({ type: 'remove-service', serviceId: svc.id })}
             >
               Remove
-            </button>
+            </ConfirmButton>
           </li>
         ))}
       </ul>
@@ -116,15 +159,15 @@ export function Accounts({ state }: { state: ShellState }) {
               <span className="meta">
                 {users.length ? users.map((s) => s.name).join(', ') : 'unused'}
               </span>
-              <button
-                className="danger"
+              <ConfirmButton
                 title={`Clear cookies for ${account.label}`}
-                onClick={() =>
+                confirmLabel={users.length > 1 ? `Sign out of all ${users.length}?` : 'Sign out?'}
+                onConfirm={() =>
                   window.hangar.send({ type: 'sign-out-account', accountId: account.id })
                 }
               >
                 Sign out
-              </button>
+              </ConfirmButton>
             </li>
           );
         })}
@@ -133,24 +176,60 @@ export function Accounts({ state }: { state: ShellState }) {
   );
 }
 
+/** Splits what was typed into hosts. Main validates each one; this only has to find them. */
+export const parseHosts = (text: string): string[] =>
+  [...new Set(text.split(/[\s,]+/).map((h) => h.trim().toLowerCase()).filter(Boolean))];
+
+/**
+ * Where each service may navigate without being sent to the browser, and a field to add more.
+ *
+ * It only *listed* the hosts, while this hint and the Add Connection form both told you to add a
+ * sign-in provider's domain here. The only way to add one was the Allow button on the blocked page,
+ * which needs the block to happen first. Every service is listed, not just custom ones: a catalog
+ * service behind a company SSO needs that SSO's domain just as much.
+ *
+ * What you type is additive — `extraAllowedHosts` — and never replaces the catalog's own list, for
+ * the reason on that field. Main keeps only valid hostnames, so the field showing back what was
+ * accepted is the feedback when something wasn't.
+ */
 export function CustomHosts({ state }: { state: ShellState }) {
   const custom = state.allServices.filter((s) => s.allowedHosts);
 
   return (
     <section>
-      <h2>Custom connection hosts</h2>
+      <h2>Allowed hosts</h2>
       <p className="hint">
-        A custom connection only stays in-app for these domains. If it signs in with Google or
-        Okta, add that provider's domain here — otherwise its login opens in your browser.
+        A service only stays in-app on these domains; anything else opens in your browser. If it
+        signs in with Google, Okta or your company's SSO, add that domain — separate several with
+        commas.
       </p>
       <ul className="rows">
         {custom.length === 0 && <li className="empty">No custom connections yet.</li>}
-        {custom.map((svc) => (
-          <li key={svc.id}>
-            <span className="meta grow">{svc.name}</span>
-            <span className="meta">{svc.allowedHosts?.join(', ')}</span>
-          </li>
-        ))}
+        {state.allServices.map((svc) => {
+          const base = svc.allowedHosts ?? catalogById(svc.catalogId)?.allowedHosts ?? [];
+          const shown = base.slice(0, 3).join(', ') + (base.length > 3 ? ` +${base.length - 3}` : '');
+          return (
+            <li key={svc.id}>
+              <span className="meta grow" title={base.join(', ')}>
+                {svc.name}
+                {shown && <span className="hosts-base"> — {shown}</span>}
+              </span>
+              <CommitOnBlur
+                aria-label={`Extra allowed hosts for ${svc.name}`}
+                placeholder="login.example.com"
+                allowEmpty
+                value={(svc.extraAllowedHosts ?? []).join(', ')}
+                onCommit={(text) =>
+                  window.hangar.send({
+                    type: 'update-service',
+                    serviceId: svc.id,
+                    patch: { extraAllowedHosts: parseHosts(text) },
+                  })
+                }
+              />
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

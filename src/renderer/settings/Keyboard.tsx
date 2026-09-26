@@ -184,7 +184,7 @@ function Passthrough({ state }: { state: ShellState }) {
                 />
               ) : (
                 <button
-                  className="danger"
+                  className="secondary"
                   title={`Leave a chord to ${svc.name}`}
                   onClick={() => setCapturing(svc.id)}
                 >

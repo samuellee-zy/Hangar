@@ -195,8 +195,8 @@ function CustomForm({ onCancel }: { onCancel: () => void }) {
       {/* The single most likely way a custom connection appears broken: it signs in with Google
           or Okta, that host isn't in its allowlist, so its own login opens in Safari instead. */}
       <p className="hint">
-        Signs in with Google, Okta or similar? Add that provider's domain under Settings →
-        Connections after adding, or its login will open in your browser instead.
+        Signs in with Google, Okta or similar? Add that provider's domain under Settings → Allowed
+        hosts after adding, or its login will open in your browser instead.
       </p>
       <div className="row">
         <button onClick={submit} disabled={!host}>

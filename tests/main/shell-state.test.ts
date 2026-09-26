@@ -125,6 +125,19 @@ describe('projectShellState', () => {
     expect(state.services[0]!.unread).toBe(0);
   });
 
+  it('EVERY SERVICE CARRIES ITS UNREAD, not only the active workspace\'s — the tray and palette read these', () => {
+    const c = config({
+      services: [svc('a'), svc('b')],
+      workspaces: [ws('w1', ['a']), ws('w2', ['b'])],
+      activeWorkspaceId: 'w1',
+    });
+    const state = projectShellState({ ...base, config: c, unread: new Map([['b', 4]]) });
+    expect(state.services.map((s) => s.id)).toEqual(['a']);
+    const b = state.allServices.find((s) => s.id === 'b')!;
+    expect(b.unread).toBe(4);
+    expect(b.sleeping).toBe(true);
+  });
+
   it('a live runtime contributes loading and unread', () => {
     const c = config({ services: [svc('a')], workspaces: [ws('w', ['a'])], activeWorkspaceId: 'w' });
     const state = projectShellState({

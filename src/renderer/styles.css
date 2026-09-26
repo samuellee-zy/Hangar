@@ -615,6 +615,20 @@ body[data-route='drag'] {
   font-size: 12px;
 }
 
+/* Between the name and the hint, so a service with messages waiting stands out in the list. */
+.palette-unread {
+  margin-left: auto;
+  margin-right: 10px;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #ff453a;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
 .palette-empty {
   cursor: default;
   justify-content: center;
@@ -759,7 +773,8 @@ kbd {
   color: #ff6b60;
 }
 
-.settings button.danger {
+.settings button.danger,
+.settings button.secondary {
   padding: 5px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -773,6 +788,20 @@ kbd {
 .settings button.danger:hover {
   color: #ff6b60;
   border-color: #ff6b6040;
+}
+
+/* Same shape as `danger`, without the red: for Add, Export, Import and Default, which were styled as
+   destructive for want of anything else and so turned red under the pointer. */
+.settings button.secondary:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* A ConfirmButton after its first click: now it is asking, and it should look like it. */
+.settings button.danger.is-armed {
+  color: #ff6b60;
+  border-color: #ff6b60;
+  background: #ff6b6014;
 }
 
 /* Confirms an action whose effect might otherwise be invisible — focusing a service that is
@@ -888,6 +917,27 @@ kbd {
 
 .folder-empty {
   grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+/* In a panel the grid is the folder's icon, so it takes the icon's place at the start of the row
+   rather than centring itself in a row that is now 180px wide. */
+.rail.is-panel .folder-grid {
+  width: 20px;
+  margin: 0;
+  flex: none;
+}
+
+.rail.is-panel .folder-mini {
+  width: 9px;
+  height: 9px;
+}
+
+/* Stands in for the grid while the name is being edited, so the field starts where the name did. */
+.rail-rename-folder {
+  width: 20px;
+  flex: none;
+  text-align: center;
   color: var(--muted);
 }
 

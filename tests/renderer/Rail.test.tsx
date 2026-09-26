@@ -350,7 +350,7 @@ describe('compact rail chevron', () => {
 
     await act(async () =>
       pushState(
-        compactState({ railExpanded: true, renameRequest: { serviceId: 'gmail', nonce: 1 } }),
+        compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 1 } }),
       ),
     );
     expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
@@ -360,8 +360,9 @@ describe('compact rail chevron', () => {
   it('AN UNRELATED BROADCAST DOES NOT REOPEN a finished edit', async () => {
     // `renameRequest` is carried by every subsequent broadcast. Reacting to the request rather
     // than to a *change* in its nonce would reopen the field on the next unread tick.
-    const request = { serviceId: 'gmail', nonce: 1 };
-    await renderRail(compactState({ railExpanded: true, renameRequest: request }));
+    const request = { id: 'gmail', nonce: 1 };
+    await renderRail(compactState({ railExpanded: true }));
+    await act(async () => pushState(compactState({ railExpanded: true, renameRequest: request })));
     await userEvent.type(screen.getByLabelText('Rename gmail'), '{Escape}');
     await userEvent.tab();
     expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
@@ -374,7 +375,7 @@ describe('compact rail chevron', () => {
     // A second, genuinely new request still lands.
     await act(async () =>
       pushState(
-        compactState({ railExpanded: true, renameRequest: { serviceId: 'gmail', nonce: 2 } }),
+        compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 2 } }),
       ),
     );
     expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
@@ -382,9 +383,63 @@ describe('compact rail chevron', () => {
 
   it('falls back to Settings when the rail has nowhere to put a field', async () => {
     // An ordinary 72px rail cannot hold a text field, and a horizontal one has no name on screen.
-    await renderRail(state({ renameRequest: { serviceId: 'gmail', nonce: 1 } }));
+    await renderRail(state());
+    await act(async () => pushState(state({ renameRequest: { id: 'gmail', nonce: 1 } })));
     expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
     expect(sent).toContainEqual({ type: 'open-settings' });
+  });
+
+  it('A REQUEST ALREADY WAITING WHEN THE RAIL LOADS IS NOT ACTED ON — a reloaded rail reopened the last edit', () => {
+    // Main never clears a request, so a rail renderer that reloads (it recovers from crashes now)
+    // finds the last one in its very first state.
+    return (async () => {
+      await renderRail(compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 7 } }));
+      expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
+      expect(sent).not.toContainEqual({ type: 'open-settings' });
+
+      // The next genuine request still works.
+      await act(async () =>
+        pushState(compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 8 } })),
+      );
+      expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
+    })();
+  });
+
+  describe('folders', () => {
+    const withFolder = (over: Partial<ShellState> = {}) =>
+      compactState({
+        railExpanded: true,
+        railItems: [
+          { kind: 'folder', id: 'f1', name: 'New folder', collapsed: true, serviceIds: ['gmail'] },
+          { kind: 'service', id: 'slack' },
+        ],
+        ...over,
+      });
+
+    it('A FOLDER SHOWS ITS NAME IN THE PANEL, as a service does', async () => {
+      await renderRail(withFolder());
+      expect(screen.getByText('New folder')).toBeInTheDocument();
+    });
+
+    it('RIGHT-CLICK ▸ RENAME EDITS A FOLDER IN PLACE — it used to open a Settings page with no folders on it', async () => {
+      await renderRail(withFolder());
+      await act(async () => pushState(withFolder({ renameRequest: { id: 'f1', nonce: 1 } })));
+
+      const field = screen.getByLabelText('Rename folder New folder');
+      await userEvent.clear(field);
+      await userEvent.type(field, 'Work{Enter}');
+      expect(sent).toContainEqual({ type: 'rename-folder', folderId: 'f1', name: 'Work' });
+      expect(sent).not.toContainEqual({ type: 'open-settings' });
+    });
+
+    it('typing a space in the folder name does not start a drag', async () => {
+      await renderRail(withFolder());
+      await act(async () => pushState(withFolder({ renameRequest: { id: 'f1', nonce: 1 } })));
+      const field = screen.getByLabelText('Rename folder New folder');
+      await userEvent.clear(field);
+      await userEvent.type(field, 'Side projects{Enter}');
+      expect(sent).toContainEqual({ type: 'rename-folder', folderId: 'f1', name: 'Side projects' });
+    });
   });
 
   it('clicking away commits the edit and leaves the panel open', async () => {

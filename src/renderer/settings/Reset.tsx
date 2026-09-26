@@ -1,4 +1,5 @@
 import { catalogById } from '@shared/catalog';
+import { ConfirmButton } from '../ConfirmButton';
 import type { ShellState } from '@shared/types';
 
 /** The sections a reset can target. Sync and Firebase are excluded — see the hint below. */
@@ -40,12 +41,12 @@ export function Reset() {
             <span className="pref-name">Everything</span>
             <span className="pref-note">All preferences at once</span>
           </span>
-          <button
-            className="danger"
-            onClick={() => window.hangar.send({ type: 'reset-preferences' })}
+          <ConfirmButton
+            confirmLabel="Reset every preference?"
+            onConfirm={() => window.hangar.send({ type: 'reset-preferences' })}
           >
             Reset all
-          </button>
+          </ConfirmButton>
         </li>
       </ul>
     </section>

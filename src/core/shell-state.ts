@@ -68,7 +68,7 @@ export interface ProjectionInput {
   quarantinedConfigs: string[];
   syncStatus: SyncStatus;
   flashServiceId?: string | null;
-  renameRequest?: { serviceId: string; nonce: number } | null;
+  renameRequest?: { id: string; nonce: number } | null;
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
 }
@@ -79,29 +79,33 @@ export interface ProjectionInput {
  */
 export function projectShellState(input: ProjectionInput): ShellState {
   const { config, runtimes } = input;
+  const view = (svc: ServiceInstance): ServiceView => {
+    const entry = catalogById(svc.catalogId);
+    const runtime = runtimes.get(svc.id);
+    return {
+      ...svc,
+      initials: entry?.initials ?? svc.name.slice(0, 2),
+      // Custom connections carry their own colour; catalog ones take the brand hex.
+      color: entry?.color ?? svc.color ?? '#666',
+      loading: runtime?.loading ?? false,
+      // No runtime *is* the definition of asleep — there's no separate flag to disagree with.
+      sleeping: !runtime,
+      unread: input.unread.get(svc.id) ?? 0,
+    };
+  };
   return {
     accounts: config.accounts,
     preferences: config.preferences,
     orphanPartitions: input.orphanPartitions,
     quarantinedConfigs: input.quarantinedConfigs,
     syncStatus: input.syncStatus,
-    allServices: config.services,
+    // Views, like `services`, not the raw config entries. The tray, the palette and the rail's
+    // spoken count all need every workspace's unread, and a raw entry has none — which is how all
+    // three came to count the active workspace only while the Dock badge counted everything.
+    allServices: config.services.map(view),
     flashServiceId: input.flashServiceId,
     renameRequest: input.renameRequest,
-    services: activeServicesOf(config, config.activeWorkspaceId).map((svc): ServiceView => {
-      const entry = catalogById(svc.catalogId);
-      const runtime = runtimes.get(svc.id);
-      return {
-        ...svc,
-        initials: entry?.initials ?? svc.name.slice(0, 2),
-        // Custom connections carry their own colour; catalog ones take the brand hex.
-        color: entry?.color ?? svc.color ?? '#666',
-        loading: runtime?.loading ?? false,
-        // No runtime *is* the definition of asleep — there's no separate flag to disagree with.
-        sleeping: !runtime,
-        unread: input.unread.get(svc.id) ?? 0,
-      };
-    }),
+    services: activeServicesOf(config, config.activeWorkspaceId).map(view),
     workspaces: config.workspaces,
     railItems: activeWorkspaceOf(config, config.activeWorkspaceId)?.items ?? [],
     panes: input.panes,

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   BaseWindow,
@@ -87,6 +88,7 @@ import {
   rehomeUnreachable,
   renameWorkspace,
   reorderWorkspaces,
+  workspaceHolding,
 } from '@core/workspace/workspaces';
 import { closeSettingsWindow, openSettingsWindow } from '@main/features/settings-window';
 import { attachShortcuts } from '@main/window/shortcuts';
@@ -112,6 +114,7 @@ import { EndpointPoller } from '@main/features/endpoint-poll';
 import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
+import { resolveRepoPath } from '@core/config/sync';
 import { isWebUrl } from '@core/runtime/urls';
 import type {
   Command,
@@ -181,7 +184,7 @@ export class AppWindow {
    * The last "edit this name" request. Never cleared — the nonce is what the rail keys off, so a
    * stale request re-broadcast with every other state change is inert.
    */
-  private renameRequest: { serviceId: string; nonce: number } = { serviceId: '', nonce: 0 };
+  private renameRequest: { id: string; nonce: number } = { id: '', nonce: 0 };
   /**
    * Unread counts live here rather than on `ServiceRuntime`, so they survive hibernation and can
    * be set for a service that was never loaded. See core/notify/unread.ts.
@@ -300,7 +303,7 @@ export class AppWindow {
     this.configSync = new ConfigSync({
       // Optional-chained: a config from before this preference existed has no `sync` section, and
       // reading through it unguarded threw inside a `void`-ed promise where nothing surfaced it.
-      repoPath: () => loadConfig().preferences.sync?.repoPath.trim() || null,
+      repoPath: () => resolveRepoPath(loadConfig().preferences.sync?.repoPath, os.homedir()),
       // Same optional chain, same reason: a config predating this preference has no `sync` section.
       // Defaulting to false is the safe direction — the guard stays on.
       allowPublicRepo: () => loadConfig().preferences.sync?.allowPublicRepo ?? false,
@@ -962,13 +965,21 @@ export class AppWindow {
     if (!command) return false;
 
     switch (command.type) {
-      case 'focus-service':
+      case 'focus-service': {
+        // A service in another workspace — reachable now from the tray, the palette and a
+        // notification — is opened in its own workspace, not dropped into this one's panes.
+        const config = loadConfig();
+        const home = workspaceHolding(config, command.serviceId);
+        if (home && home !== config.activeWorkspaceId) {
+          this.dispatch({ type: 'set-workspace', workspaceId: home });
+        }
         this.overlay.close();
         this.openService(command.serviceId);
         // Without this, clicking a service that's already the focused pane changes nothing on
         // screen and reads as a dead button — the reported bug.
         this.flash(command.serviceId);
         break;
+      }
 
       case 'open-in-new-pane':
         this.overlay.close();
@@ -1167,16 +1178,36 @@ export class AppWindow {
         this.endTileDrag();
         break;
 
-      case 'create-folder':
-        this.mutateWorkspace((w) => createFolder(w, command.name, command.serviceIds));
-        break;
-
-      case 'rename-folder':
+      case 'create-folder': {
+        let folderId = '';
         this.mutateWorkspace((w) => {
-          const folder = findFolder(w, command.folderId);
-          if (folder) folder.name = command.name;
+          folderId = createFolder(w, command.name, command.serviceIds);
         });
+        // Straight into naming it, where the rail can edit in place. Every folder used to stay
+        // "New folder": the name was a placeholder and nothing afterwards asked for a real one.
+        // Not elsewhere — an ordinary rail would answer by opening Settings, every time.
+        const { compactRail, railPosition } = loadConfig().preferences.appearance;
+        const vertical = railPosition === 'left' || railPosition === 'right';
+        if (folderId && compactRail && vertical) {
+          this.dispatch({ type: 'begin-rename-folder', folderId });
+        }
         break;
+      }
+
+      case 'rename-folder': {
+        // Every workspace, not just the active one: Settings lists the folders of all of them, and
+        // an id names exactly one folder wherever it lives.
+        const name = command.name.trim();
+        if (!name) break;
+        updateConfig((c) => {
+          for (const w of c.workspaces) {
+            const folder = findFolder(w, command.folderId);
+            if (folder) folder.name = name;
+          }
+        });
+        this.sync();
+        break;
+      }
 
       case 'delete-folder':
         this.mutateWorkspace((w) => deleteFolder(w, command.folderId));
@@ -1257,13 +1288,15 @@ export class AppWindow {
         this.sync();
         break;
 
-      case 'begin-rename-service': {
+      case 'begin-rename-service':
+      case 'begin-rename-folder': {
         // The field replaces the name, so there has to be a name on screen to replace. A collapsed
         // compact rail is icons only — open it first, or the request lands somewhere invisible.
         if (loadConfig().preferences.appearance.compactRail && !this.railExpanded) {
           this.setRailExpanded(true);
         }
-        this.renameRequest = { serviceId: command.serviceId, nonce: this.renameRequest.nonce + 1 };
+        const id = command.type === 'begin-rename-service' ? command.serviceId : command.folderId;
+        this.renameRequest = { id, nonce: this.renameRequest.nonce + 1 };
         this.sync();
         break;
       }

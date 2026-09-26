@@ -439,3 +439,20 @@ export function validateIncoming(
 
   return { ok: true, config: candidate as PortableConfig };
 }
+
+/**
+ * The repo path as typed, made absolute.
+ *
+ * The placeholder in Settings is `~/code/dotfiles`, and typing exactly that failed: the path was used
+ * verbatim, `~` is a shell expansion and not a directory, and sync reported "not a git repository".
+ * A relative path was worse — resolved against the process's working directory, which for a
+ * Finder-launched app is `/`. Both now mean what someone typing them means: from the home folder.
+ */
+export function resolveRepoPath(raw: string | undefined, home: string): string | null {
+  const typed = (raw ?? '').trim();
+  if (!typed) return null;
+  if (typed === '~') return home;
+  if (typed.startsWith('~/')) return `${home.replace(/\/+$/, '')}/${typed.slice(2)}`;
+  if (typed.startsWith('/')) return typed;
+  return `${home.replace(/\/+$/, '')}/${typed}`;
+}

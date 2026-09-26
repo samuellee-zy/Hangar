@@ -209,8 +209,10 @@ function dialogSyncRemove(window: BaseWindow, name: string): { response: number 
     cancelId: 1,
     message: `Remove ${name}?`,
     detail:
-      'The tile is removed from this workspace. Its account and cookies are kept, so adding it ' +
-      'back later will still be signed in.',
+      // Every workspace, which is what `removeServiceFromConfig` does — the old wording said "this
+      // workspace", and someone expecting to find it in their other one would not.
+      'It is removed from every workspace. Its account and cookies are kept, so adding it back ' +
+      'later will still be signed in.',
   });
   return { response };
 }
@@ -227,7 +229,7 @@ export function showFolderMenu(
         click: () => dispatch({ type: 'toggle-folder', folderId: folder.id }),
       },
       { type: 'separator' },
-      { label: 'Rename…', click: () => dispatch({ type: 'open-settings' }) },
+      { label: 'Rename…', click: () => dispatch({ type: 'begin-rename-folder', folderId: folder.id }) },
       {
         // Not "delete the services" — the folder goes, its contents are promoted to the top level.
         label: `Ungroup ${folder.name}`,

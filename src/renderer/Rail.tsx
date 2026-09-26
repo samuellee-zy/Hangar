@@ -36,19 +36,30 @@ export function Rail() {
   // Right-click ▸ Rename… arrives here, from main. Keyed on the nonce and not the id: every other
   // state broadcast carries the same request along with it, and reacting to those would reopen an
   // edit the moment you finished one.
-  const actedOnNonce = useRef(state?.renameRequest?.nonce ?? 0);
+  //
+  // `null` until the first state arrives, which is adopted as already handled. Main never clears a
+  // request, so a rail that reloads — after a crash, now that it recovers from one — would otherwise
+  // find the last one waiting and reopen an edit nobody asked for. Initialising from state at mount
+  // could not catch that: state is always null on the first render.
+  const actedOnNonce = useRef<number | null>(null);
   const request = state?.renameRequest;
   const appearance = state?.preferences.appearance;
+  const hasState = state !== null;
   useEffect(() => {
-    if (!request || !appearance || request.nonce === actedOnNonce.current) return;
+    if (!hasState) return;
+    if (actedOnNonce.current === null) {
+      actedOnNonce.current = request?.nonce ?? 0;
+      return;
+    }
+    if (!request?.id || !appearance || request.nonce === actedOnNonce.current) return;
     actedOnNonce.current = request.nonce;
     // Only a vertical compact rail has a panel to put the field in. An ordinary 72px rail has no
-    // room for a text field and a horizontal one has no room for a name at all, so those keep the
-    // old behaviour rather than dropping the request on the floor.
+    // room for a text field and a horizontal one has no room for a name at all, so those send you
+    // to Settings — which lists both services and folders — rather than dropping the request.
     const horizontal = appearance.railPosition === 'top' || appearance.railPosition === 'bottom';
-    if (appearance.compactRail && !horizontal) setRenamingId(request.serviceId);
+    if (appearance.compactRail && !horizontal) setRenamingId(request.id);
     else window.hangar.send({ type: 'open-settings' });
-  }, [request, appearance]);
+  }, [hasState, request, appearance]);
 
   if (!state) return null;
 
@@ -65,7 +76,8 @@ export function Rail() {
   const panel = compactRail && state.railExpanded && !horizontal;
   const labelled = panel || (showLabels && !compact && !horizontal);
   const byId = new Map(state.services.map((s) => [s.id, s]));
-  const totalUnread = state.services.reduce((sum, s) => sum + s.unread, 0);
+  // Every workspace, like the Dock badge: a message in another workspace is still one to hear about.
+  const totalUnread = state.allServices.reduce((sum, s) => sum + s.unread, 0);
   const send = window.hangar.send;
 
   // Every draggable row in visual order, open folders' members included. One flat list because
@@ -278,12 +290,41 @@ export function Rail() {
               <SortableTile key={item.id} id={item.id}>
                 {({ setNodeRef, style, handleProps }) => (
                   <div ref={setNodeRef} style={style} {...handleProps} className="rail-slot">
-                    <FolderTile
-                      folder={item}
-                      members={folderMembers}
-                      onToggle={() => send({ type: 'toggle-folder', folderId: item.id })}
-                      onContextMenu={() => send({ type: 'show-folder-menu', folderId: item.id })}
-                    />
+                    {panel && renamingId === item.id ? (
+                      // Same shape and the same two hazards as a service's rename above: the field
+                      // replaces the button, and keydown must not reach the draggable.
+                      <div className="rail-row">
+                        <div
+                          className="rail-rename"
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          onBlur={() => setRenamingId(null)}
+                        >
+                          <span className="rail-rename-folder" aria-hidden="true">
+                            ▦
+                          </span>
+                          <CommitOnBlur
+                            className="rail-rename-field"
+                            autoFocus
+                            aria-label={`Rename folder ${item.name}`}
+                            value={item.name}
+                            onCommit={(name) =>
+                              send({ type: 'rename-folder', folderId: item.id, name })
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <FolderTile
+                        folder={item}
+                        members={folderMembers}
+                        labelled={panel}
+                        onToggle={() => send({ type: 'toggle-folder', folderId: item.id })}
+                        onContextMenu={() => send({ type: 'show-folder-menu', folderId: item.id })}
+                      />
+                    )}
                     {!item.collapsed && (
                       // `group` is what makes the members read as *inside* the folder rather
                       // than as siblings that happen to follow it.

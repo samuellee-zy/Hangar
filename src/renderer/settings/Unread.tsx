@@ -113,7 +113,7 @@ export function Unread({ state }: { state: ShellState }) {
                     switch off a catalog rule that has started matching the wrong node. Going back
                     to the catalog therefore needs its own button rather than an empty box. */}
                 <button
-                  className="danger"
+                  className="secondary"
                   disabled={svc.unreadSelector === undefined}
                   title={`Follow the catalog for ${svc.name}`}
                   onClick={() =>

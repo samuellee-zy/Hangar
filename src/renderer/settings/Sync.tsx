@@ -1,5 +1,6 @@
 import { Text, Toggle } from '../PreferenceControls';
 import type { Preferences, SyncStatus } from '@shared/types';
+import { ConfirmButton } from '../ConfirmButton';
 
 /**
  * Turns the sync state into something worth reading. An opaque "error" helps nobody.
@@ -99,24 +100,24 @@ function ConflictResolution() {
             <span className="pref-name">Keep this machine's</span>
             <span className="pref-note">Overwrites the repo. Discards what the other machine changed.</span>
           </span>
-          <button
-            className="danger"
-            onClick={() => window.hangar.send({ type: 'resolve-sync', winner: 'local' })}
+          <ConfirmButton
+            confirmLabel="Overwrite the repo?"
+            onConfirm={() => window.hangar.send({ type: 'resolve-sync', winner: 'local' })}
           >
             Keep local
-          </button>
+          </ConfirmButton>
         </li>
         <li className="pref">
           <span className="pref-label">
             <span className="pref-name">Keep the repo's</span>
             <span className="pref-note">Overwrites this machine. Discards changes made here since the last sync.</span>
           </span>
-          <button
-            className="danger"
-            onClick={() => window.hangar.send({ type: 'resolve-sync', winner: 'remote' })}
+          <ConfirmButton
+            confirmLabel="Overwrite this machine?"
+            onConfirm={() => window.hangar.send({ type: 'resolve-sync', winner: 'remote' })}
           >
             Keep repo
-          </button>
+          </ConfirmButton>
         </li>
       </ul>
     </>

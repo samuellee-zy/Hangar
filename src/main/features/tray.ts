@@ -58,14 +58,18 @@ let lastSignature = '';
 export function refreshTray(state: ShellState | null, dispatch: (c: Command) => boolean): void {
   if (!tray || !state) return;
 
+  // Every workspace, not the active one. The Dock badge counts them all, and a tray that counted
+  // only the workspace on screen disagreed with it — and could not reach a service anywhere else.
+  // `focus-service` switches workspace for one that lives elsewhere.
+  const services = state.allServices;
   const signature = JSON.stringify([
-    state.services.map((s) => [s.id, s.name, s.unread]),
+    services.map((s) => [s.id, s.name, s.unread]),
     state.preferences.notifications.dnd,
   ]);
   if (signature === lastSignature) return;
   lastSignature = signature;
 
-  const unread = state.services.reduce((sum, s) => sum + s.unread, 0);
+  const unread = services.reduce((sum, s) => sum + s.unread, 0);
   // Text beside the icon, not a badge — macOS trays have no badge API.
   tray.setTitle(unread > 0 ? String(unread) : '');
   tray.setToolTip(unread > 0 ? `Hangar — ${unread} unread` : 'Hangar');
@@ -74,7 +78,7 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
     Menu.buildFromTemplate([
       { label: 'Show Hangar', click: () => dispatch({ type: 'show-window' }) },
       { type: 'separator' },
-      ...state.services.slice(0, 12).map((svc) => ({
+      ...services.slice(0, 12).map((svc) => ({
         label: svc.unread > 0 ? `${svc.name} (${svc.unread})` : svc.name,
         click: () => {
           dispatch({ type: 'show-window' });

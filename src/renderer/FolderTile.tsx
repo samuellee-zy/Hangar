@@ -10,11 +10,14 @@ import type { RailItem, ServiceView } from '@shared/types';
 export function FolderTile({
   folder,
   members,
+  labelled = false,
   onToggle,
   onContextMenu,
 }: {
   folder: Extract<RailItem, { kind: 'folder' }>;
   members: ServiceView[];
+  /** In an opened panel the name sits beside the grid, as a service's does beside its icon. */
+  labelled?: boolean;
   onToggle: () => void;
   onContextMenu: () => void;
 }) {
@@ -47,6 +50,12 @@ export function FolderTile({
         ))}
         {members.length === 0 && <span className="folder-empty">·</span>}
       </span>
+      {/* aria-hidden: the name is already the start of `aria-label`. */}
+      {labelled && (
+        <span className="rail-label" aria-hidden="true">
+          {folder.name}
+        </span>
+      )}
       {unread > 0 && (
         <span className="rail-badge" aria-hidden="true">
           {unread}

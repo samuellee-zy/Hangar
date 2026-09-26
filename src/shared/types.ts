@@ -412,8 +412,11 @@ export interface ShellState {
   services: ServiceView[];
   /** The active workspace's rail tree: top-level services and folders, in order. */
   railItems: RailItem[];
-  /** Every service, including those outside the active workspace — Settings edits all of them. */
-  allServices: ServiceInstance[];
+  /**
+   * Every service, including those outside the active workspace — Settings edits all of them, and
+   * the tray, palette and spoken unread count read them so another workspace's messages are seen.
+   */
+  allServices: ServiceView[];
   preferences: Preferences;
   /**
    * Partition directories no account references. Derived at runtime, surfaced in Settings, and
@@ -438,14 +441,15 @@ export interface ShellState {
    */
   flashServiceId?: string | null;
   /**
-   * A request from main that the rail put a service's name into an editable field.
+   * A request from main that the rail put a service's or a folder's name into an editable field.
+   * `id` is the rail item's id; service and folder ids never collide.
    *
    * Carries a nonce rather than being a plain id because it is an *event*, not a state: asking to
-   * rename the same service twice running is two requests, and an id alone cannot tell the second
+   * rename the same item twice running is two requests, and an id alone cannot tell the second
    * from a re-broadcast of the first. Main never has to clear it, and the rail acts only when the
    * nonce changes — so an unrelated broadcast arriving mid-edit cannot restart the edit.
    */
-  renameRequest?: { serviceId: string; nonce: number } | null;
+  renameRequest?: { id: string; nonce: number } | null;
   panes: Pane[];
   focusedPaneId: string | null;
   activeWorkspaceId: string | null;
@@ -510,6 +514,7 @@ export type Command =
   | { type: 'rename-service'; serviceId: string; name: string }
   /** Ask the rail to edit this service's name in place, opening the rail first if it is collapsed. */
   | { type: 'begin-rename-service'; serviceId: string }
+  | { type: 'begin-rename-folder'; folderId: string }
   | { type: 'remove-service'; serviceId: string }
   | { type: 'rename-account'; accountId: string; label: string }
   | { type: 'sign-out-account'; accountId: string }

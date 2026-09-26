@@ -2095,3 +2095,40 @@ Each new E2E test — the crashed rail, unread in a hidden window — was checke
 back. The first draft of each passed anyway: one polled before the crash happened, the other
 triggered a sweep that returns early when hibernation is off. Both now fail without the fix.
 
+## 99. UI that does what it says
+
+The P1 UI findings from the audit, each a control that promised something and didn't deliver it.
+
+- **Folders could not be renamed.** Right-click ▸ Rename… opened Settings, which had no folders, and
+  nothing ever sent `rename-folder`. `renameRequest` is now `{ id, nonce }` for any rail item, the
+  opened panel edits a folder's name in place exactly as it does a service's, and Settings has a
+  Folders section for rails with no room for a field. A new folder asks for its name immediately
+  when the rail can edit in place — only then, because elsewhere that would throw Settings open
+  every time. `rename-folder` searches every workspace, since Settings lists them all.
+- **A reloaded rail reopened the last rename.** Main never clears a request, and the rail seeded its
+  "last handled" nonce from state at mount — always null. It now adopts whatever request arrives
+  with its first state as already handled. That mattered more once the rail started recovering
+  from crashes (#98).
+- **Destructive buttons were one click.** Remove, Sign out, Delete workspace, Reset all, Delete
+  unused sessions and both sync resolutions are `ConfirmButton`s: the first click arms and relabels
+  ("Remove Gmail?"), a second within four seconds acts, and a pause, Escape or leaving the button
+  disarms it. Two clicks rather than a dialog: nothing is blocked, and a modal's default button is
+  exactly what gets dismissed by reflex. Add, Export, Import and Default were styled `danger` for
+  want of anything else and turned red under the pointer; they are `secondary` now.
+- **The Add Connection focus trap never engaged.** It attached in a mount-only effect, and the picker
+  renders nothing until state arrives — after the first render. A callback ref attaches when the
+  element does. The test that shows it fails against the old hook.
+- **Number fields clamped per keystroke,** so the "7" of "72" in a field with a minimum of 56 became
+  56 on the spot and a rail size could not be typed. `NumberField` holds the text, applies a value
+  once it is valid and has settled for 250ms (so the spinner still feels live), and clamps on blur.
+- **Allowed hosts were read-only** while two hints said to add them there. Every service now has a
+  field for extra hosts, additive over its catalog list; main keeps only valid hostnames, and the
+  field showing back what was accepted is the feedback.
+- **`~/code/dotfiles` — the placeholder — failed as typed,** and a relative path resolved against `/`
+  in a Finder launch. `resolveRepoPath` expands `~` and resolves relative paths from home.
+- **The tray, the palette and the rail's spoken count saw one workspace** while the Dock badge saw
+  all of them. `allServices` is projected into full views now, those three read it, and
+  `focus-service` switches to the workspace a service lives in rather than dropping it into this
+  one's panes. The palette labels a service elsewhere with its workspace's name, and is a combobox
+  over a listbox so the highlighted result is announced.
+

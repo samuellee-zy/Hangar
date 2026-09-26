@@ -1,4 +1,5 @@
 import type { ShellState } from '@shared/types';
+import { ConfirmButton } from '../ConfirmButton';
 
 export function Data() {
   return (
@@ -15,10 +16,10 @@ export function Data() {
             <span className="pref-note">No cloud sync by design, so backup is manual</span>
           </span>
           <span style={{ display: 'flex', gap: 8 }}>
-            <button className="danger" onClick={() => window.hangar.send({ type: 'export-config' })}>
+            <button className="secondary" onClick={() => window.hangar.send({ type: 'export-config' })}>
               Export…
             </button>
-            <button className="danger" onClick={() => window.hangar.send({ type: 'import-config' })}>
+            <button className="secondary" onClick={() => window.hangar.send({ type: 'import-config' })}>
               Import…
             </button>
           </span>
@@ -46,13 +47,13 @@ export function Storage({ state }: { state: ShellState }) {
                 : `${state.orphanPartitions.length} left by removed connections`}
             </span>
           </span>
-          <button
-            className="danger"
+          <ConfirmButton
             disabled={state.orphanPartitions.length === 0}
-            onClick={() => window.hangar.send({ type: 'purge-orphan-partitions' })}
+            confirmLabel={`Delete ${state.orphanPartitions.length}?`}
+            onConfirm={() => window.hangar.send({ type: 'purge-orphan-partitions' })}
           >
             Delete
-          </button>
+          </ConfirmButton>
         </li>
       </ul>
 
