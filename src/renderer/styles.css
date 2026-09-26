@@ -1493,3 +1493,29 @@ kbd {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* The picker when a search matches nothing: say so, and offer the obvious next step. */
+.grid-none {
+  padding: 18px 16px 6px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.grid-none p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.grid-none button {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.custom-form .hint.refused {
+  color: #ff6b60;
+}

@@ -139,7 +139,7 @@ const COMMS: CatalogEntry[] = [
     allowedHosts: ['meet.google.com', 'workspace.google.com', ...GOOGLE_AUTH],
   },
   {
-    id: 'messenger', icon: 'facebook-messenger', name: 'Messenger',
+    id: 'messenger', aliases: ['facebook'], icon: 'facebook-messenger', name: 'Messenger',
     url: 'https://www.messenger.com/',
     initials: 'Ms', color: '#0084FF', provider: 'facebook',
     // facebook.com is the identity provider here, not a courtesy: messenger.com hands sign-in
@@ -155,7 +155,7 @@ const COMMS: CatalogEntry[] = [
     unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
   },
   {
-    id: 'element', icon: 'element', name: 'Element', url: 'https://app.element.io/',
+    id: 'element', aliases: ['matrix', 'riot'], icon: 'element', name: 'Element', url: 'https://app.element.io/',
     initials: 'El', color: '#0DBD8B', provider: 'element',
     // Matrix is federated: a homeserver other than matrix.org is normal, and its host cannot be
     // known here. Settings → Connections is where that one gets added.
@@ -192,7 +192,7 @@ const SOCIAL: CatalogEntry[] = [
     allowedHosts: ['instagram.com', 'www.instagram.com', 'facebook.com'],
   },
   {
-    id: 'x', icon: 'x', name: 'X', url: 'https://x.com/home',
+    id: 'x', aliases: ['twitter'], icon: 'x', name: 'X', url: 'https://x.com/home',
     initials: 'X', color: '#111111', provider: 'x',
     // twitter.com still serves live redirects into x.com, so the old host is a navigation target
     // rather than history.
@@ -350,7 +350,7 @@ const WORK: CatalogEntry[] = [
 /** Mail that isn't Google's or Microsoft's. */
 const MAIL: CatalogEntry[] = [
   {
-    id: 'protonmail', icon: 'proton-mail', name: 'Proton Mail',
+    id: 'protonmail', aliases: ['proton'], icon: 'proton-mail', name: 'Proton Mail',
     url: 'https://mail.proton.me/',
     initials: 'Pr', color: '#6D4AFF', provider: 'proton',
     allowedHosts: ['proton.me', 'mail.proton.me', 'account.proton.me'],
@@ -462,12 +462,12 @@ const AI_NOTES: CatalogEntry[] = [
     allowedHosts: ['claude.ai', 'anthropic.com', ...GOOGLE_AUTH],
   },
   {
-    id: 'chatgpt', icon: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com/',
+    id: 'chatgpt', aliases: ['openai', 'gpt'], icon: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com/',
     initials: 'GP', color: '#10A37F', provider: 'openai',
     allowedHosts: ['chatgpt.com', 'openai.com', 'auth.openai.com', 'auth0.openai.com', ...GOOGLE_AUTH],
   },
   {
-    id: 'gemini', icon: 'google-gemini', name: 'Gemini', url: 'https://gemini.google.com/app',
+    id: 'gemini', aliases: ['bard'], icon: 'google-gemini', name: 'Gemini', url: 'https://gemini.google.com/app',
     initials: 'Ge', color: '#8E75B2', provider: 'google',
     allowedHosts: ['gemini.google.com', ...GOOGLE_AUTH],
   },

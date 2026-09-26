@@ -187,3 +187,49 @@ describe('the focus trap', () => {
     after.remove();
   });
 });
+
+describe('searching', () => {
+  const render_ = async () => {
+    setShellState(state());
+    render(<AddConnection />);
+    await act(async () => {});
+  };
+
+  it('FINDS A SERVICE BY ITS OLD NAME OR ITS PROVIDER — "twitter" found nothing, "microsoft" no Outlook', async () => {
+    await render_();
+    await userEvent.type(screen.getByLabelText('Search services'), 'twitter');
+    expect(screen.getByRole('button', { name: /^X/ })).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('Search services'));
+    await userEvent.type(screen.getByLabelText('Search services'), 'microsoft');
+    expect(screen.getByRole('button', { name: /Outlook/ })).toBeInTheDocument();
+  });
+
+  it('NO MATCH OFFERS WHAT WAS TYPED AS A WEBSITE, and Enter adds it', async () => {
+    await render_();
+    await userEvent.type(screen.getByLabelText('Search services'), 'grafana.acme.io');
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing in the catalog called');
+    expect(screen.getByRole('button', { name: 'Add grafana.acme.io as a website' })).toBeInTheDocument();
+
+    await userEvent.keyboard('{Enter}');
+    expect(sent).toContainEqual({
+      type: 'add-custom-service',
+      name: 'grafana.acme.io',
+      url: 'https://grafana.acme.io',
+    });
+  });
+
+  it('arrow down from the search moves into the grid', async () => {
+    await render_();
+    screen.getByLabelText('Search services').focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.activeElement?.classList.contains('grid-tile')).toBe(true);
+  });
+
+  it('the custom form says what is wrong with an address, not just greys out Add', async () => {
+    await render_();
+    await userEvent.click(screen.getByRole('button', { name: 'Add any website by URL' }));
+    await userEvent.type(screen.getByLabelText('Website address'), 'not a url');
+    expect(screen.getByRole('alert')).toHaveTextContent('doesn’t look like a web address');
+  });
+});

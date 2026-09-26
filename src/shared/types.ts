@@ -96,6 +96,12 @@ export interface CatalogEntry {
    * declaring a slug that 404s is indistinguishable from a typo. `initials` covers it.
    */
   icon?: string;
+  /**
+   * Other names people search for. The picker matched the display name only, so "twitter" found
+   * nothing and "microsoft" didn't find Outlook. The provider is searched too; this is for the
+   * names that aren't a provider — a rebrand, a product's old name, an obvious synonym.
+   */
+  aliases?: string[];
   /** Last-resort fallback when there's no vendored logo and no captured favicon yet. */
   initials: string;
   /** Brand hex. Lifted for dark backgrounds at render time — see renderer/accent.ts. */
