@@ -484,8 +484,13 @@ test('A REBOUND CHORD TAKES EFFECT, AND THE OLD ONE STOPS WORKING', async () => 
   ).toBe(false);
 
   // And it is on disk, not just in memory — a rebind that doesn't survive a restart isn't one.
-  const stored = JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
-  expect(stored.preferences.keyboard.bindings.palette).toBe('meta+j');
+  // Polled: writes are debounced (config.ts, WRITE_DEBOUNCE_MS).
+  await expect
+    .poll(() => {
+      const stored = JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
+      return stored.preferences.keyboard.bindings.palette;
+    })
+    .toBe('meta+j');
 });
 
 test('A SERVICE KEEPS THE CHORDS ON ITS PASSTHROUGH LIST', async () => {
@@ -723,4 +728,33 @@ test('the footer buttons sit in the same centred column as the tiles', async () 
   for (const button of centres.buttons) {
     expect(Math.abs(button - centres.tiles[0]!)).toBeLessThanOrEqual(0.5);
   }
+});
+
+test('A RESIZE STORM DOES NOT BROADCAST A STORM — the rail is sent state only when it changes', async () => {
+  // Every resize event relays out, and every relayout ended in a full broadcast to every surface:
+  // dragging the window's edge re-rendered the rail, the overlay and Settings sixty times a second
+  // with an identical state each time.
+  h = await launch();
+  const rail = await h.rail();
+  await rail.waitForTimeout(500);
+
+  await rail.evaluate(() => {
+    const g = window as unknown as { __received: number; hangar: { onState: (f: () => void) => void } };
+    g.__received = 0;
+    g.hangar.onState(() => g.__received++);
+  });
+
+  await h.app.evaluate(async () => {
+    const shell = (globalThis as never as { __hangarShell: { win: Electron.BaseWindow } }).__hangarShell;
+    const { width, height } = shell.win.getBounds();
+    for (let i = 0; i < 30; i++) {
+      shell.win.setSize(width - (i % 2) * 20, height);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    shell.win.setSize(width, height);
+  });
+  await rail.waitForTimeout(500);
+
+  const received = await rail.evaluate(() => (window as unknown as { __received: number }).__received);
+  expect(received, `${received} broadcasts for 30 resizes that changed nothing it draws`).toBeLessThanOrEqual(2);
 });

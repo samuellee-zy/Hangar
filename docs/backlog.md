@@ -361,22 +361,23 @@ hosts are editable for every service; the sync path expands `~`; the tray, the p
 rail's spoken count see every workspace, and focusing a service elsewhere switches to it; the
 remove dialog says what removal does.
 
-### 13.4 Performance (P2)
+### 13.4 Performance (P2) — mostly closed
 
-- **Every `sync()` rebroadcasts full state to every surface** — on each resize event and each page
-  load start/stop — and does a `readdirSync` of userData for quarantined configs each time
-  (`app-window.ts` ~443, ~668; `store.ts:138`). Coalesce to one per frame, skip identical payloads,
-  cache the quarantine list, memoise rail rows.
-- **Cookie promotion every 60s for every partition**, even hidden and unchanged. Dirty-track via
-  `cookies.on('changed')`, flush every ~5 min plus suspend and quit.
-- **`backgroundThrottling: false` on every view** (`service-manager.ts:94`); throttle views not in a
-  visible pane of a visible window.
-- **Synchronous copy+fsync+rename on every pane focus** and every push message (`store.ts:168`);
-  debounce ~500ms, flush on quit.
-- Overlay, find bar and drag views are never released; `liveNotifications` can grow; visible panes
-  never hibernate even when the window has been hidden for days.
-- `react`, `react-dom` and `@dnd-kit/*` are `dependencies`, so they are bundled into the renderer
-  *and* shipped again in the asar. Move them to `devDependencies`.
+In [decisions #100](decisions.md): state broadcasts are coalesced and sent only where they changed
+(30 → ≤2 for a resize storm, with a test); the quarantine listing is cached; cookie promotion runs
+only for partitions that gained a session cookie; config writes are debounced and flushed on quit
+and exit; the live-notification set is capped; React and dnd-kit are build inputs, not shipped
+dependencies.
+
+Still open, deliberately:
+
+- **Background throttling stays off** on service views. Throttling an off-screen view slows its
+  timers, and the unread probe in the service preload runs on one — the count would lag by up to a
+  minute. Worth measuring the battery cost before trading freshness for it.
+- **Visible panes still don't hibernate while the window is hidden.** Doing it would make every
+  show a reload of whatever was on screen.
+- The overlay, find bar and drag views are kept after first use on purpose: they are reused, and
+  rebuilding one per open would cost a renderer load each time.
 
 ### 13.5 Accessibility (P2)
 

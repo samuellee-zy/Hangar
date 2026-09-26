@@ -2132,3 +2132,38 @@ The P1 UI findings from the audit, each a control that promised something and di
   one's panes. The palette labels a service elsewhere with its workspace's name, and is a combobox
   over a listbox so the highlighted result is announced.
 
+## 100. Doing less: broadcasts, cookies and writes only when something changed
+
+Three loops did their full work whether or not anything had happened.
+
+**State broadcasts.** `sync()` sent the whole state to every surface immediately, and it runs on
+every page load start and stop, every mutation, and — through relayout — every resize event.
+Dragging the window's edge re-rendered the rail, the overlay and Settings sixty times a second with
+an identical state, and each broadcast also listed the data folder for quarantined configs. Now
+calls within a frame collapse into one, a surface is sent a state only if it differs from the last
+one *that surface* received (so a surface that has just opened is never starved), and the
+quarantine listing is cached for a minute — it only changes at boot. `state()` is still synchronous
+for callers that need it now. An E2E test resizes the window thirty times and counts what the rail
+receives: thirty before, at most two after.
+
+**Cookie promotion.** Every minute, every partition had every cookie read and its session cookies
+re-written, and its storage flushed — the log shows the same seven cookies promoted over and over.
+Promotion only exists for *session* cookies, so each session now marks itself when one is set
+(`cookies.on('changed')`), and the minute loop promotes only those; storage is flushed for everyone
+every fifth minute. Our own promotion writes persistent cookies, which don't mark anything, so it
+cannot keep itself busy. Quit and suspend still do everything.
+
+**Config writes.** Every change was a synchronous copy, write, fsync and rename — every pane focus,
+every push message, every step of a drag. Everything reads the in-memory copy, so the disk write
+now waits 300ms and a burst becomes one. Quit flushes before `app.quit()`, and a synchronous
+`process.on('exit')` flushes for every other ordinary exit; only a hard kill can lose the last 300ms.
+
+Also: the set holding notifications alive for click-to-focus is capped at fifty, because one left
+in Notification Center never closes; and React and dnd-kit moved to `devDependencies` — Vite
+bundles them into the renderer, so as dependencies they were shipped a second time, unused, inside
+the asar. dependency-cruiser's no-dev-deps rule now exempts `src/renderer/` for that reason.
+
+**Not done, on purpose.** Background throttling stays off for service views: the unread probe runs
+on a timer inside the page, and throttling would let the count lag by up to a minute. That trade
+wants a battery measurement first, not a guess.
+

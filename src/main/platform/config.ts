@@ -200,9 +200,46 @@ export function onConfigSaved(listener: (() => void) | null): void {
  */
 export function saveConfig(next: Config, { sync = true }: { sync?: boolean } = {}): void {
   cached = next;
-  writeAtomic(configPaths(), JSON.stringify(next, null, 2));
+  scheduleWrite();
   if (sync) onSaved?.();
 }
+
+/**
+ * How long a change sits in memory before it goes to disk.
+ *
+ * Every write is a copy, a write, an fsync and a rename (`writeAtomic`), and it used to happen on
+ * every change — every pane focus saves the layout, every push message saves its seen-ids, a drag
+ * across the rail saves on each step. The in-memory copy is what everything reads (`loadConfig`
+ * returns `cached`), so the only thing a delay risks is the last fraction of a second if the process
+ * dies outright; quitting, and any ordinary exit, flush first.
+ */
+const WRITE_DEBOUNCE_MS = 300;
+let pendingWrite: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleWrite(): void {
+  if (pendingWrite) return;
+  pendingWrite = setTimeout(flushConfig, WRITE_DEBOUNCE_MS);
+  // Never the reason the process stays alive.
+  pendingWrite.unref?.();
+}
+
+/** Writes any pending change now. Called on quit and exit; safe to call when nothing is pending. */
+export function flushConfig(): void {
+  if (!pendingWrite) return;
+  clearTimeout(pendingWrite);
+  pendingWrite = null;
+  if (cached) writeAtomic(configPaths(), JSON.stringify(cached, null, 2));
+}
+
+// An ordinary exit of any kind — `app.quit`, `app.exit`, the end of a test — flushes. `exit`
+// handlers must be synchronous, and `writeAtomic` is.
+process.on('exit', () => {
+  try {
+    flushConfig();
+  } catch (err) {
+    console.error('[config] could not write pending changes on exit:', err);
+  }
+});
 
 export function updateConfig(mutate: (c: Config) => void): Config {
   const c = loadConfig();
@@ -223,5 +260,13 @@ export { catalog };
 
 /** Quarantined copies on disk, newest first. Surfaced in Settings; never deleted automatically. */
 export function quarantinedConfigs(): string[] {
-  return findQuarantined(configPaths());
+  // Cached for a minute. It was read on every state broadcast — a directory listing and a stat per
+  // entry, on every page load and resize event — for a list that only changes at boot, when a
+  // corrupt config is quarantined, or when someone deletes a copy in Finder.
+  const now = Date.now();
+  if (!quarantineCache || now - quarantineCache.at > 60_000) {
+    quarantineCache = { at: now, paths: findQuarantined(configPaths()) };
+  }
+  return quarantineCache.paths;
 }
+let quarantineCache: { at: number; paths: string[] } | null = null;

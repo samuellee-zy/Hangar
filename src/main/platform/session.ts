@@ -35,6 +35,24 @@ const liveSessions = new Map<string, Session>();
 export const allLiveSessions = () => liveSessions;
 
 /**
+ * Partitions that have gained a session cookie since they were last promoted.
+ *
+ * The minute-by-minute persistence loop promoted every partition every minute, reading every
+ * cookie in every jar, whether or not anything had changed — the log shows the same seven cookies
+ * promoted over and over. Promotion only exists for *session* cookies (persistent ones already
+ * reach disk), so a partition only needs it when one is set. Our own promotion sets persistent
+ * cookies, which don't count, so it cannot re-dirty what it just cleaned.
+ */
+const needsPromotion = new Set<string>();
+
+/** Takes the set of partitions to promote, and forgets them. */
+export function takeDirtyPartitions(): Set<string> {
+  const dirty = new Set(needsPromotion);
+  needsPromotion.clear();
+  return dirty;
+}
+
+/**
  * Drop sessions no service uses any more. Without this the map only ever grows, and once
  * hibernation starts destroying views we'd keep calling into dead sessions on the persist timer.
  * Partitions are shared across a session group, so a partition is only released when *no*
@@ -159,6 +177,11 @@ export function sessionFor(svc: ServiceInstance): Session {
   if (configured.has(partition)) return ses;
   configured.add(partition);
   liveSessions.set(partition, ses);
+  // A new jar starts dirty: whatever it restored from disk has never been checked this run.
+  needsPromotion.add(partition);
+  ses.cookies.on('changed', (_event, cookie, _cause, removed) => {
+    if (!removed && cookie.session) needsPromotion.add(partition);
+  });
 
   if (svc.userAgent) ses.setUserAgent(svc.userAgent);
 

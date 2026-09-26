@@ -669,9 +669,38 @@ export class AppWindow {
     return loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS;
   }
 
+  /**
+   * Broadcast state to every surface — soon, once, and only where it changed.
+   *
+   * It was immediate, whole, and unconditional: every call sent the full state to every surface,
+   * and it is called on every page load start and stop, every resize event (through relayout) and
+   * every mutation. The rail, Settings and the overlay then re-rendered completely each time. Now
+   * calls within one frame collapse into one broadcast, and a surface is only sent a state that
+   * differs from the last one it received — per surface, so one that has just opened still gets
+   * the current state even if nothing changed.
+   *
+   * `state()` is still synchronous for anyone who needs it now; only the broadcast waits.
+   */
+  private syncScheduled: ReturnType<typeof setTimeout> | null = null;
+  private lastSent = new WeakMap<WebContents, string>();
+
   sync(): void {
+    if (this.syncScheduled) return;
+    this.syncScheduled = setTimeout(() => {
+      this.syncScheduled = null;
+      this.broadcast();
+    }, 16);
+  }
+
+  private broadcast(): void {
+    if (this.win.isDestroyed()) return;
     const state = this.state();
-    for (const wc of this.consumers) safeSend(wc, 'shell:state', state);
+    const signature = JSON.stringify(state);
+    for (const wc of this.consumers) {
+      if (this.lastSent.get(wc) === signature) continue;
+      this.lastSent.set(wc, signature);
+      safeSend(wc, 'shell:state', state);
+    }
     refreshTray(state, (c) => this.dispatch(c));
     this.refreshMenuIfRebound(state.preferences.keyboard?.bindings);
   }
@@ -1866,6 +1895,8 @@ export class AppWindow {
   dispose(): void {
     // Sockets and timers first: they can fire during teardown and would then touch a half-torn
     // window.
+    if (this.syncScheduled) clearTimeout(this.syncScheduled);
+    this.syncScheduled = null;
     this.push.stopAll();
     // An in-flight fetch resolving after teardown would call `applyDetectedUnread` on a window
     // whose views are gone.
@@ -2089,6 +2120,14 @@ export class AppWindow {
       // GC can collect it before the click handler ever fires and click-to-focus does nothing.
       this.liveNotifications.add(notification);
       notification.on('close', () => this.liveNotifications.delete(notification));
+      // Bounded. A notification left in Notification Center never closes, so over a week of
+      // messages the set only grew. The oldest are the least likely to be clicked; a Set iterates
+      // in insertion order, so the first entry is the oldest.
+      while (this.liveNotifications.size > 50) {
+        const oldest = this.liveNotifications.values().next().value;
+        if (!oldest) break;
+        this.liveNotifications.delete(oldest);
+      }
       // The only evidence there will ever be. macOS delivers nothing to an unsigned bundle, and
       // before this the banner simply never appeared — unread counted, the badge moved, and the
       // log said nothing at all. Also released here: a failed notification never closes.

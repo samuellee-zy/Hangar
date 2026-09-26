@@ -2,12 +2,12 @@ import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
 import { setUpLogFile } from '@main/platform/log-file';
 import { catalogById } from '@shared/catalog';
-import { loadConfig } from '@main/platform/config';
+import { flushConfig, loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
 import { installMenu } from '@main/boot/menu';
 import { DEFAULT_BINDINGS } from '@core/keyboard/keymap';
 import { DEFAULT_COOKIE_TTL_DAYS, flushStorage, promoteSessionCookies } from '@main/platform/persist-cookies';
-import { allLiveSessions, partitionFor, pruneSessions } from '@main/platform/session';
+import { allLiveSessions, partitionFor, pruneSessions, takeDirtyPartitions } from '@main/platform/session';
 import { applyUserAgent } from '@main/platform/ua';
 import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
@@ -321,7 +321,13 @@ function ttlForPartition(partition: string): number {
   }, Number.POSITIVE_INFINITY);
 }
 
-async function persistAll(): Promise<void> {
+/**
+ * `all` for quit and suspend, where everything must be on disk; the minute loop passes `false` and
+ * touches only partitions that gained a session cookie since last time (see `takeDirtyPartitions`),
+ * plus a storage flush for everyone every fifth minute.
+ */
+let tick = 0;
+async function persistAll({ all = true }: { all?: boolean } = {}): Promise<void> {
   // Per service, not `services.map(partitionFor)`. `partitionFor` throws on a service whose
   // account is missing, and one throw here took out the whole loop — permanently, because it runs
   // under `void` on an interval with nothing to report the rejection. Cookie promotion and storage
@@ -344,17 +350,20 @@ async function persistAll(): Promise<void> {
     console.log(`[session] released ${partition} — no service uses it`);
   }
 
+  const dirty = takeDirtyPartitions();
+  const flushEveryone = all || tick++ % 5 === 0;
   for (const [partition, ses] of allLiveSessions()) {
+    const promote = all || dirty.has(partition);
     const ttlDays = ttlForPartition(partition);
-    if (ttlDays > 0) await promoteSessionCookies(ses, { label: partition, ttlDays });
-    await flushStorage(ses);
+    if (promote && ttlDays > 0) await promoteSessionCookies(ses, { label: partition, ttlDays });
+    if (promote || flushEveryone) await flushStorage(ses);
   }
 }
 
 setInterval(() => {
   // The interval is fire-and-forget, so an unhandled rejection here is invisible. Catch it, or the
   // only symptom of a broken persistence loop is lost sessions much later.
-  void persistAll().catch((err) => console.error('[session] persist failed:', err));
+  void persistAll({ all: false }).catch((err) => console.error('[session] persist failed:', err));
 }, 60_000);
 
 // Hibernation sweep. Frequent enough that a 1-minute timeout behaves as advertised, cheap enough
@@ -437,7 +446,10 @@ function quitGracefully({ confirm }: { confirm: boolean }): void {
   );
   void Promise.race([persistAll(), timeout])
     .catch((err) => console.error('[quit] cookie promotion failed:', err))
-    .finally(() => app.quit());
+    .finally(() => {
+      flushConfig();
+      app.quit();
+    });
 }
 
 /**
