@@ -1,5 +1,6 @@
 import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
+import { setUpLogFile } from '@main/platform/log-file';
 import { catalogById } from '@shared/catalog';
 import { loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
@@ -26,6 +27,7 @@ import type { Command } from '@shared/types';
 // Before anything that logs, which is nearly everything below. A terminal that goes away while the
 // app is running turns every subsequent log line into a fatal EPIPE — see the module.
 installLogGuards();
+setUpLogFile();
 
 // Unpackaged Electron reports its own name, so the menu bar and About box read "Electron".
 // package.json's productName only applies once packaged — this makes dev match the real thing.
@@ -149,6 +151,15 @@ app.whenReady().then(() => {
   // whose `shell:get-state` had no handler: a blank window with no way to recover it.
   app.on('activate', () => ensureShell());
   registerIpc();
+
+  // GPU, network service, utilities. Chromium restarts them itself, and the only trace used to be a
+  // bare line from Chromium's own logging — this says which, why, and with what exit code.
+  app.on('child-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return;
+    console.warn(
+      `[process] ${details.name ?? details.type} ${details.reason} (exit ${details.exitCode})`,
+    );
+  });
 
   shell = new AppWindow();
   trackWindow(shell);
@@ -429,11 +440,23 @@ function quitGracefully({ confirm }: { confirm: boolean }): void {
     .finally(() => app.quit());
 }
 
+/**
+ * Logout, restart or shutdown. "Confirm before quitting" is for ⌘Q, where a dialog saves you from a
+ * slip of the finger; asking during a logout just stops the logout, with macOS reporting that
+ * Hangar cancelled it. The system is ending the session, so quit the way `--quit` does.
+ */
+let systemEnding = false;
+powerMonitor.on('shutdown', () => {
+  systemEnding = true;
+  console.log('[power] the session is ending — quitting without asking');
+  quitGracefully({ confirm: false });
+});
+
 app.on('before-quit', (event) => {
   // The second pass — `app.quit()` from `quitGracefully` itself — is let through.
   if (isQuitting()) return;
   event.preventDefault();
-  quitGracefully({ confirm: true });
+  quitGracefully({ confirm: !systemEnding });
 });
 
 // macOS convention: closing the window doesn't quit. Also avoids Electron's default

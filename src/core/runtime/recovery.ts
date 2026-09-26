@@ -20,12 +20,45 @@ const TRANSIENT = new Set([
   -102, // CONNECTION_REFUSED
   -104, // CONNECTION_FAILED
   -105, // NAME_NOT_RESOLVED
-  -106, // INTERNET_DISCONNECTED
   -109, // ADDRESS_UNREACHABLE
   -118, // CONNECTION_TIMED_OUT
 ]);
 
 export const MAX_AUTO_RETRIES = 3;
+
+/** ERR_INTERNET_DISCONNECTED: the machine itself has no network, as opposed to a site being down. */
+export const OFFLINE = -106;
+
+/**
+ * How long a load has to stay up before it counts as recovery.
+ *
+ * Reset on `did-finish-load` alone, the backoff never advanced: Chromium commits an error page for
+ * a failed navigation and that fires `did-finish-load` too, so every failure was followed by a
+ * "success" that zeroed the count. Offline, a pane reloaded every second for as long as the network
+ * was gone — 627 consecutive times on one sign-in URL, 96% of a 1 MB log. A page that stays loaded
+ * for thirty seconds without failing is a real recovery; one that fails again sooner is the same
+ * outage.
+ */
+export const HEALTHY_AFTER_MS = 30_000;
+
+export interface FailureHistory {
+  /** Automatic attempts spent so far. */
+  failures: number;
+  /** Epoch ms of the last failed main-frame load, or null. */
+  lastFailureAt: number | null;
+  /** Epoch ms of the last finished load, or null. Includes Chromium's own error pages. */
+  lastLoadedAt: number | null;
+}
+
+/** The attempts to count against a failure happening at `now` — zero only after a real recovery. */
+export function attemptsSoFar(history: FailureHistory, now: number): number {
+  const { failures, lastFailureAt, lastLoadedAt } = history;
+  const recovered =
+    lastLoadedAt !== null &&
+    (lastFailureAt === null || lastLoadedAt > lastFailureAt) &&
+    now - lastLoadedAt >= HEALTHY_AFTER_MS;
+  return recovered ? 0 : failures;
+}
 
 export interface FailureContext {
   errorCode: number;
@@ -39,12 +72,22 @@ export interface FailureAction {
   showError: boolean;
   /** Retry after this many ms, or null to leave it to the user. */
   retryAfterMs: number | null;
+  /**
+   * Reload by itself once the machine is back online. Only for OFFLINE: retrying on a timer while
+   * the OS reports no network is guaranteed to fail, and waiting for the user to notice the
+   * network came back is a pane that stays broken for no reason.
+   */
+  waitForNetwork?: true;
 }
 
 export function decideFailure(ctx: FailureContext): FailureAction {
   // Aborted navigations and subframe errors are noise — do nothing at all.
   if (ctx.errorCode === -3 || !ctx.isMainFrame) {
     return { showError: false, retryAfterMs: null };
+  }
+
+  if (ctx.errorCode === OFFLINE) {
+    return { showError: true, retryAfterMs: null, waitForNetwork: true };
   }
 
   if (TRANSIENT.has(ctx.errorCode) && ctx.attempts < MAX_AUTO_RETRIES) {
@@ -78,7 +121,7 @@ export function errorPageHtml(opts: {
 }): string {
   const headline = opts.offline ? "You're offline" : `${escape(opts.serviceName)} didn't load`;
   const detail = opts.offline
-    ? 'Hangar will keep the page ready. Reconnect and try again.'
+    ? 'This page will reload by itself when the connection is back.'
     : `${escape(opts.description || 'The page failed to load')} (${opts.errorCode})`;
 
   return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>

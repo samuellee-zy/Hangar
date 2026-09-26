@@ -224,8 +224,7 @@ Not bugs; things that will look like bugs later.
 
 ## 8. Suggested order
 
-If picking this up fresh, start with **§13.2–13.3** — reliability bugs that are live in the log
-today, and UI that doesn't do what it says. Then:
+If picking this up fresh, start with **§13.3** — UI that doesn't do what it says. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -339,41 +338,17 @@ Deliberately kept: **Toggle Developer Tools stays in the View menu** of the pack
 unread selector (§8, [unread-selectors.md](unread-selectors.md)) is done with DevTools open on a
 real signed-in page, and this is an app you build for yourself.
 
-### 13.2 Reliability (P1)
+### 13.2 Reliability (P1) — closed
 
-- **The ad blocker covers only the first session** — *confirmed live*, every boot:
-  `Attempted to register a second handler for '@ghostery/adblocker/inject-cosmetic-filters'`.
-  ghostery's `BlockingContext.enable()` calls `ipcMain.handle` per session and throws on the second,
-  *after* marking it enabled and registering its preload but *before* its `webRequest` listeners.
-  Disabling any one session removes the handlers for all of them. **Fix** (`adblock.ts`): the
-  handlers delegate to the one shared engine, so remove them before each `enableBlockingInSession`
-  and re-register after a `disableBlockingInSession` while other sessions remain enabled — tracked
-  in a module-level `Set<Session>`.
-- **Offline, a failing service reloads every second, forever** (`service-manager.ts:141-179`,
-  `recovery.ts:44-56`): `did-finish-load` fires for Chromium's error page and resets the failure
-  count, so the backoff never advances. 627 consecutive failures on the Teams sign-in URL, 96% of a
-  1 MB log. **Fix:** reset only after a load has held ~30s; for `ERR_INTERNET_DISCONNECTED`, wait
-  for the network instead of a timer.
-- **An unhandled rejection freezes the main process** behind a modal `showErrorBox`
-  (`logging.ts:129-132`), and several promises float: `openExternal` (rejects for a scheme with no
-  handler), `push-manager.ts:114`, `service-manager.ts:189`. **Fix:** log rejections; keep the dialog
-  for true uncaught exceptions; add the missing `.catch`es.
-- **No crash recovery for internal views** — a rail renderer crash is a permanently blank rail. No
-  `child-process-gone` logging either, though the log has GPU and network-service crashes.
-- **The global shortcut dies with the first rebuilt window**: `releaseGlobalShortcut` never resets
-  `registered`, so re-applying the same accelerator returns early (`system.ts:105-120`).
-- **Custom CSS/JS edits need a sleep and wake**, because `dom-ready` closes over the `svc` from view
-  creation (`service-manager.ts:188`); the "needs a reload" note is wrong.
-- **The proxy never reverts to "system"** (`system.ts:38-53` returns early), and choosing http/socks
-  applies `http://:0` at once, cutting every service off until a host is typed (`Network.tsx:22`).
-- **Unread is cleared while the window is hidden**: `relayout()` marks pane services read on every
-  sweep (`app-window.ts` ~844). Clear on window focus/show instead.
-- **The Dock badge goes stale after removing a service** — cleared directly rather than through
-  `clearUnread()` (`app-window.ts` ~1506).
-- **Hiding a fullscreen window leaves a black Space** (close handler, `app-window.ts` ~272).
-- **The log never rotates** and carries MSAL `login_hint`/`state` query strings. Fixing the reload
-  loop removes almost all of its volume; then copy-and-truncate at boot past ~5 MB, strip queries.
-- **Quit blocks logout**: `confirmQuit`'s sync dialog also runs for a system shutdown.
+All of it, in [decisions #98](decisions.md): ad blocking covers every session; the offline reload
+loop is bounded and "no internet" reloads by itself when the network returns; an unhandled
+rejection is a log line, not a modal dialog; the app's own screens recover from a renderer crash
+and child-process crashes are logged; the global shortcut survives a rebuilt window; custom CSS and
+JS apply on reload; the proxy reverts to System and a half-filled manual proxy no longer cuts the
+network; unread survives a hidden window and the badge follows a removed service; hiding a
+fullscreen window leaves fullscreen first; the log rotates, is written for Finder launches too, and
+Electron's own warnings have their query strings removed; logout no longer stops on the quit
+confirmation.
 
 ### 13.3 UI bugs (P1)
 

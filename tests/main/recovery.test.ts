@@ -5,7 +5,15 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { MAX_AUTO_RETRIES, decideFailure, errorPageHtml, shouldRecoverFromCrash } from '@core/runtime/recovery';
+import {
+  HEALTHY_AFTER_MS,
+  MAX_AUTO_RETRIES,
+  OFFLINE,
+  attemptsSoFar,
+  decideFailure,
+  errorPageHtml,
+  shouldRecoverFromCrash,
+} from '@core/runtime/recovery';
 
 
 const fail = (over = {}) => decideFailure({ errorCode: -105, isMainFrame: true, attempts: 0, ...over });
@@ -33,9 +41,16 @@ describe("what counts as a failure", () => {
 describe("retry policy", () => {
 
   it('a transient network error retries rather than showing an error page', () => {
-    const action = fail({ errorCode: -106, attempts: 0 });
+    const action = fail({ errorCode: -105, attempts: 0 }); // NAME_NOT_RESOLVED
     assert.equal(action.showError, false);
     assert.equal(action.retryAfterMs, 1000);
+  });
+
+  it('OFFLINE WAITS FOR THE NETWORK instead of retrying on a timer that cannot succeed', () => {
+    const action = fail({ errorCode: OFFLINE, attempts: 0 });
+    assert.equal(action.showError, true, 'says so straight away');
+    assert.equal(action.retryAfterMs, null, 'no timer');
+    assert.equal(action.waitForNetwork, true, 'reloads itself when the network is back');
   });
 
   it('backoff doubles, so a flapping connection is not hammered', () => {
@@ -103,5 +118,46 @@ describe("error page", () => {
       errorPageHtml({ serviceName: 'X', url: 'u', errorCode: -2, description: 'd', offline: false })
     );
     assert.ok(html.includes('__hangar') && html.includes('retry()'));
+  });
+});
+
+describe('when a failure counts against the backoff', () => {
+  const t0 = 1_000_000;
+
+  it('THE ERROR PAGE LOADING IS NOT A RECOVERY — the loop that reloaded every second, forever', () => {
+    // Chromium commits an error page and fires did-finish-load for it, a moment after the failure.
+    const history = { failures: 2, lastFailureAt: t0, lastLoadedAt: t0 + 50 };
+    assert.equal(attemptsSoFar(history, t0 + 1_000), 2, 'a second later it is the same outage');
+  });
+
+  it('a load that stays up for the healthy period does wipe the slate', () => {
+    const history = { failures: 3, lastFailureAt: t0, lastLoadedAt: t0 + 1_000 };
+    assert.equal(attemptsSoFar(history, t0 + 1_000 + HEALTHY_AFTER_MS), 0);
+  });
+
+  it('a failure after the last load is still counted however long ago the load was', () => {
+    const history = { failures: 1, lastFailureAt: t0 + 5_000, lastLoadedAt: t0 };
+    assert.equal(attemptsSoFar(history, t0 + 10 * HEALTHY_AFTER_MS), 1);
+  });
+
+  it('no history is no attempts', () => {
+    assert.equal(attemptsSoFar({ failures: 0, lastFailureAt: null, lastLoadedAt: null }, t0), 0);
+  });
+
+  it('THE BACKOFF NOW REACHES ITS CAP — simulating the sequence that used to loop', () => {
+    const history = { failures: 0, lastFailureAt: null as number | null, lastLoadedAt: null as number | null };
+    let now = t0;
+    let retries = 0;
+    for (let i = 0; i < 20; i++) {
+      const attempts = attemptsSoFar(history, now);
+      const action = decideFailure({ errorCode: -105, isMainFrame: true, attempts });
+      history.failures = attempts + 1;
+      history.lastFailureAt = now;
+      if (action.retryAfterMs === null) break;
+      retries++;
+      history.lastLoadedAt = now + 10; // the error page's did-finish-load
+      now += action.retryAfterMs;
+    }
+    assert.equal(retries, MAX_AUTO_RETRIES, 'stops after the cap instead of looping');
   });
 });

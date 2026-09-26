@@ -30,25 +30,38 @@ export function applyLoginItem(prefs: Preferences): boolean {
   return applyLaunchAgent(prefs);
 }
 
-/** Chromium's proxy rule format. `system` means "don't set one" — the default already is. */
-export function proxyRules(proxy: ProxyConfig): { mode?: 'direct'; proxyRules?: string } | null {
+export type ProxySetting = { mode: 'system' | 'direct' } | { proxyRules: string };
+
+/**
+ * What to hand `session.setProxy`.
+ *
+ * Always *something*. `system` used to return null and `applyProxy` returned early on null, which
+ * made "system" mean "leave whatever is there" — so switching from a work proxy back to System left
+ * every open service on the work proxy until restart. It is `mode: 'system'` now, which actively
+ * restores it.
+ *
+ * A manual proxy without a host and port also falls back to the system's. Picking "http" in
+ * Settings writes the mode before you have typed anything, and applying that as `http://:0` cut
+ * every service off the network until the host was filled in.
+ */
+export function proxyRules(proxy: ProxyConfig): ProxySetting {
   switch (proxy.mode) {
     case 'system':
-      return null;
+      return { mode: 'system' };
     case 'none':
       return { mode: 'direct' };
     case 'http':
-      return { proxyRules: `http://${proxy.host}:${proxy.port}` };
     case 'socks4':
-      return { proxyRules: `socks4://${proxy.host}:${proxy.port}` };
-    case 'socks5':
-      return { proxyRules: `socks5://${proxy.host}:${proxy.port}` };
+    case 'socks5': {
+      const host = proxy.host.trim();
+      if (!host || !(proxy.port > 0 && proxy.port <= 65535)) return { mode: 'system' };
+      return { proxyRules: `${proxy.mode}://${host}:${proxy.port}` };
+    }
   }
 }
 
 export async function applyProxy(sessions: Iterable<Electron.Session>, prefs: Preferences): Promise<void> {
   const rules = proxyRules(prefs.network.proxy);
-  if (!rules) return;
   for (const ses of sessions) {
     try {
       await ses.setProxy(rules);
@@ -109,21 +122,37 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
  * their own keys — see docs/keyboard.md.
  */
 let registered: string | null = null;
+let registeredToggle: (() => void) | null = null;
 
 export function applyGlobalShortcut(accelerator: string | null, toggle: () => void): void {
-  if (registered === accelerator) return;
+  // Same chord *and* same handler. The chord alone was the check, so after ⌘W rebuilt the window
+  // the new one's `applySystemPreferences` was told "already registered" — and the shortcut kept
+  // calling the old, disposed window's toggle, or nothing at all once dispose had released it.
+  if (registered === accelerator && registeredToggle === toggle) return;
+  registeredToggle = null;
   if (registered) globalShortcut.unregister(registered);
   registered = null;
   if (!accelerator) return;
   try {
-    if (globalShortcut.register(accelerator, toggle)) registered = accelerator;
-    else console.warn(`[shortcut] ${accelerator} is already taken by another app`);
+    if (globalShortcut.register(accelerator, toggle)) {
+      registered = accelerator;
+      registeredToggle = toggle;
+    } else console.warn(`[shortcut] ${accelerator} is already taken by another app`);
   } catch (err) {
     console.error('[shortcut] invalid accelerator:', err);
   }
 }
 
-export const releaseGlobalShortcut = () => globalShortcut.unregisterAll();
+/**
+ * Forgets the registration as well as removing it — otherwise the next `applyGlobalShortcut` with
+ * the same chord believed it was still registered and did nothing, and the rebuilt window had no
+ * shortcut at all.
+ */
+export const releaseGlobalShortcut = () => {
+  globalShortcut.unregisterAll();
+  registered = null;
+  registeredToggle = null;
+};
 
 export { session };
 

@@ -229,3 +229,80 @@ test('SAVED BOUNDS OFF EVERY DISPLAY OPEN ON-SCREEN — the unplugged-monitor ca
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(workArea.x + workArea.width);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(workArea.y + workArea.height);
 });
+
+// --- staying correct while nobody is looking --------------------------------------------------
+
+type UnreadShell = {
+  win: { close: () => void; isVisible: () => boolean };
+  state: () => { services: { id: string; unread: number }[] };
+  handleNotification: (serviceId: string, payload: unknown) => void;
+  /** Private in TypeScript, reachable at runtime — it is what the 30s sweep ends in. */
+  relayout: () => void;
+  showWindow: () => void;
+};
+
+test('UNREAD SURVIVES WHILE THE WINDOW IS CLOSED TO THE TRAY — and clears once it is shown', async () => {
+  // The hibernation sweep relays out every 30s, and relayout marked every pane read whatever the
+  // window was doing: a message arriving in the visible pane of a hidden window was wiped before
+  // anyone saw it.
+  h = await launch((origin) => seedConfig(origin, { preferences: { behaviour: { closeToTray: true } } }));
+  await h.rail();
+
+  const result = await h.app.evaluate(async () => {
+    const shell = (globalThis as never as { __hangarShell: UnreadShell }).__hangarShell;
+    const unreadOf = (id: string) => shell.state().services.find((s) => s.id === id)?.unread ?? 0;
+
+    shell.win.close(); // hidden, not destroyed
+    await new Promise((r) => setTimeout(r, 300));
+    // 'one' is in the first pane — visible in the layout, invisible on screen.
+    shell.handleNotification('one', { title: 'New message', body: 'hi' });
+    const counted = unreadOf('one');
+
+    shell.relayout(); // what the hibernation sweep ends in, and where it used to be cleared
+    await new Promise((r) => setTimeout(r, 300));
+    const afterSweep = unreadOf('one');
+
+    shell.showWindow();
+    await new Promise((r) => setTimeout(r, 300));
+    return { counted, afterSweep, afterShow: unreadOf('one') };
+  });
+
+  expect(result.counted, 'a hidden window counts the message').toBeGreaterThan(0);
+  expect(result.afterSweep, 'the sweep must not mark it read').toBe(result.counted);
+  expect(result.afterShow, 'showing the window is what reads it').toBe(0);
+});
+
+test('A CRASHED RAIL RENDERER COMES BACK BY ITSELF', async () => {
+  // Service views always recovered from a crash; the app's own screens never did, and a dead rail
+  // was a blank strip until you quit. Driven from main: Playwright's page handle dies with the
+  // renderer it belonged to.
+  h = await launch();
+  const rail = await h.rail();
+  await expect(rail.locator('.rail-item').first()).toBeVisible();
+
+  await h.app.evaluate(({ webContents }) => {
+    const wc = webContents.getAllWebContents().find((c) => c.getURL().includes('#rail'));
+    const g = globalThis as { __railCrashed?: boolean };
+    // Recorded, so the poll below can't pass on the rail as it was *before* the crash.
+    wc?.once('render-process-gone', () => (g.__railCrashed = true));
+    // Deferred, so this evaluate returns before anything dies.
+    setTimeout(() => wc?.forcefullyCrashRenderer(), 100);
+  });
+
+  await expect
+    .poll(
+      () =>
+        h.app
+          .evaluate(async ({ webContents }) => {
+            if (!(globalThis as { __railCrashed?: boolean }).__railCrashed) return 0;
+            const wc = webContents.getAllWebContents().find((c) => c.getURL().includes('#rail'));
+            if (!wc || wc.isCrashed() || wc.isLoading()) return 0;
+            return (await wc.executeJavaScript(
+              "document.querySelectorAll('.rail-item').length",
+            )) as number;
+          })
+          .catch(() => 0),
+      { timeout: 15_000, intervals: [500] },
+    )
+    .toBeGreaterThan(0);
+});

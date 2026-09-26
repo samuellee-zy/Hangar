@@ -8,6 +8,7 @@ import {
   launchAgentWanted,
   renderLaunchAgent,
 } from '@core/config/launch-agent';
+import { LOG_FILE } from '@main/platform/log-file';
 import type { Preferences } from '@shared/types';
 
 /**
@@ -27,7 +28,7 @@ import type { Preferences } from '@shared/types';
 const agentPath = (): string =>
   path.join(os.homedir(), 'Library', 'LaunchAgents', `${LAUNCH_AGENT_LABEL}.plist`);
 
-const logPath = (): string => path.join(os.homedir(), 'Library', 'Logs', 'Hangar', 'hangar.log');
+const logPath = (): string => LOG_FILE;
 
 /**
  * Whether the job on disk matches what the preferences ask for.

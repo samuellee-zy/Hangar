@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, net, type Session } from 'electron';
+import { app, ipcMain, net, type Session } from 'electron';
 import { ElectronBlocker } from '@ghostery/adblocker-electron';
+import { createSessionBlocking, type SessionBlocker } from '@main/platform/adblock-sessions';
 
 /**
  * Ad and tracker blocking, per session.
@@ -80,6 +81,10 @@ function loadEngine(): Promise<ElectronBlocker> {
   return engine;
 }
 
+/** One engine, many sessions — see adblock-sessions.ts for why ghostery needs help with that. */
+const sessions = createSessionBlocking<Session>(ipcMain as never);
+const asSessionBlocker = (blocker: ElectronBlocker) => blocker as unknown as SessionBlocker<Session>;
+
 /**
  * Turn blocking on for one session. Asynchronous by nature — the engine may still be loading — so
  * early requests in a brand new session go unblocked rather than being held up behind a download.
@@ -93,8 +98,8 @@ export function applyAdBlocking(ses: Session, enabled: boolean): void {
   void loadEngine()
     .then((blocker) => {
       // The session can be gone by the time the engine arrives, and enabling twice would register
-      // a second set of webRequest listeners.
-      if (!blocker.isBlockingEnabled(ses)) blocker.enableBlockingInSession(ses);
+      // a second set of webRequest listeners; `enable` checks.
+      sessions.enable(asSessionBlocker(blocker), ses);
     })
     .catch((err) => {
       console.warn('[adblock] unavailable, continuing without it:', err?.message ?? err);
@@ -105,7 +110,7 @@ export function disableAdBlocking(ses: Session): void {
   if (!engine) return;
   void engine
     .then((blocker) => {
-      if (blocker.isBlockingEnabled(ses)) blocker.disableBlockingInSession(ses);
+      sessions.disable(asSessionBlocker(blocker), ses);
     })
     .catch(() => {
       // Never loaded, so there is nothing enabled to turn off.

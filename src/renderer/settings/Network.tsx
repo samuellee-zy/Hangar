@@ -25,10 +25,14 @@ export function Network({ network }: { network: Preferences['network'] }) {
           <li className="pref">
             <span className="pref-label">
               <span className="pref-name">Host and port</span>
-              <span className="pref-note">Applied when you finish editing</span>
+              <span className="pref-note">
+                Applied when you finish editing. Until both are set, the system proxy is used
+              </span>
             </span>
             <span style={{ display: 'flex', gap: 8 }}>
               <CommitOnBlur
+                aria-label="Proxy host"
+                placeholder="proxy.example.com"
                 value={network.proxy.host}
                 onCommit={(host) =>
                   window.hangar.send({ type: 'set-preference', path: 'network.proxy.host', value: host })
@@ -40,6 +44,7 @@ export function Network({ network }: { network: Preferences['network'] }) {
               <CommitOnBlur
                 className="field"
                 type="number"
+                aria-label="Proxy port"
                 min={0}
                 max={65535}
                 style={{ width: 82 }}

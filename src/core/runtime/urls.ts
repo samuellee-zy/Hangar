@@ -151,3 +151,8 @@ export function redactUrl(raw: string): string {
     return raw.length > 80 ? `${raw.slice(0, 80)}…` : raw;
   }
 }
+
+/** Every web URL inside a piece of text, redacted. For log lines we don't write ourselves. */
+export function redactUrlsIn(text: string): string {
+  return text.replace(/https?:\/\/[^\s'"<>]+/g, (url) => redactUrl(url));
+}

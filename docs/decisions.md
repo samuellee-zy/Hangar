@@ -2036,3 +2036,62 @@ so the `display-capture` grant had never done anything.
 Both e2e tests in `security.spec.ts` were checked by removing the guard each covers: each fails
 without it.
 
+## 98. Failing well: bounded retries, logged rejections, screens that come back
+
+A pass over what the app does when something goes wrong, driven by what the log actually showed.
+
+**The reload loop.** Offline, one pane reloaded every second for as long as the network was gone —
+627 consecutive failures on a single Teams sign-in URL, 96% of a 1 MB log. The backoff (1s, 2s, 4s,
+then the error page) never advanced because `did-finish-load` reset it, and Chromium fires
+`did-finish-load` for the error page it commits after a failed navigation. So every failure was
+followed by a "success". The count is now forgiven only by a load that stays up for thirty seconds
+(`attemptsSoFar`, `HEALTHY_AFTER_MS`), which is pure and has a test replaying the old sequence.
+`ERR_INTERNET_DISCONNECTED` no longer retries on a timer at all — retrying while the OS reports no
+network cannot succeed — but shows the offline page at once and polls `net.isOnline()` to reload
+itself when the network is back.
+
+**Rejections are log lines.** The `unhandledRejection` handler rethrew, which ended in
+`showErrorBox`: modal and synchronous, so the main process stopped until someone clicked OK. With the
+window closed to the tray there was nobody to click it. A `zoommtg:` link on a Mac without Zoom was
+enough. Uncaught *exceptions* keep the dialog — that is our own synchronous code being wrong, and
+Electron's behaviour to preserve. The floating promises that were most likely to reject now carry
+their own `.catch` with context: sign-out, export, import, push reconnect.
+
+**Ad blocking covered one account.** ghostery registers two global IPC handlers on every session's
+enable, and `ipcMain.handle` throws on the second — after marking the session enabled and before
+installing its network listeners. The second and later accounts were never blocked, never retried,
+and the log said so on every boot. Disabling one removed the handlers for all. The handlers delegate
+to the shared engine, so clearing them before each enable and restoring them after a disable is the
+whole fix (`adblock-sessions.ts`, tested against a fake that fails the same way).
+
+**The app's own screens recover from crashes.** Service views always reloaded after a renderer
+crash; the rail, Settings and the overlays never did, and a dead rail was a blank strip until quit.
+`loadRoute` gives them the same recovery, three times a minute at most. GPU and network-service
+crashes are logged with their reason and exit code.
+
+**Things that were silently wrong:**
+
+- The global shortcut compared the chord only, so a rebuilt window was told it was already
+  registered and kept the old window's handler — or none, once dispose had released it.
+- Custom CSS and JS were read from the service as it was when its view was built, so an edit applied
+  only after a sleep and wake.
+- "System" proxy meant "leave whatever is there", so leaving a work proxy kept it until restart; and
+  picking "http" applied `http://:0` before a host was typed, cutting every service off.
+- The hibernation sweep's relayout marked pane services read whatever the window was doing, so with
+  the window closed to the tray, messages were wiped before anyone saw them. Panes are acknowledged
+  on `show` and `restore` instead.
+- Removing a service cleared its unread without recomputing the badge.
+- Hiding a fullscreen window left an empty black Space; it leaves fullscreen first now.
+- "Confirm before quitting" stopped logout and shutdown. `powerMonitor`'s `shutdown` quits without
+  asking.
+
+**The log.** It is launchd's `StandardOutPath` and nothing ever rotated it; a Finder launch logged
+nowhere; and Electron's own "Failed to load URL" warnings wrote full sign-in URLs into it, email
+address and `state` included. It is rotated at boot past 5 MB (copy-and-truncate, because launchd
+holds it open in append mode), teed with timestamps for launches whose stdout isn't the file, and
+Node's default warning printer is replaced by one that redacts query strings.
+
+Each new E2E test — the crashed rail, unread in a hidden window — was checked against the bug put
+back. The first draft of each passed anyway: one polled before the crash happened, the other
+triggered a sweep that returns early when hibernation is off. Both now fail without the fix.
+

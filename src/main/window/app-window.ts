@@ -263,6 +263,8 @@ export class AppWindow {
       this.saveWindowBounds();
     });
     this.win.on('move', () => this.saveWindowBounds());
+    this.win.on('show', () => this.acknowledgePanes());
+    this.win.on('restore', () => this.acknowledgePanes());
     // The debounce means a window that's never moved would otherwise never record its bounds,
     // and a quit inside the debounce window would drop the last change.
     this.win.on('close', (event: Electron.Event) => {
@@ -270,7 +272,7 @@ export class AppWindow {
       // Hide rather than destroy, so the tray icon still leads somewhere.
       if (loadConfig().preferences.behaviour.closeToTray && !isQuitting()) {
         event.preventDefault();
-        this.win.hide();
+        this.hideWindow();
       }
     });
 
@@ -693,6 +695,25 @@ export class AppWindow {
     if (!first) refreshMenu();
   }
 
+  /**
+   * Hide the window, leaving native fullscreen first if it's in it.
+   *
+   * `hide()` on a fullscreen window leaves its Space behind: an empty black desktop you are swiped
+   * into, with nothing on it, until you find your way out. Fullscreen has to be left first, and
+   * leaving it is animated, so the hide waits for it to finish.
+   */
+  hideWindow(): void {
+    if (this.win.isDestroyed()) return;
+    if (this.win.isFullScreen()) {
+      this.win.once('leave-full-screen', () => {
+        if (!this.win.isDestroyed()) this.win.hide();
+      });
+      this.win.setFullScreen(false);
+      return;
+    }
+    this.win.hide();
+  }
+
   showWindow(): void {
     if (this.win.isMinimized()) this.win.restore();
     // Checked again here, not only at construction. A window closed to the tray on an external
@@ -843,13 +864,18 @@ export class AppWindow {
       if (!visible.has(serviceId)) this.win.contentView.removeChildView(runtime.view);
     }
 
+    // Looking at a pane is what marks it read — but only if anyone *can* look. Relayout runs on the
+    // hibernation sweep every 30s whatever the window is doing, so with the window closed to the
+    // tray every service in a pane had its unread wiped before anyone saw it. `show`/`restore`
+    // acknowledge the panes instead, once they are actually on screen.
+    const onScreen = this.windowOnScreen();
     for (const pane of this.layout.panes) {
       const runtime = this.services.get(pane.serviceId);
       const rect = bounds.get(pane.id);
       if (!runtime || !rect) continue;
       // Idle time is measured as time off screen, so refresh the stamp while visible.
       this.services.markActive(pane.serviceId);
-      this.clearUnread(pane.serviceId);
+      if (onScreen) this.clearUnread(pane.serviceId);
       this.win.contentView.addChildView(runtime.view);
       runtime.view.setBounds(rect);
       // Rounded card. Note Electron's caveat: the cut-out corners still capture clicks — harmless
@@ -1255,7 +1281,9 @@ export class AppWindow {
         break;
 
       case 'sign-out-account':
-        void this.signOut(command.accountId);
+        this.signOut(command.accountId).catch((err: unknown) =>
+          console.error(`[account] sign out of ${command.accountId} failed:`, err),
+        );
         break;
 
       case 'open-find': {
@@ -1376,18 +1404,18 @@ export class AppWindow {
         break;
 
       case 'export-config':
-        void exportConfig(this.win);
+        exportConfig(this.win).catch((err: unknown) => console.error('[transfer] export failed:', err));
         break;
 
       case 'import-config':
-        void importConfig(this.win, () => {
+        importConfig(this.win, () => {
           // A fresh config means every view is stale — rebuild from scratch.
           for (const [serviceId] of [...this.services.all()]) this.sleep(serviceId);
           this.layout.panes = [];
           this.layout.focusedPaneId = null;
           this.restoreLayout();
           this.relayout();
-        });
+        }).catch((err: unknown) => console.error('[transfer] import failed:', err));
         break;
 
       case 'show-rail-menu':
@@ -1514,7 +1542,9 @@ export class AppWindow {
   private removeService(serviceId: string): void {
     // Before the config write, or the registration row is orphaned with a live socket behind it.
     this.push.unsubscribe(serviceId);
-    this.unread.clear(serviceId);
+    // Through `clearUnread`, which recomputes the badge. Clearing the map directly left the Dock
+    // counting a service that no longer existed.
+    this.clearUnread(serviceId);
     deleteCachedIcon(serviceId);
 
     updateConfig((c) => removeServiceFromConfig(c, serviceId));
@@ -1760,7 +1790,7 @@ export class AppWindow {
 
   private applyShortcut(accelerator: string | null): void {
     applyGlobalShortcut(accelerator, () => {
-      if (this.win.isVisible() && !this.win.isMinimized()) this.win.hide();
+      if (this.win.isVisible() && !this.win.isMinimized()) this.hideWindow();
       else this.showWindow();
     });
   }
@@ -2005,7 +2035,7 @@ export class AppWindow {
       serviceEnabled: svc.notifications,
       inVisiblePane: this.layout.visibleServiceIds().has(serviceId),
       // A pane inside a window you closed to the tray is not something you're looking at.
-      windowVisible: !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized(),
+      windowVisible: this.windowOnScreen(),
     });
 
     if (decision.count) this.unread.increment(serviceId);
@@ -2045,6 +2075,19 @@ export class AppWindow {
   }
 
   /** Looking at a service is what marks it read — the only signal we reliably have. */
+  /** Whether the window is somewhere a person could be looking at it. */
+  private windowOnScreen(): boolean {
+    return !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized();
+  }
+
+  /** The window has just come back into view: whatever is in a pane has now been seen. */
+  private acknowledgePanes(): void {
+    for (const pane of this.layout.panes) {
+      if (this.services.has(pane.serviceId)) this.clearUnread(pane.serviceId);
+    }
+    this.sync();
+  }
+
   private clearUnread(serviceId: string): void {
     if (this.unread.get(serviceId) === 0) return;
     this.unread.clear(serviceId);

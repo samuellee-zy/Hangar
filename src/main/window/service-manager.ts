@@ -1,10 +1,12 @@
 import path from 'node:path';
-import { nativeTheme, WebContentsView } from 'electron';
+import { nativeTheme, net, WebContentsView } from 'electron';
 import { isOrphaned, resolveUrl } from '@shared/catalog';
 import { loadConfig } from '@main/platform/config';
 import { captureFavicon } from '@main/features/icons';
 import { creditSuspendedTime } from '@core/runtime/hibernate';
 import {
+  OFFLINE,
+  attemptsSoFar,
   decideFailure,
   errorPageHtml,
   orphanPageHtml,
@@ -24,8 +26,14 @@ import type { ServiceInstance } from '@shared/types';
 export interface ServiceRuntime {
   view: WebContentsView;
   loading: boolean;
-  /** Consecutive automatic recovery attempts. Reset by any successful load. */
+  /** Automatic recovery attempts spent. See `attemptsSoFar` for when they are forgiven. */
   failures: number;
+  /** Epoch ms of the last failed main-frame load. */
+  lastFailureAt: number | null;
+  /** Epoch ms of the last finished load — Chromium's own error pages included. */
+  lastLoadedAt: number | null;
+  /** The poll waiting for the network to come back, while the offline page is up. */
+  networkWait?: ReturnType<typeof setInterval>;
   /** Epoch ms of the last time this service was on screen. Drives hibernation. */
   lastActiveAt: number;
 }
@@ -110,6 +118,8 @@ export class ServiceManager {
       view,
       loading: true,
       failures: 0,
+      lastFailureAt: null,
+      lastLoadedAt: null,
       lastActiveAt: Date.now(),
     };
     this.runtimes.set(svc.id, runtime);
@@ -142,9 +152,10 @@ export class ServiceManager {
     // ran, so the effect was right and the cost was a duplicated listener per view; the
     // `page-title-updated` beside it was duplicated the same way and was pure waste.
     view.webContents.on('did-finish-load', () => {
-      // A load that actually succeeded clears the backoff, so an outage earlier in the session
-      // doesn't make the next unrelated blip give up immediately.
-      runtime.failures = 0;
+      // Recorded, not trusted: Chromium's committed error page fires this too, so zeroing the
+      // backoff here is what made an offline pane reload every second forever. `attemptsSoFar`
+      // forgives the count only once a load has stayed up — see HEALTHY_AFTER_MS.
+      runtime.lastLoadedAt = Date.now();
 
       // Applied on every load, not once before the first navigation. Chromium's zoom level is
       // per-origin and resets on a cross-origin navigation, so a factor set on the empty
@@ -158,10 +169,14 @@ export class ServiceManager {
     });
 
     view.webContents.on('did-fail-load', (_e, errorCode, errorDescription, url, isMainFrame) => {
-      const action = decideFailure({ errorCode, isMainFrame, attempts: runtime.failures });
+      const now = Date.now();
+      const attempts = attemptsSoFar(runtime, now);
+      const action = decideFailure({ errorCode, isMainFrame, attempts });
       if (!action.showError && action.retryAfterMs === null) return; // aborted, or a subframe
 
-      runtime.failures++;
+      runtime.failures = attempts + 1;
+      runtime.lastFailureAt = now;
+      if (action.waitForNetwork) this.reloadWhenOnline(svc, runtime, url || resolveUrl(svc));
       if (action.retryAfterMs !== null) {
         setTimeout(() => {
           if (!view.webContents.isDestroyed()) view.webContents.reload();
@@ -175,8 +190,8 @@ export class ServiceManager {
           url: url || resolveUrl(svc),
           errorCode,
           description: errorDescription,
-          // -106 INTERNET_DISCONNECTED deserves different words from a site being down.
-          offline: errorCode === -106,
+          // No network deserves different words from a site being down.
+          offline: errorCode === OFFLINE,
         })
       );
     });
@@ -188,19 +203,53 @@ export class ServiceManager {
       if (!view.webContents.isDestroyed()) view.webContents.reload();
     });
     // Applied on every dom-ready, not just the first: an SPA navigation drops injected styles.
+    //
+    // Re-read from config, not the `svc` captured when the view was built. With the captured one,
+    // editing a service's CSS or script did nothing on reload — only a sleep and wake, which builds
+    // a new view, picked it up.
     view.webContents.on('dom-ready', () => {
-      if (svc.customCss) void view.webContents.insertCSS(svc.customCss);
-      if (svc.customJs) {
+      const current = loadConfig().services.find((entry) => entry.id === svc.id) ?? svc;
+      if (current.customCss) {
         view.webContents
-          .executeJavaScript(svc.customJs, true)
+          .insertCSS(current.customCss)
+          .catch((err) => console.error(`[custom-css] ${current.name}:`, err?.message ?? err));
+      }
+      if (current.customJs) {
+        view.webContents
+          .executeJavaScript(current.customJs, true)
           // User-authored script; a syntax error must not take the service down with it.
-          .catch((err) => console.error(`[custom-js] ${svc.name}:`, err?.message ?? err));
+          .catch((err) => console.error(`[custom-js] ${current.name}:`, err?.message ?? err));
       }
     });
 
     void view.webContents.loadURL(startPageFor(svc));
 
     return runtime;
+  }
+
+  /**
+   * The offline page is up; reload the service once the machine has a network again.
+   *
+   * Polled, because `net.isOnline` has no change event, and cheap — it asks the OS, it does not
+   * make a request. Stops itself when the view goes away or the network returns.
+   */
+  private reloadWhenOnline(svc: ServiceInstance, runtime: ServiceRuntime, url: string): void {
+    if (runtime.networkWait) return;
+    runtime.networkWait = setInterval(() => {
+      const wc = runtime.view.webContents;
+      if (wc.isDestroyed()) {
+        clearInterval(runtime.networkWait);
+        runtime.networkWait = undefined;
+        return;
+      }
+      if (!net.isOnline()) return;
+      clearInterval(runtime.networkWait);
+      runtime.networkWait = undefined;
+      console.log(`[network] back online — reloading ${svc.name}`);
+      void wc.loadURL(url).catch(() => {
+        // A failure here is reported through did-fail-load, which decides what happens next.
+      });
+    }, 3_000);
   }
 
   /** Called for every visible service on each relayout, so idle time is "time off screen". */
@@ -230,6 +279,7 @@ export class ServiceManager {
     const runtime = this.runtimes.get(serviceId);
     if (!runtime) return;
     this.runtimes.delete(serviceId);
+    if (runtime.networkWait) clearInterval(runtime.networkWait);
     if (!runtime.view.webContents.isDestroyed()) runtime.view.webContents.close();
   }
 

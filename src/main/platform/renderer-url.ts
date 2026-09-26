@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
-import { isAppRendererUrl, redactUrl } from '@core/runtime/urls';
+import { createRateLimiter, isAppRendererUrl, redactUrl } from '@core/runtime/urls';
 import { openExternalSafely } from '@main/platform/external';
 
 // The rail and the overlay are two routes of the same React bundle, selected by hash.
@@ -66,13 +66,37 @@ function lockDown(wc: WebContents, route: Route): void {
   wc.on('will-attach-webview', (event) => event.preventDefault());
 }
 
+/** Three reloads a minute per screen: enough to survive a crash, not enough to spin in a loop. */
+const mayRecover = createRateLimiter({ max: 3, windowMs: 60_000 });
+
+/**
+ * A crashed internal screen comes back by itself.
+ *
+ * Service views always recovered from a renderer crash; these never did. A dead rail renderer was a
+ * permanently blank strip down the side of the window with every service still running behind it,
+ * and nothing short of quitting brought it back.
+ */
+function recoverFromCrashes(wc: WebContents, route: Route): void {
+  wc.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return;
+    if (!mayRecover(route)) {
+      console.error(`[surface] ${route}: renderer ${details.reason} again — not reloading`);
+      return;
+    }
+    console.warn(`[surface] ${route}: renderer ${details.reason} (exit ${details.exitCode}) — reloading`);
+    if (!wc.isDestroyed()) show(wc, route);
+  });
+}
+
+function show(wc: WebContents, route: Route): void {
+  const devUrl = process.env['ELECTRON_RENDERER_URL'];
+  const loaded = devUrl ? wc.loadURL(`${devUrl}#${route}`) : wc.loadFile(rendererIndex(), { hash: route });
+  loaded.catch((err: unknown) => console.error(`[surface] ${route}: failed to load — ${String(err)}`));
+}
+
 export function loadRoute(wc: WebContents, route: Route): void {
   forwardConsole(wc, route);
   lockDown(wc, route);
-  const devUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (devUrl) {
-    void wc.loadURL(`${devUrl}#${route}`);
-  } else {
-    void wc.loadFile(rendererIndex(), { hash: route });
-  }
+  recoverFromCrashes(wc, route);
+  show(wc, route);
 }
