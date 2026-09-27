@@ -20,6 +20,8 @@ export interface Rect {
 export interface DropHighlight {
   rect: Rect;
   kind: 'replace' | 'new-pane';
+  /** What releasing does, in words — "Open beside Gmail". Main knows which service is there. */
+  label?: string;
 }
 
 /**

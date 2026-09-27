@@ -414,8 +414,15 @@ export function Rail() {
 
             return (
               <SortableTile key={item.id} id={item.id}>
-                {({ setNodeRef, style, handleProps }) => (
-                  <div ref={setNodeRef} style={style} {...handleProps} className="rail-slot">
+                {({ setNodeRef, style, handleProps, isOver }) => (
+                  // Dropping a service on a folder files it there, but the drag animated a reorder
+                  // and nothing said "into this folder". A ring does now.
+                  <div
+                    ref={setNodeRef}
+                    style={style}
+                    {...handleProps}
+                    className={`rail-slot${isOver ? ' is-drop-target' : ''}`}
+                  >
                     {panel && renamingId === item.id ? (
                       // Same shape and the same two hazards as a service's rename above: the field
                       // replaces the button, and keydown must not reach the draggable.

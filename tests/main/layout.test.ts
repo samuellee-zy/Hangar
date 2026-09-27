@@ -486,3 +486,17 @@ describe('maximising a pane', () => {
     expect(layout.maximisedPaneId).toBeNull();
   });
 });
+
+describe('opening beside a pane', () => {
+  it('INSERTS NEXT TO THAT PANE, ON THE SIDE OF THE DROP — not always at the end', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    const b = l.add('b');
+    l.add('left-of-b', { paneId: b.id, side: 'before' });
+    l.add('right-of-a', { paneId: a.id, side: 'after' });
+    assert.deepEqual(
+      l.panes.map((p) => p.serviceId),
+      ['a', 'right-of-a', 'left-of-b', 'b'],
+    );
+  });
+});

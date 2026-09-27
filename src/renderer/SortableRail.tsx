@@ -296,11 +296,12 @@ export function SortableTile({
     setNodeRef: (el: HTMLElement | null) => void;
     style: React.CSSProperties;
     handleProps: Record<string, unknown>;
+    /** Another item is being dragged over this one — what a folder shows as "drop here". */
+    isOver: boolean;
   }) => ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, active } =
+    useSortable({ id });
 
   // dnd-kit's keyboard sensor binds Space/Enter to "lift". On the tile itself that shadows plain
   // activation, so a keyboard user could never simply open a service. Pointer listeners stay;
@@ -345,6 +346,7 @@ export function SortableTile({
           zIndex: isDragging ? 1 : undefined,
         },
         handleProps,
+        isOver: isOver && active?.id !== id,
       })}
     </>
   );

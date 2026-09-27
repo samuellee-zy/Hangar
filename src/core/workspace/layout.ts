@@ -242,12 +242,15 @@ export class Layout {
     return this.add(serviceId);
   }
 
-  add(serviceId: string): Pane {
+  /** A new pane, at the end — or beside a given pane, on the side a drop landed. */
+  add(serviceId: string, beside?: { paneId: string; side: 'before' | 'after' }): Pane {
     if (this.isFull) return this.show(serviceId);
     // Opening a pane alongside is asking for the split back.
     this.maximisedPaneId = null;
     const pane: Pane = { id: randomUUID(), serviceId };
-    this.panes.push(pane);
+    const at = beside ? this.panes.findIndex((p) => p.id === beside.paneId) : -1;
+    if (at === -1) this.panes.push(pane);
+    else this.panes.splice(beside!.side === 'before' ? at : at + 1, 0, pane);
     this.focusedPaneId = pane.id;
     return pane;
   }

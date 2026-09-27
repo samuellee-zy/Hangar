@@ -21,7 +21,10 @@ export interface DragHost {
   chrome(): Chrome;
   railRect(width: number, height: number): Rect;
   railContents(): WebContents;
-  openService(serviceId: string, options?: { newPane?: boolean }): void;
+  openService(
+    serviceId: string,
+    options?: { newPane?: boolean; beside?: { paneId: string; side: 'before' | 'after' } },
+  ): void;
   flash(serviceId: string): void;
 }
 
@@ -92,6 +95,7 @@ export class TileDrag {
             // same translation as above, backwards.
             rect: { ...rect, x: rect.x - context.content.x, y: rect.y - context.content.y },
             kind: drop.kind,
+            label: this.labelFor(drop),
           }
         : null,
     );
@@ -139,8 +143,17 @@ export class TileDrag {
       this.host.openService(serviceId);
       this.host.flash(serviceId);
     } else if (target.kind === 'new-pane') {
-      this.host.openService(serviceId, { newPane: true });
+      this.host.openService(serviceId, { newPane: true, beside: target.beside });
       this.host.flash(serviceId);
     }
+  }
+
+  /** "Open here", "Open beside Gmail", "Open alongside". */
+  private labelFor(drop: ReturnType<typeof dropAt>): string {
+    if (drop.kind !== 'new-pane') return 'Open here';
+    if (!drop.beside) return 'Open alongside';
+    const serviceId = this.host.layout.find(drop.beside.paneId)?.serviceId;
+    const name = loadConfig().services.find((s) => s.id === serviceId)?.name;
+    return name ? `Open beside ${name}` : 'Open alongside';
   }
 }

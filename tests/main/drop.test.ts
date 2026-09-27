@@ -56,8 +56,24 @@ describe('paneAt', () => {
 });
 
 describe('dropAt', () => {
-  it('over a pane, replaces that pane', () => {
-    expect(dropAt(context(), 100, 100)).toEqual({ kind: 'replace', paneId: 'a' });
+  it('over the middle of a pane, replaces that pane', () => {
+    expect(dropAt(context(), 283, 100)).toEqual({ kind: 'replace', paneId: 'a' });
+  });
+
+  it("NEAR A PANE'S EDGE, OPENS BESIDE IT ON THAT SIDE — the gutter was the only way, and 6px", () => {
+    // Pane a is 58–508: a quarter in from either edge opens beside it rather than replacing it.
+    expect(dropAt(context(), 70, 100)).toEqual({ kind: 'new-pane', beside: { paneId: 'a', side: 'before' } });
+    expect(dropAt(context(), 500, 100)).toEqual({ kind: 'new-pane', beside: { paneId: 'a', side: 'after' } });
+  });
+
+  it('an edge replaces when there is no room for another pane', () => {
+    expect(dropAt(context({ canOpenNewPane: false }), 70, 100)).toEqual({ kind: 'replace', paneId: 'a' });
+  });
+
+  it('the preview for an edge is the half of that pane the new one would take', () => {
+    const c = context();
+    const rect = highlightFor({ kind: 'new-pane', beside: { paneId: 'a', side: 'after' } }, c);
+    expect(rect).toEqual({ x: 58 + 225, y: 10, width: 225, height: 680 });
   });
 
   it('over the rail, does nothing — the content area is the whole target', () => {

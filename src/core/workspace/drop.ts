@@ -32,8 +32,18 @@ export interface PaneTarget {
  */
 export type Drop =
   | { kind: 'replace'; paneId: string }
-  | { kind: 'new-pane' }
+  /** `beside`: next to that pane, on that side — the edge zones. Absent, at the end. */
+  | { kind: 'new-pane'; beside?: { paneId: string; side: 'before' | 'after' } }
   | { kind: 'none' };
+
+/**
+ * How far in from a pane's left or right edge a drop opens beside it rather than replacing it: a
+ * quarter of the pane, capped. Opening beside used to be only the 6px gutter between panes — and
+ * with one pane there is no gutter at all, so "open alongside" was all but unreachable.
+ */
+export function edgeZone(paneWidth: number): number {
+  return Math.min(120, paneWidth / 4);
+}
 
 export interface DropContext {
   /** The area panes are laid out inside. A point outside it is over the rail or the chrome. */
@@ -70,7 +80,15 @@ export function dropAt(context: DropContext, x: number, y: number): Drop {
   if (!contains(context.content, x, y)) return { kind: 'none' };
 
   const paneId = paneAt(context.panes, x, y);
-  if (paneId) return { kind: 'replace', paneId };
+  if (paneId) {
+    const rect = context.panes.find((p) => p.paneId === paneId)!.rect;
+    const zone = edgeZone(rect.width);
+    if (context.canOpenNewPane && x < rect.x + zone) return { kind: 'new-pane', beside: { paneId, side: 'before' } };
+    if (context.canOpenNewPane && x >= rect.x + rect.width - zone) {
+      return { kind: 'new-pane', beside: { paneId, side: 'after' } };
+    }
+    return { kind: 'replace', paneId };
+  }
 
   // In a gutter, or in the unused remainder. Opening alongside is the useful reading — the pointer
   // is over the content area and not over anything in particular — but only while there is room,
@@ -84,6 +102,13 @@ export function dropAt(context: DropContext, x: number, y: number): Drop {
  */
 export function highlightFor(drop: Drop, context: DropContext): Rect | null {
   if (drop.kind === 'none') return null;
-  if (drop.kind === 'new-pane') return context.content;
+  if (drop.kind === 'new-pane') {
+    if (!drop.beside) return context.content;
+    // The half of that pane the new one would take, so the preview is the answer: here.
+    const rect = context.panes.find((p) => p.paneId === drop.beside!.paneId)?.rect;
+    if (!rect) return context.content;
+    const half = Math.round(rect.width / 2);
+    return drop.beside.side === 'before' ? { ...rect, width: half } : { ...rect, x: rect.x + rect.width - half, width: half };
+  }
   return context.panes.find((p) => p.paneId === drop.paneId)?.rect ?? null;
 }

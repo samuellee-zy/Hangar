@@ -524,6 +524,36 @@ test('DRAGGING A TILE ONTO A FOLDER FILES IT THERE, AND DRAGGING IT OUT TAKES IT
   await expect.poll(async () => (await items())?.some((i) => i.id === 'one')).toBeTruthy();
 });
 
+test("NEAR A PANE'S EDGE A TILE OPENS BESIDE IT — and the preview says beside what", async () => {
+  // With one pane there is no gutter, so opening beside it by drag was all but impossible.
+  h = await launch();
+  await h.rail();
+  const dispatch = (command: unknown) =>
+    h.app.evaluate((_electron, c) => {
+      (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch(c);
+    }, command);
+
+  await dispatch({ type: 'begin-tile-drag', serviceId: 'two' });
+  await expect.poll(() => h.app.windows().some((w) => w.url().includes('#drag'))).toBeTruthy();
+  const layer = h.app.windows().find((w) => w.url().includes('#drag'))!;
+  const size = await layer.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const nearRight = { x: size.w - 30, y: Math.round(size.h / 2) };
+
+  await dispatch({ type: 'drag-tile-to', from: 'content', ...nearRight });
+  await expect(layer.locator('.drop-target')).toHaveText('Open beside One');
+
+  await dispatch({ type: 'drop-tile', from: 'content', ...nearRight });
+  await expect
+    .poll(() =>
+      h.app.evaluate(() =>
+        (globalThis as never as { __hangarShell: { state: () => { panes: Array<{ serviceId: string }> } } })
+          .__hangarShell.state()
+          .panes.map((p) => p.serviceId),
+      ),
+    )
+    .toEqual(['one', 'two']);
+});
+
 test('A COMPACT RAIL OPENS ON THE CHEVRON AND GIVES THE WIDTH BACK WHEN SHUT', async () => {
   // Nothing about this is reachable from a unit test. The rail's size is a `WebContentsView` bound
   // and the pane's is another — two facts about a real window and none about a DOM.

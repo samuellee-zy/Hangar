@@ -906,14 +906,17 @@ export class AppWindow {
   /** Suppresses the per-call layout save while a batch of panes is being restored. */
   private restoring = false;
 
-  private openService(serviceId: string, { newPane = false } = {}): void {
+  private openService(
+    serviceId: string,
+    { newPane = false, beside }: { newPane?: boolean; beside?: { paneId: string; side: 'before' | 'after' } } = {},
+  ): void {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
 
     // Shortcuts are bound inside ensure(), once per view.
     this.services.ensure(svc);
 
-    if (newPane && !this.layout.isFull) this.layout.add(serviceId);
+    if (newPane && !this.layout.isFull) this.layout.add(serviceId, beside);
     else this.layout.show(serviceId);
     this.noteUsed(serviceId);
 

@@ -2037,3 +2037,9 @@ kbd {
 .settings .reorder button {
   padding: 2px 6px;
 }
+
+/* A folder a tile is being dragged over: dropping files it inside. */
+.rail-slot.is-drop-target > .rail-folder {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
