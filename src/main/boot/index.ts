@@ -197,7 +197,8 @@ app.whenReady().then(() => {
       ensureShell();
       return true;
     },
-    () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS
+    () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS,
+    () => shell?.state() ?? null,
   );
   shell.applySystemPreferences();
   if (pendingMailto) {

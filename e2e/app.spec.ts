@@ -38,6 +38,12 @@ test('SWITCHING TO A SERVICE PUTS THE KEYBOARD IN ITS PAGE — ⌘K↵ and a til
   // rail, in a pane now detached — so the first keystrokes after ⌘K↵ went nowhere.
   h = await launch();
   const rail = await h.rail();
+  // Keyboard focus is only reported for the active app's key window, and a freshly launched test
+  // app is not always the active one — another window on the machine may have kept that.
+  await h.app.evaluate(({ app }) => {
+    app.focus({ steal: true });
+    (globalThis as never as { __hangarShell: { win: { focus: () => void } } }).__hangarShell.win.focus();
+  });
 
   const focusedUrl = () =>
     h.app.evaluate(({ webContents }) => webContents.getFocusedWebContents()?.getURL() ?? '');

@@ -123,7 +123,7 @@ export interface KeyAction {
   label: string;
   command: Command;
   /** Which menu this action appears under, or null to keep it out of the menu bar. */
-  menu: 'app' | 'file' | 'view' | null;
+  menu: 'app' | 'file' | 'view' | 'go' | 'help' | null;
   /** A separator is drawn above this item. Purely the menu's business; Settings ignores it. */
   group?: boolean;
   defaultChord: string;
@@ -144,7 +144,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     id: 'shortcuts',
     label: 'Keyboard shortcuts',
     command: { type: 'open-shortcuts' },
-    menu: 'app',
+    menu: 'help',
     defaultChord: primaryChord('/'),
   },
   {
@@ -272,7 +272,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     id: 'next-unread',
     label: 'Next service with unread',
     command: { type: 'focus-next-unread' },
-    menu: 'view',
+    menu: 'go',
     group: true,
     defaultChord: primaryChord('u', { shift: true }),
   },
@@ -282,14 +282,14 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     id: 'previous-service',
     label: 'Previous service',
     command: { type: 'focus-previous-service' },
-    menu: 'view',
+    menu: 'go',
     defaultChord: 'ctrl+tab',
   },
   {
     id: 'mark-all-read',
     label: 'Mark all as read',
     command: { type: 'mark-all-read' },
-    menu: 'view',
+    menu: 'go',
     defaultChord: '',
   },
   // No default chord. It's a real action, it belongs in the menu, and there is no obvious key for

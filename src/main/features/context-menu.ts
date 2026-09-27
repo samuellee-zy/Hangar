@@ -314,11 +314,32 @@ export function showFolderMenu(
   folder: { id: string; name: string; serviceIds: string[]; collapsed: boolean },
   dispatch: Dispatch,
 ): void {
+  const members = folder.serviceIds;
+  const each = (command: (serviceId: string) => Command) => () => {
+    for (const serviceId of members) dispatch(command(serviceId));
+  };
   popup(
     [
       {
         label: folder.collapsed ? 'Expand' : 'Collapse',
         click: () => dispatch({ type: 'toggle-folder', folderId: folder.id }),
+      },
+      { type: 'separator' },
+      // What a folder is for: acting on the group. Open all fills panes up to the limit — the first
+      // replaces the focused pane, the rest open beside it.
+      {
+        label: 'Open all',
+        enabled: members.length > 0,
+        click: () =>
+          members.forEach((serviceId, i) =>
+            dispatch(i === 0 ? { type: 'focus-service', serviceId } : { type: 'open-in-new-pane', serviceId }),
+          ),
+      },
+      { label: 'Mark all as read', enabled: members.length > 0, click: each((serviceId) => ({ type: 'mark-read', serviceId })) },
+      {
+        label: 'Mute all for an hour',
+        enabled: members.length > 0,
+        click: each((serviceId) => ({ type: 'mute-service', serviceId, until: Date.now() + HOUR_MS })),
       },
       { type: 'separator' },
       { label: 'Rename…', click: () => dispatch({ type: 'begin-rename-folder', folderId: folder.id }) },

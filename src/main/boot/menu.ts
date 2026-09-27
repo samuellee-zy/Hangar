@@ -1,7 +1,8 @@
 import { Menu, app, type MenuItemConstructorOptions } from 'electron';
-import { KEY_ACTIONS, type Bindings } from '@core/keyboard/keymap';
+import { KEY_ACTIONS, primaryChord, type Bindings } from '@core/keyboard/keymap';
+import { dndMenu } from '@main/features/tray';
 import { toAccelerator } from '@shared/keyboard';
-import type { Command } from '@shared/types';
+import type { Command, ShellState } from '@shared/types';
 
 /**
  * Owning the menu is not cosmetic — it's the only way to own the keys.
@@ -32,13 +33,19 @@ import type { Command } from '@shared/types';
  * because there is exactly one application menu, which is also why `Menu.setApplicationMenu` is a
  * static.
  */
-let installed: { dispatch: (command: Command) => boolean; bindings: () => Bindings } | null = null;
+let installed: {
+  dispatch: (command: Command) => boolean;
+  bindings: () => Bindings;
+  /** What the Go menu lists and the Dock menu counts. Null while there is no window. */
+  state: () => ShellState | null;
+} | null = null;
 
 export function installMenu(
   dispatch: (command: Command) => boolean,
-  bindings: () => Bindings
+  bindings: () => Bindings,
+  state: () => ShellState | null,
 ): void {
-  installed = { dispatch, bindings };
+  installed = { dispatch, bindings, state };
   build();
 }
 
@@ -56,9 +63,14 @@ function build(): void {
   const { dispatch, bindings } = installed!;
   const send = (command: Command) => () => dispatch(command);
   const current = bindings();
+  const state = installed!.state();
+  const open = (serviceId: string) => () => {
+    dispatch({ type: 'show-window' });
+    dispatch({ type: 'focus-service', serviceId });
+  };
 
   /** The items for one menu, with their separators, drawn from the single table. */
-  const items = (menu: 'app' | 'file' | 'view'): MenuItemConstructorOptions[] =>
+  const items = (menu: 'app' | 'file' | 'view' | 'go' | 'help'): MenuItemConstructorOptions[] =>
     KEY_ACTIONS.filter((action) => action.menu === menu).flatMap((action) => {
       const accelerator = toAccelerator(current[action.id] ?? '');
       const item: MenuItemConstructorOptions = {
@@ -77,6 +89,7 @@ function build(): void {
         { role: 'about' },
         { type: 'separator' },
         ...items('app'),
+        ...(state ? [dndMenu(state, dispatch)] : []),
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -114,6 +127,9 @@ function build(): void {
       label: 'View',
       submenu: [...items('view'), { type: 'separator' }, { role: 'toggleDevTools' }],
     },
+    // ⌘1–9 and ⌘⌥1–9 were in no menu at all: positional, so there was nothing to hang them on. The
+    // services and workspaces themselves are the items, with the chord that reaches each.
+    { label: 'Go', submenu: goMenu(state, open, send, items('go')) },
     // Deliberately no { role: 'close' } anywhere — that's the binding that was stealing ⌘W.
     //
     // "Show Hangar" because `role: 'front'` only raises windows that are *visible*. A window closed
@@ -129,13 +145,65 @@ function build(): void {
         { role: 'front' },
       ],
     },
+    // `role: 'help'` is what gives the menu bar its search field, which finds every item above by
+    // name — the fastest way to an action whose chord you don't remember.
+    {
+      role: 'help',
+      submenu: [
+        ...items('help'),
+        { label: 'Show the log file', click: send({ type: 'reveal', what: 'log' }) },
+      ],
+    },
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
   // Right-clicking the Dock icon: one more route back that doesn't depend on the tray being
   // visible — on a notched MacBook a crowded menu bar hides extras behind the camera housing.
+  //
+  // Services with something unread, and Do Not Disturb: the two things worth reaching from the Dock
+  // without opening the window first. It had only "Show Hangar".
+  const waiting = (state?.allServices ?? []).filter((svc) => svc.unread > 0).slice(0, 8);
   app.dock?.setMenu(
-    Menu.buildFromTemplate([{ label: 'Show Hangar', click: send({ type: 'show-window' }) }])
+    Menu.buildFromTemplate([
+      { label: 'Show Hangar', click: send({ type: 'show-window' }) },
+      ...(waiting.length
+        ? [
+            { type: 'separator' as const },
+            ...waiting.map((svc) => ({ label: `${svc.name} (${svc.unread})`, click: open(svc.id) })),
+          ]
+        : []),
+      ...(state ? [{ type: 'separator' as const }, dndMenu(state, dispatch)] : []),
+    ])
   );
+}
+
+/** Services, then workspaces, each with the positional chord that reaches it, then the Go actions. */
+function goMenu(
+  state: ShellState | null,
+  open: (serviceId: string) => () => void,
+  send: (command: Command) => () => boolean,
+  actions: MenuItemConstructorOptions[],
+): MenuItemConstructorOptions[] {
+  const shown = (chord: string) => ({ accelerator: toAccelerator(chord), registerAccelerator: false });
+  const services: MenuItemConstructorOptions[] = (state?.services ?? []).map((svc, i) => ({
+    label: svc.unread > 0 ? `${svc.name} (${svc.unread})` : svc.name,
+    click: open(svc.id),
+    ...(i < 9 ? shown(primaryChord(String(i + 1))) : {}),
+  }));
+  const workspaces: MenuItemConstructorOptions[] =
+    (state?.workspaces.length ?? 0) > 1
+      ? state!.workspaces.map((ws, i) => ({
+          label: ws.name,
+          type: 'radio' as const,
+          checked: ws.id === state!.activeWorkspaceId,
+          click: send({ type: 'set-workspace', workspaceId: ws.id }),
+          ...(i < 9 ? shown(primaryChord(String(i + 1), { alt: true })) : {}),
+        }))
+      : [];
+  return [
+    ...services,
+    ...(workspaces.length ? [{ type: 'separator' as const }, ...workspaces] : []),
+    ...actions,
+  ];
 }

@@ -765,7 +765,7 @@ export class AppWindow {
       safeSend(wc, 'shell:state', payload);
     }
     refreshTray(state, (c) => this.dispatch(c));
-    this.refreshMenuIfRebound(state.preferences.keyboard?.bindings);
+    this.refreshMenuIfChanged(state);
   }
 
   /**
@@ -776,18 +776,25 @@ export class AppWindow {
    * whole-config import, and an incoming sync — and a list of call sites is a list of things to
    * forget. Every one of them ends in `sync()`.
    *
-   * The comparison is a stringify of fifteen short strings against a stored copy, which is cheap
-   * enough to do on a broadcast that also fires for a page finishing loading.
+   * The Go and Dock menus list services, workspaces, unread counts and Do Not Disturb, so those
+   * are in the signature too. It is a short stringify against a stored copy — cheap enough for a
+   * broadcast that also fires for a page finishing loading — and a menu is rebuilt only when it
+   * would read differently.
    */
-  private lastMenuBindings: string | null = null;
-  private refreshMenuIfRebound(bindings: Record<string, string> | undefined): void {
-    const signature = JSON.stringify(bindings ?? {});
-    if (signature === this.lastMenuBindings) return;
-    const first = this.lastMenuBindings === null;
-    this.lastMenuBindings = signature;
-    // Nothing to redraw before the first broadcast — `installMenu` has just built it, or hasn't
-    // run yet and will build it against these same bindings.
-    if (!first) refreshMenu();
+  private lastMenuSignature: string | null = null;
+  private refreshMenuIfChanged(state: ShellState): void {
+    const signature = JSON.stringify([
+      state.preferences.keyboard?.bindings ?? {},
+      state.services.map((s) => [s.id, s.name, s.unread]),
+      state.allServices.map((s) => s.unread),
+      state.workspaces.map((w) => [w.id, w.name]),
+      state.activeWorkspaceId,
+      state.preferences.notifications.dnd,
+      state.preferences.notifications.dndUntil,
+    ]);
+    if (signature === this.lastMenuSignature) return;
+    this.lastMenuSignature = signature;
+    refreshMenu();
   }
 
   /**
