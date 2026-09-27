@@ -25,9 +25,9 @@
   --field: #1b1b1f;
   --selected: #34343c;
   --key: #2b2b32;
-  --danger: var(--danger);
+  --danger: #ff6b60;
   --badge: #ff453a;
-  --focus: var(--focus);
+  --focus: #6ea8fe;
   --control-accent: #4b8bf5;
   /* What native controls draw in: checkboxes, spinners, scrollbars. Unset, they drew light in the
      dark theme. Applied to controls and scrollers rather than :root, because the overlay, find bar
