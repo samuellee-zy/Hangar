@@ -30,7 +30,7 @@ in the matching `renderer/settings/*.tsx` section. No migration needed.
 | Show labels | Service names under icons. Suppressed in compact and horizontal rails |
 | Compact rail | A 48px strip that still shows every icon; on a left or right rail the chevron opens a 180px panel with names, and the panes reflow around it — see below. A top or bottom rail has no room for names, so it stays a strip |
 | Theme | `system` · `light` · `dark` via `nativeTheme.themeSource` |
-| Density | Tile spacing |
+| Tile spacing | Comfortable or tight gaps between tiles, on a rail of any size (stored as `density`) |
 | Pane gutter | Space around each pane, 0–24px |
 
 Rail position is constrained by the macOS window buttons, not by the layout maths — see
@@ -50,7 +50,7 @@ renderer honours a plain media query.
 | Close to tray | Closing the window hides it instead of quitting. The Dock icon, Window → Show Hangar, the Dock menu and the tray all bring it back. (There is no "start hidden": [decisions #96](decisions.md)) |
 | Global shortcut | One accelerator to summon/hide. The only `globalShortcut` in the app — everything else goes through `before-input-event` |
 | Confirm before quitting | Shows a Quit/Cancel dialog on ⌘Q |
-| Default zoom | Applied to newly added services; existing ones keep their own |
+| Default zoom | A percentage, applied to newly added services; existing ones keep their own |
 
 Hibernation never touches a visible service, one you've opted out per-service, or anything when the
 timeout is 0. The decision is a pure function so it can be tested exhaustively —

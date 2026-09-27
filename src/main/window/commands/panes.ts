@@ -19,18 +19,25 @@ export const paneCommands: CommandTable = {
     // Without this, clicking a service that's already the focused pane changes nothing on
     // screen and reads as a dead button — the reported bug.
     shell.flash(command.serviceId);
+    // Into the page. Switching used to leave the keyboard wherever it was — in the palette that
+    // had just closed, in the old pane now detached, in the rail — so the first keystrokes after
+    // ⌘K↵ or ⌘3 went nowhere until you clicked the page.
+    if (!command.keepFocus) shell.focusActivePane();
   },
 
   'open-in-new-pane': (command, shell) => {
     shell.overlay.close();
     shell.openService(command.serviceId, { newPane: true });
+    if (!command.keepFocus) shell.focusActivePane();
   },
 
   split: (_command, shell) => {
     // Split with the next service in the workspace that isn't already on screen.
     const visible = shell.layout.visibleServiceIds();
     const next = shell.activeServices(loadConfig().activeWorkspaceId).find((s) => !visible.has(s.id));
-    if (next) shell.openService(next.id, { newPane: true });
+    if (!next) return;
+    shell.openService(next.id, { newPane: true });
+    shell.focusActivePane();
   },
 
   'focus-pane': (command, shell) => {
@@ -98,7 +105,9 @@ export const paneCommands: CommandTable = {
 
   'reload-service': (command, shell) => {
     const runtime = shell.services.get(command.serviceId);
-    if (runtime && !runtime.view.webContents.isDestroyed()) runtime.view.webContents.reload();
+    if (!runtime || runtime.view.webContents.isDestroyed()) return;
+    if (command.ignoreCache) runtime.view.webContents.reloadIgnoringCache();
+    else runtime.view.webContents.reload();
   },
 
   'sleep-service': (command, shell) => {

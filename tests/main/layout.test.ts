@@ -46,6 +46,12 @@ describe('chrome and window buttons', () => {
     assert.deepEqual(windowButtonPosition(chrome('left')), { x: 10, y: 17 });
   });
 
+  it('A LEFT RAIL NARROWER THAN MACOS 26\'S 60PT SPAN HANDS THE LIGHTS TO THE STRIP', () => {
+    // Decided at the classic 52pt, a 56px rail kept them, and macOS 26 drew them over its edge.
+    assert.ok(chromeFor('left', 56, GUTTER).topStrip > 0);
+    assert.equal(chromeFor('left', 60, GUTTER).topStrip, 0);
+  });
+
   it("CENTRES THE BUTTONS THE OS ACTUALLY DRAWS — macOS 26's are bigger", () => {
     // Laid out for the 52pt span, macOS 26's 60pt one sat 10pt from the rail's left edge and 2pt
     // from its right.

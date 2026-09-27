@@ -5,10 +5,11 @@
 // second, hand-written list of representative paths under a comment claiming a new branch "can't be
 // forgotten here" — it could, because nothing tied the list to the chain.
 
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   ALL_PREFERENCE_EFFECTS,
+  effectsForChange,
   preferenceEffectFor,
   trayWanted,
 } from '@core/config/effects';
@@ -143,5 +144,29 @@ describe('whether a tray icon should exist', () => {
 
   it('both is still one icon', () => {
     assert.equal(trayWanted(prefs({ showTrayIcon: true, closeToTray: true })), true);
+  });
+});
+
+describe('effectsForChange — a sync or an import replacing preferences wholesale', () => {
+  const base = () => structuredClone(DEFAULT_PREFERENCES);
+
+  it('nothing changed, nothing to run', () => {
+    expect(effectsForChange(base(), base())).toEqual([]);
+  });
+
+  it('finds each changed effect, once, in the canonical order', () => {
+    const after = base();
+    after.appearance.showTrayIcon = true;
+    after.behaviour.closeToTray = true; // same effect as the tray icon — reported once
+    after.network.blockAds = !after.network.blockAds;
+    after.appearance.railSize = 90; // needs no effect beyond being written
+    expect(effectsForChange(base(), after)).toEqual(['adblock', 'tray']);
+  });
+
+  it('reaches nested and array preferences', () => {
+    const after = base();
+    after.network.proxy = { ...after.network.proxy, mode: 'none' };
+    after.behaviour.spellcheckLanguages = ['en-GB', 'fr'];
+    expect(effectsForChange(base(), after)).toEqual(['proxy', 'spellcheck']);
   });
 });

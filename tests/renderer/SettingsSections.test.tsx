@@ -124,10 +124,16 @@ describe('custom connection hosts', () => {
     expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { extraAllowedHosts: [] } });
   });
 
-  it('says so when there are none, rather than showing an empty list', () => {
-    render(<CustomHosts state={state({ allServices: [svc('gmail')] })} />);
+  it('says so when there are no connections, rather than showing an empty list', () => {
+    render(<CustomHosts state={state({ allServices: [] })} />);
+    expect(screen.getByText(/no connections yet/i)).toBeInTheDocument();
+  });
 
-    expect(screen.getByText(/no custom connections yet/i)).toBeInTheDocument();
+  it('DOES NOT CLAIM THERE ARE NONE ABOVE A LIST OF THEM', () => {
+    // Every service is listed here, catalog ones included, and "No custom connections yet." sat
+    // on top of them whenever none was custom.
+    render(<CustomHosts state={state({ allServices: [svc('gmail')] })} />);
+    expect(screen.queryByText(/no (custom )?connections yet/i)).not.toBeInTheDocument();
   });
 
   it('lists the allowlist for each custom connection', () => {

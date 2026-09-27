@@ -76,6 +76,8 @@ export interface ProjectionInput {
   downloads?: ShellState['downloads'];
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
+  /** Bumped each time a service's favicon is cached, so the renderer refetches it. */
+  iconVersions?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -98,6 +100,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
       // No runtime *is* the definition of asleep — there's no separate flag to disagree with.
       sleeping: !runtime,
       unread: input.unread.get(svc.id) ?? 0,
+      iconVersion: input.iconVersions?.get(svc.id) ?? 0,
     };
   };
   return {
@@ -175,7 +178,7 @@ export function keyboardMapOf(config: Config): KeyboardMap {
  */
 export function resolveCommand(
   command: Command,
-  context: { config: Config; focusedPaneId: string | null },
+  context: { config: Config; focusedPaneId: string | null; focusedServiceId?: string | null },
 ): Command | null {
   const { config, focusedPaneId } = context;
 
@@ -191,6 +194,10 @@ export function resolveCommand(
   }
   if (command.type === 'close-pane' && command.paneId === '#focused') {
     return focusedPaneId ? { type: 'close-pane', paneId: focusedPaneId } : null;
+  }
+  if (command.type === 'reload-service' && command.serviceId === '#focused') {
+    const serviceId = context.focusedServiceId;
+    return serviceId ? { ...command, serviceId } : null;
   }
   return command;
 }

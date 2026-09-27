@@ -62,7 +62,7 @@ export const surfaceCommands: CommandTable = {
       shell.win,
       svc,
       {
-        isVisible: shell.layout.visibleServiceIds().has(svc.id),
+        paneId: shell.layout.panes.find((pane) => pane.serviceId === svc.id)?.id ?? null,
         isSleeping: !shell.services.has(svc.id),
         folders: folders.map((f) => ({ id: f.id, name: f.name })),
         currentFolderId: folders.find((f) => f.serviceIds.includes(svc.id))?.id ?? null,

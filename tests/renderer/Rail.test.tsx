@@ -67,9 +67,11 @@ describe('keyboard activation', () => {
       const tile = screen.getByRole('button', { name: /gmail/i });
       tile.focus();
       await userEvent.keyboard(' ');
+      // `keepFocus`: activated from the keyboard, so the keyboard stays in the rail.
       expect(sent).toContainEqual({
         type: 'focus-service',
         serviceId: 'gmail',
+        keepFocus: true,
       });
     });
   });
@@ -78,6 +80,14 @@ describe('keyboard activation', () => {
     await renderRail(state());
     screen.getByRole('button', { name: /slack/i }).focus();
     await userEvent.keyboard('{Enter}');
+    expect(sent).toContainEqual({ type: 'focus-service', serviceId: 'slack', keepFocus: true });
+  });
+
+  it('A POINTER CLICK MOVES THE KEYBOARD INTO THE PAGE — no keepFocus', async () => {
+    // Switching left the keyboard in the rail, so the first keystrokes after clicking a tile went
+    // nowhere until you clicked the page as well.
+    await renderRail(state());
+    await userEvent.click(screen.getByRole('button', { name: /slack/i }));
     expect(sent).toContainEqual({ type: 'focus-service', serviceId: 'slack' });
   });
 

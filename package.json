@@ -27,6 +27,7 @@
     "install:local": "node scripts/install-local.mjs",
     "cert:local": "node scripts/make-signing-cert.mjs",
     "test:e2e": "npm run build && playwright test",
+    "shots": "npm run build && playwright test -c playwright.shots.config.ts",
     "postinstall": "install-electron"
   },
   "devDependencies": {

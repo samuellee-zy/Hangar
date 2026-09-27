@@ -63,6 +63,34 @@ export function preferenceEffectFor(path: string): PreferenceEffect | null {
 }
 
 /**
+ * Every effect a wholesale change of preferences needs, in `ALL_PREFERENCE_EFFECTS` order.
+ *
+ * For the paths that replace preferences without going through `set-preference` — an incoming
+ * sync and an import. They re-rendered every screen and ran none of the effects, so Settings showed
+ * the tray on, ad blocking off or a new global shortcut, and nothing outside the app changed until
+ * a restart.
+ */
+export function effectsForChange(before: Preferences, after: Preferences): PreferenceEffect[] {
+  const found = new Set<PreferenceEffect>();
+  const walk = (a: unknown, b: unknown, path: string) => {
+    if (isRecord(a) && isRecord(b)) {
+      for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+        walk(a[key], b[key], path ? `${path}.${key}` : key);
+      }
+      return;
+    }
+    if (JSON.stringify(a) === JSON.stringify(b)) return;
+    const effect = preferenceEffectFor(path);
+    if (effect) found.add(effect);
+  };
+  walk(before, after, '');
+  return ALL_PREFERENCE_EFFECTS.filter((effect) => found.has(effect));
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
  * Whether a tray icon should exist.
  *
  * `closeToTray` forces one on regardless of `showTrayIcon`: closing the window hides it, and

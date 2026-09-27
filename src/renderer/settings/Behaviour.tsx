@@ -106,9 +106,9 @@ export function Behaviour({
                 path="behaviour.routeLinks" value={behaviour.routeLinks} />
         <Toggle name="Confirm before quitting" path="behaviour.confirmQuit"
                 value={behaviour.confirmQuit} />
-        <Num name="Default zoom" note="Applied to newly added services"
+        <Num name="Default zoom" note="Percent, applied to newly added services"
              path="behaviour.defaultZoom" value={behaviour.defaultZoom}
-             min={0.5} max={2} step={0.1} />
+             min={50} max={200} step={10} scale={100} />
         <li className="pref">
           <span className="pref-label">
             <span className="pref-name">Global shortcut</span>

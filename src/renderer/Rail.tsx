@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { brightenForDark } from './accent';
+import { accentFor, useColorScheme } from './accent';
 import { badgeText } from './badge';
 import { withChord } from './chords';
 import { CommitOnBlur } from './CommitOnBlur';
@@ -35,6 +35,7 @@ export function Rail() {
   // Which row is being renamed in place, if any. Renderer-local on purpose: an abandoned edit is
   // not worth a round trip to main, and main has nothing to decide about it.
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const scheme = useColorScheme();
 
   // Right-click ▸ Rename… arrives here, from main. Keyed on the nonce and not the id: every other
   // state broadcast carries the same request along with it, and reacting to those would reopen an
@@ -62,6 +63,15 @@ export function Rail() {
     if (railCanExpand(appearance)) setRenamingId(request.id);
     else window.hangar.send({ type: 'open-settings' });
   }, [hasState, request, appearance]);
+
+  // ⌘7 on a tile scrolled out of the rail focused it and left it out of sight. Whichever way focus
+  // changes, the tile that has it is brought into view. Optional-called: jsdom has no scrollIntoView.
+  const focusedKey = state?.panes.find((p) => p.id === state.focusedPaneId)?.serviceId;
+  useEffect(() => {
+    document
+      .querySelector('.rail-item[aria-current="true"]')
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [focusedKey]);
 
   if (!state) return null;
 
@@ -135,7 +145,7 @@ export function Rail() {
           */}
           <div
             className="rail-rename"
-            style={{ ['--accent' as string]: brightenForDark(svc.color) }}
+            style={{ ['--accent' as string]: accentFor(svc.color, scheme) }}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === 'Escape') setRenamingId(null);
@@ -144,7 +154,7 @@ export function Rail() {
             // whether the edit was committed or clicked away from.
             onBlur={() => setRenamingId(null)}
           >
-            <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} />
+            <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} version={svc.iconVersion} />
             <CommitOnBlur
               className="rail-rename-field"
               autoFocus
@@ -192,7 +202,7 @@ export function Rail() {
             .filter(Boolean)
             .join(', ')}
           // Identity lives in the accent and the icon; the tile surface carries state only.
-          style={{ ['--accent' as string]: brightenForDark(svc.color) }}
+          style={{ ['--accent' as string]: accentFor(svc.color, scheme) }}
           title={[
             svc.sleeping
               ? `${svc.name} — asleep, click to wake`
@@ -213,16 +223,20 @@ export function Rail() {
             e.preventDefault();
             send({ type: 'show-service-menu', serviceId: svc.id });
           }}
-          onClick={(e) =>
+          onClick={(e) => {
+            // A click with `detail` 0 came from Enter or Space on the focused tile. The keyboard
+            // stays in the rail then, so Tab and ⌥-arrows keep working; a pointer click moves it
+            // into the page, which is where the next keystroke is meant to go.
+            const keepFocus = e.detail === 0 ? { keepFocus: true } : {};
             send(
               // ⌥-click opens alongside rather than replacing — the mouse equivalent of ⌘\.
               e.altKey
-                ? { type: 'open-in-new-pane', serviceId: svc.id }
-                : { type: 'focus-service', serviceId: svc.id },
-            )
-          }
+                ? { type: 'open-in-new-pane', serviceId: svc.id, ...keepFocus }
+                : { type: 'focus-service', serviceId: svc.id, ...keepFocus },
+            );
+          }}
         >
-          <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} />
+          <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} version={svc.iconVersion} />
           {/* In a panel the name goes INSIDE the button, so the whole row is the target — the way
               a Chrome tab is clickable across its width. Beside the button it looked clickable and
               was not, which is a worse affordance than no label at all.
@@ -327,7 +341,16 @@ export function Rail() {
         onMove={({ activeId, overId }) => send({ type: 'move-item', activeId, overId })}
         canDropOnPane={(id) => byId.has(id)}
       >
-        <nav className="rail-items" aria-label="Services">
+        <nav
+          className="rail-items"
+          aria-label="Services"
+          // A mouse wheel only scrolls vertically, and a horizontal rail only scrolls sideways, so
+          // with more tiles than fit, a top or bottom rail couldn't be scrolled without a trackpad.
+          onWheel={(e) => {
+            if (!horizontal || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+            e.currentTarget.scrollLeft += e.deltaY;
+          }}
+        >
           {state.railItems.map((item) => {
             if (item.kind === 'service') {
               const svc = byId.get(item.id);

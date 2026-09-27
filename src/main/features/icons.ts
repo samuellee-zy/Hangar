@@ -103,10 +103,27 @@ export function installIconProtocol(services: () => ServiceInstance[]): void {
 }
 
 /**
+ * How many times each service's favicon has been cached this run. Part of the icon's URL in the
+ * renderer, so a newly written file is a new URL: without it a tile that had already 404'd showed
+ * initials until the app restarted, because nothing told it an icon had arrived.
+ */
+const versions = new Map<string, number>();
+
+export function iconVersions(): ReadonlyMap<string, number> {
+  return versions;
+}
+
+/**
  * Cache the page's own favicon for services with no vendored logo. Fetched through the service's
  * session so authenticated favicons work, and so it goes out over the same proxy as everything else.
+ * `onCached` runs after each write, so the window can tell its renderers.
  */
-export function captureFavicon(wc: WebContents, svc: ServiceInstance, ses: Session): void {
+export function captureFavicon(
+  wc: WebContents,
+  svc: ServiceInstance,
+  ses: Session,
+  onCached: () => void,
+): void {
   if (vendoredPath(svc)) return; // a real logo already beats anything the page can offer
 
   wc.on('page-favicon-updated', (_event, favicons) => {
@@ -125,6 +142,8 @@ export function captureFavicon(wc: WebContents, svc: ServiceInstance, ses: Sessi
           fs.rmSync(path.join(cacheDir(), `${svc.id}.${ext}`), { force: true });
         }
         fs.writeFileSync(path.join(cacheDir(), `${svc.id}.${extensionFor(buf)}`), buf);
+        versions.set(svc.id, (versions.get(svc.id) ?? 0) + 1);
+        onCached();
       } catch {
         // A missing favicon is cosmetic — the tile falls back to initials.
       }

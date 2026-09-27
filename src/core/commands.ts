@@ -25,8 +25,8 @@ type Field =
   | readonly (string | number)[];
 
 const SCHEMA = {
-  'focus-service': { serviceId: 'string' },
-  'open-in-new-pane': { serviceId: 'string' },
+  'focus-service': { serviceId: 'string', keepFocus: 'boolean?' },
+  'open-in-new-pane': { serviceId: 'string', keepFocus: 'boolean?' },
   'focus-pane': { paneId: 'string' },
   'close-pane': { paneId: 'string' },
   split: {},
@@ -73,7 +73,7 @@ const SCHEMA = {
   find: { query: 'string', forward: 'boolean?', findNext: 'boolean?' },
   zoom: { direction: ['in', 'out', 'reset'] },
   print: {},
-  'reload-service': { serviceId: 'string' },
+  'reload-service': { serviceId: 'string', ignoreCache: 'boolean?' },
   'sleep-service': { serviceId: 'string' },
   'show-service-menu': { serviceId: 'string' },
   'show-rail-menu': {},

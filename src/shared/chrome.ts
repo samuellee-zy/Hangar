@@ -10,6 +10,13 @@ export type RailPosition = 'left' | 'right' | 'top' | 'bottom';
 /** macOS traffic lights span this much, and cannot be made smaller. */
 export const WINDOW_BUTTON_SPAN = 52;
 
+/**
+ * The widest the traffic lights are on any macOS we run on: 60pt on macOS 26, whose buttons grew.
+ * Whether a rail *holds* them is decided against this, not the classic 52 — the renderer can't ask
+ * the OS, and deciding at 52 put macOS 26's lights over the edge of a 56–60px rail.
+ */
+const WIDEST_WINDOW_BUTTON_SPAN = 60;
+
 /** Height of the strip that hosts the traffic lights when the rail can't. */
 export const TOP_STRIP = 38;
 
@@ -42,7 +49,7 @@ export function smallestRailSize(appearance: { railSize: number; compactRail: bo
  * Whether the rail holds the traffic lights itself, rather than a strip across the top of the
  * window.
  *
- * - **left**: when the rail is wide enough for the 52pt span. A compact rail never is, and deciding
+ * - **left**: when the rail is wide enough for the span (at its widest, macOS 26's 60pt). A compact rail never is, and deciding
  *   from the *collapsed* width keeps the answer fixed as it opens and shuts — deciding per-size
  *   would move the traffic lights and drop the strip on every toggle, shunting every pane down the
  *   window and back.
@@ -52,5 +59,5 @@ export function smallestRailSize(appearance: { railSize: number; compactRail: bo
  */
 export function railHostsWindowButtons(position: RailPosition, smallest: number): boolean {
   if (position === 'top') return smallest >= TOP_STRIP;
-  return position === 'left' && smallest >= WINDOW_BUTTON_SPAN;
+  return position === 'left' && smallest >= WIDEST_WINDOW_BUTTON_SPAN;
 }

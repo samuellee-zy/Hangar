@@ -76,7 +76,6 @@ export function Folders({ state }: { state: ShellState }) {
   const folders = state.workspaces.flatMap((ws) =>
     ws.items.flatMap((item) => (item.kind === 'folder' ? [{ ws, folder: item }] : [])),
   );
-  if (folders.length === 0) return null;
   const multipleWorkspaces = state.workspaces.length > 1;
 
   return (
@@ -85,7 +84,10 @@ export function Folders({ state }: { state: ShellState }) {
       <p className="hint">
         Make one from a tile's right-click menu. Ungrouping keeps the services.
       </p>
+      {/* Shown with no folders too: the section used to vanish, and with it the one line saying how
+          to make a folder — at exactly the moment someone was looking for it. */}
       <ul className="rows">
+        {folders.length === 0 && <li className="empty">No folders yet.</li>}
         {folders.map(({ ws, folder }) => (
           <li key={folder.id}>
             <CommitOnBlur
@@ -198,7 +200,6 @@ export const parseHosts = (text: string): string[] =>
  * accepted is the feedback when something wasn't.
  */
 export function CustomHosts({ state }: { state: ShellState }) {
-  const custom = state.allServices.filter((s) => s.allowedHosts);
 
   return (
     <section>
@@ -209,7 +210,7 @@ export function CustomHosts({ state }: { state: ShellState }) {
         commas.
       </p>
       <ul className="rows">
-        {custom.length === 0 && <li className="empty">No custom connections yet.</li>}
+        {state.allServices.length === 0 && <li className="empty">No connections yet.</li>}
         {state.allServices.map((svc) => {
           const base = svc.allowedHosts ?? catalogById(svc.catalogId)?.allowedHosts ?? [];
           const shown = base.slice(0, 3).join(', ') + (base.length > 3 ? ` +${base.length - 3}` : '');
@@ -319,23 +320,24 @@ export function PerService({ state }: { state: ShellState }) {
               {/* Same reason as the proxy port: on change, every digit of "1.25" was its own config
                   write and sync reschedule, and the zoom jumped through each partial value on the
                   way. */}
+              {/* A percentage, as every browser shows zoom — "1.1" read as a version number. */}
               <CommitOnBlur
                 className="field"
                 type="number"
-                min={0.5}
-                max={2}
-                step={0.1}
+                min={50}
+                max={200}
+                step={10}
                 style={{ width: 66 }}
-                title="Zoom"
-                aria-label={`Zoom for ${svc.name}`}
-                value={String(svc.zoom)}
+                title="Zoom, percent"
+                aria-label={`Zoom for ${svc.name}, percent`}
+                value={String(Math.round(svc.zoom * 100))}
                 onCommit={(next) => {
-                  const zoom = Number(next);
-                  if (!Number.isFinite(zoom)) return;
+                  const percent = Number(next);
+                  if (!Number.isFinite(percent)) return;
                   window.hangar.send({
                     type: 'update-service',
                     serviceId: svc.id,
-                    patch: { zoom: Math.min(2, Math.max(0.5, zoom)) },
+                    patch: { zoom: Math.min(2, Math.max(0.5, percent / 100)) },
                   });
                 }}
               />

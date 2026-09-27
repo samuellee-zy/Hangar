@@ -20,7 +20,8 @@ export function Network({ network }: { network: Preferences['network'] }) {
           value={network.blockAds}
         />
         <Choice name="Proxy" path="network.proxy.mode" value={network.proxy.mode}
-                options={['system', 'none', 'http', 'socks4', 'socks5'] as const} />
+                options={['system', 'none', 'http', 'socks4', 'socks5'] as const}
+                labels={{ system: 'System settings', none: 'No proxy', http: 'HTTP', socks4: 'SOCKS4', socks5: 'SOCKS5' }} />
         {manual && (
           <li className="pref">
             <span className="pref-label">

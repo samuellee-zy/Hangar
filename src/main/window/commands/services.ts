@@ -21,6 +21,7 @@ export const serviceCommands: CommandTable = {
     shell.overlay.close();
     shell.openService(svc.id, { newPane: false });
     shell.flash(svc.id);
+    shell.focusActivePane();
   },
 
   'add-custom-service': (command, shell) => {
@@ -32,6 +33,7 @@ export const serviceCommands: CommandTable = {
     shell.overlay.close();
     shell.openService(svc.id, { newPane: false });
     shell.flash(svc.id);
+    shell.focusActivePane();
   },
 
   'update-service': (command, shell) => {

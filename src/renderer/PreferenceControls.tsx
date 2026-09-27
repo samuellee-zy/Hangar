@@ -97,6 +97,7 @@ export function Choice<T extends string>({
   path,
   value,
   options,
+  labels,
   pending,
 }: {
   name: string;
@@ -104,6 +105,8 @@ export function Choice<T extends string>({
   path: string;
   value: T;
   options: readonly T[];
+  /** What each option says. Without one the stored id is shown — "socks5", "comfortable". */
+  labels?: Partial<Record<T, string>>;
   pending?: boolean;
 }) {
   const id = useId();
@@ -118,7 +121,7 @@ export function Choice<T extends string>({
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {labels?.[option] ?? option}
           </option>
         ))}
       </select>
@@ -134,6 +137,7 @@ export function Num({
   min,
   max,
   step = 1,
+  scale = 1,
   pending,
   disabled,
 }: {
@@ -141,9 +145,12 @@ export function Num({
   note?: string;
   path: string;
   value: number;
+  /** `min`, `max` and `step` are in displayed units — percent, when `scale` is 100. */
   min: number;
   max: number;
   step?: number;
+  /** Shown as `value × scale`, stored as typed ÷ scale: a zoom factor of 1.1 reads as 110. */
+  scale?: number;
   pending?: boolean;
   /** Off because another setting makes this one meaningless — the note should say which. */
   disabled?: boolean;
@@ -154,12 +161,12 @@ export function Num({
       <NumberField
         id={id}
         {...describedBy(id, note, pending)}
-        value={value}
+        value={Math.round(value * scale * 100) / 100}
         min={min}
         max={max}
         step={step}
         disabled={pending || disabled}
-        onCommit={(n) => set(path, n)}
+        onCommit={(n) => set(path, n / scale)}
       />
     </Row>
   );

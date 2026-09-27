@@ -77,6 +77,7 @@ export const preferenceCommands: CommandTable = {
     if (app.isPackaged && !app.setAsDefaultProtocolClient('mailto')) {
       console.warn('[mailto] macOS did not accept Hangar as the default email app');
     }
+    shell.forgetDefaultMailApp();
     shell.sync();
   },
 };

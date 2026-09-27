@@ -10,6 +10,7 @@ import { applyUserAgent } from '@main/platform/ua';
 import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
 import { AppWindow } from '@main/window/app-window';
+import { setNotificationClickRoute } from '@main/window/attention';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
 
@@ -114,6 +115,12 @@ registerIconScheme();
  * there running (decision #96). `activate` and `second-instance` both land here so that the two can
  * never drift apart again: they did once, when only one of them was fixed.
  */
+// A banner click lands on the service whether or not the window that raised it still exists.
+setNotificationClickRoute((serviceId) => {
+  ensureShell();
+  shell?.dispatch({ type: 'focus-service', serviceId });
+});
+
 function ensureShell(): void {
   if (!shell) {
     shell = new AppWindow();

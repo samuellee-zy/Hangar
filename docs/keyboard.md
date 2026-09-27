@@ -19,6 +19,7 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 | `⌘⌥←` / `⌘⌥→` | Move focus between panes |
 | `⌘W` | Close the focused pane; closes the window when it's the last one |
 | `⌘[` / `⌘]` | Back / forward within the focused service |
+| `⌘R` / `⇧⌘R` | Reload the focused service / reload it ignoring the cache |
 | — | Sleep background services — a real action with no default chord, which is what rebinding is for |
 | | |
 | `⌘1`…`⌘9` | Jump to the *n*th service in the current workspace |

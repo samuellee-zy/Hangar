@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { shell as electronShell } from 'electron';
-import { configFilePath, quarantinedConfigs } from '@main/platform/config';
+import { configFilePath, loadConfig, quarantinedConfigs } from '@main/platform/config';
 import { LOG_FILE } from '@main/platform/log-file';
 import { downloadPath } from '@main/platform/system';
 import { exportConfig, importConfig } from '@main/features/transfer';
@@ -21,7 +21,10 @@ export const dataCommands: CommandTable = {
   },
 
   'import-config': (_command, shell) => {
+    // A copy: the import replaces the cached config, and the comparison needs what it was.
+    const before = structuredClone(loadConfig().preferences);
     importConfig(shell.win, () => {
+      shell.applyChangedPreferences(before);
       // A fresh config means every view is stale — rebuild from scratch.
       for (const [serviceId] of [...shell.services.all()]) shell.sleep(serviceId);
       shell.rebuildPanes();

@@ -4,7 +4,7 @@ import type { ConfigSync } from '@main/features/sync';
 import type { FindBar } from '@main/features/find-bar';
 import type { Overlay } from '@main/window/overlay';
 import type { ServiceManager } from '@main/window/service-manager';
-import type { Command, OverlayMode, ServiceInstance, Workspace } from '@shared/types';
+import type { Command, OverlayMode, Preferences, ServiceInstance, Workspace } from '@shared/types';
 
 /**
  * What a command handler may reach in the window, listed.
@@ -51,6 +51,10 @@ export interface ShellContext {
 
   applyAllPreferenceEffects(): void;
   applyPreferenceEffect(path: string): void;
+  /** After preferences were replaced wholesale, run whatever changed from `before`. */
+  applyChangedPreferences(before: Preferences): void;
+  /** The cached default-mail-app answer is stale: ask Launch Services again next time. */
+  forgetDefaultMailApp(): void;
 
   toggleRail(): void;
   /** Asks the rail to put an item's name in an editable field. See `ShellState.renameRequest`. */
