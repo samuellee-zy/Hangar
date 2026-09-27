@@ -67,6 +67,9 @@ jobs:
       # gap and passed every unit test.
       - run: npm run test:e2e
 
+      # The build the e2e step just made. See the script for the budget and why it exists.
+      - run: node scripts/check-bundle-size.mjs
+
       # Everything gated on `app.isPackaged` — icons served from `process.resourcesPath`, the launch
       # agent, the production context menu — is invisible to the unpackaged E2E run above, and the
       # bundle's contents are decided by electron-builder's `files` allowlist, not by the code. So
