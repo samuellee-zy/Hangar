@@ -11,6 +11,8 @@
  *      routine; the page around it is fine. Only `isMainFrame` counts.
  */
 
+import { THEME } from '@shared/theme';
+
 /** Codes worth retrying on their own — transient network conditions rather than bad requests. */
 const TRANSIENT = new Set([
   -2, // FAILED
@@ -109,6 +111,38 @@ const escape = (text: string) =>
   text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 /**
+ * The frame every in-pane page shares: one card, centred, in the app's own colours for either theme
+ * (`shared/theme.ts`). Three copies of this had drifted apart in their widths and button spacing.
+ */
+function page(card: string): string {
+  const { dark, light } = THEME;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: dark light; }
+  body {
+    margin: 0; height: 100vh; display: grid; place-items: center;
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, sans-serif;
+    background: ${dark.bg}; color: ${dark.fg};
+  }
+  @media (prefers-color-scheme: light) { body { background: ${light.bg}; color: ${light.fg}; } }
+  .card { max-width: 400px; text-align: center; padding: 0 24px; }
+  h1 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
+  p { margin: 0 0 6px; opacity: .7; }
+  code { font: 11px ui-monospace, Menlo, monospace; opacity: .5; word-break: break-all; }
+  .actions { margin-top: 18px; display: flex; gap: 8px; justify-content: center; }
+  button {
+    padding: 8px 18px; font: inherit; font-size: 13px; cursor: pointer;
+    border: 1px solid currentColor; border-radius: 8px; background: none; color: inherit;
+    opacity: .85;
+  }
+  button:hover { opacity: 1; }
+</style>
+<div class="card">${card}
+</div>`)}`;
+}
+
+/**
  * The in-pane error page. Served as a data URL into the failed view, so it inherits the service's
  * preload and can call `__hangar.retry()` — no extra window, no extra route.
  */
@@ -124,33 +158,11 @@ export function errorPageHtml(opts: {
     ? 'This page will reload by itself when the connection is back.'
     : `${escape(opts.description || 'The page failed to load')} (${opts.errorCode})`;
 
-  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<meta charset="utf-8">
-<style>
-  :root { color-scheme: dark light; }
-  body {
-    margin: 0; height: 100vh; display: grid; place-items: center;
-    font: 14px/1.6 -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #1b1b1f; color: #e8e8ea;
-  }
-  @media (prefers-color-scheme: light) { body { background: #f4f4f6; color: #1b1b1f; } }
-  .card { max-width: 380px; text-align: center; padding: 0 24px; }
-  h1 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
-  p { margin: 0 0 6px; opacity: .7; }
-  code { font: 11px ui-monospace, Menlo, monospace; opacity: .5; word-break: break-all; }
-  button {
-    margin-top: 18px; padding: 8px 18px; font: inherit; font-size: 13px; cursor: pointer;
-    border: 1px solid currentColor; border-radius: 8px; background: none; color: inherit;
-    opacity: .85;
-  }
-  button:hover { opacity: 1; }
-</style>
-<div class="card">
+  return page(`
   <h1>${headline}</h1>
   <p>${detail}</p>
   <code>${escape(opts.url)}</code>
-  <div><button onclick="window.__hangar && window.__hangar.retry()">Try again</button></div>
-</div>`)}`;
+  <div class="actions"><button onclick="window.__hangar && window.__hangar.retry()">Try again</button></div>`);
 }
 
 /**
@@ -158,27 +170,11 @@ export function errorPageHtml(opts: {
  * (the service needs a URL, or removing), so this offers words rather than a button.
  */
 export function orphanPageHtml(opts: { serviceName: string; catalogId: string }): string {
-  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<meta charset="utf-8">
-<style>
-  :root { color-scheme: dark light; }
-  body {
-    margin: 0; height: 100vh; display: grid; place-items: center;
-    font: 14px/1.6 -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #1b1b1f; color: #e8e8ea;
-  }
-  @media (prefers-color-scheme: light) { body { background: #f4f4f6; color: #1b1b1f; } }
-  .card { max-width: 380px; text-align: center; padding: 0 24px; }
-  h1 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
-  p { margin: 0 0 6px; opacity: .7; }
-  code { font: 11px ui-monospace, Menlo, monospace; opacity: .5; word-break: break-all; }
-</style>
-<div class="card">
+  return page(`
   <h1>${escape(opts.serviceName)} is no longer in the catalog</h1>
   <p>Hangar doesn't know what to load for it, so this pane has nothing to show.</p>
   <p>Give it a URL of its own in Settings → Connections, or remove it.</p>
-  <code>${escape(opts.catalogId)}</code>
-</div>`)}`;
+  <code>${escape(opts.catalogId)}</code>`);
 }
 
 /**
@@ -206,29 +202,7 @@ export function shouldShowBlockedPage(currentUrl: string): boolean {
  * host it just blocked for that service.
  */
 export function blockedPageHtml(opts: { serviceName: string; url: string; host: string }): string {
-  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<meta charset="utf-8">
-<style>
-  :root { color-scheme: dark light; }
-  body {
-    margin: 0; height: 100vh; display: grid; place-items: center;
-    font: 14px/1.6 -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #1b1b1f; color: #e8e8ea;
-  }
-  @media (prefers-color-scheme: light) { body { background: #f4f4f6; color: #1b1b1f; } }
-  .card { max-width: 400px; text-align: center; padding: 0 24px; }
-  h1 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
-  p { margin: 0 0 6px; opacity: .7; }
-  code { font: 11px ui-monospace, Menlo, monospace; opacity: .5; word-break: break-all; }
-  .actions { margin-top: 18px; display: flex; gap: 8px; justify-content: center; }
-  button {
-    padding: 8px 18px; font: inherit; font-size: 13px; cursor: pointer;
-    border: 1px solid currentColor; border-radius: 8px; background: none; color: inherit;
-    opacity: .85;
-  }
-  button:hover { opacity: 1; }
-</style>
-<div class="card">
+  return page(`
   <h1>${escape(opts.serviceName)} tried to leave</h1>
   <p><strong>${escape(opts.host)}</strong> isn't on this service's allowed list, so Hangar opened it in your browser instead.</p>
   <p>If it's part of signing in, allow it and try again.</p>
@@ -236,6 +210,5 @@ export function blockedPageHtml(opts: { serviceName: string; url: string; host: 
   <div class="actions">
     <button onclick="window.__hangar && window.__hangar.allowHost()">Allow ${escape(opts.host)}</button>
     <button onclick="window.__hangar && window.__hangar.retry()">Back to ${escape(opts.serviceName)}</button>
-  </div>
-</div>`)}`;
+  </div>`);
 }

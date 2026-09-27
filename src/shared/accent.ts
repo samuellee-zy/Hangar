@@ -15,10 +15,12 @@
  * code, because main draws the pane's focus ring in the same colour.
  */
 
+import { THEME } from './theme';
+
 export type ColorScheme = 'dark' | 'light';
 
-/** `--tile` in each theme (styles.css). */
-const TILE_BG: Record<ColorScheme, string> = { dark: '#26262c', light: '#e7e7ec' };
+/** `--tile` in each theme. */
+const TILE_BG: Record<ColorScheme, string> = { dark: THEME.dark.tile, light: THEME.light.tile };
 const TARGET_CONTRAST = 4.5;
 
 type RGB = [number, number, number];

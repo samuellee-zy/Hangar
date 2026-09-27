@@ -1,4 +1,5 @@
 import { nativeTheme } from 'electron';
+import { THEME } from '@shared/theme';
 import { CLASSIC_WINDOW_BUTTONS, type WindowButtonMetrics } from '@core/workspace/layout';
 
 /**
@@ -10,7 +11,7 @@ import { CLASSIC_WINDOW_BUTTONS, type WindowButtonMetrics } from '@core/workspac
  * top of a light rail.
  */
 export function appBackground(): string {
-  return nativeTheme.shouldUseDarkColors ? '#1b1b1f' : '#f4f4f6';
+  return THEME[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'].bg;
 }
 
 /**
