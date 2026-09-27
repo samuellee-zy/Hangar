@@ -1,5 +1,7 @@
-/* Placeholder visuals only — the visual redesign is Phase 6.5. The job here is to make the
-   interaction model legible: which services exist, which are on screen, which pane has focus. */
+/* One stylesheet for every surface the app draws itself: the rail, the overlay, the find bar, the
+   drag layer, the empty view and the Settings window. Colours come from the tokens below and
+   nowhere else — each has a light value in the block under `prefers-color-scheme: light`, which is
+   what keeps a light theme legible. */
 
 :root {
   --bg: #1b1b1f;
@@ -14,7 +16,36 @@
   --tile-hover: #2c2c33;
   --tile-visible: #2e2e35;
   --tile-focused: #33333c;
+
+  /* Surfaces and states that are not tiles. Hard-coded before they were tokens, each in dark only,
+     so the light theme drew a #34343c highlight behind dark text — 1.4:1 — and kbd at 1.2:1. */
+  --text: var(--fg);
+  --surface: #232329;
+  --surface-hover: var(--tile-hover);
+  --field: #1b1b1f;
+  --selected: #34343c;
+  --key: #2b2b32;
+  --danger: var(--danger);
+  --badge: #ff453a;
+  --focus: var(--focus);
+  --control-accent: #4b8bf5;
+  /* What native controls draw in: checkboxes, spinners, scrollbars. Unset, they drew light in the
+     dark theme. Applied to controls and scrollers rather than :root, because the overlay, find bar
+     and drag layer are transparent views and a colour scheme on the root paints their canvas. */
+  --scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+}
+
+input,
+select,
+textarea,
+button,
+.settings,
+.settings-nav,
+.settings-content,
+.palette-results,
+.rail-items {
+  color-scheme: var(--scheme);
 }
 
 * {
@@ -57,7 +88,7 @@ body[data-route='drag'] {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--accent-strong, #6ea8fe);
+  border: 2px solid var(--focus);
   border-radius: 10px; /* PANE_RADIUS */
   background: rgb(110 168 254 / 14%);
   /* No transition on position: the rectangle jumps between panes, and easing that reads as lag
@@ -182,6 +213,24 @@ body[data-route='drag'] {
 .rail.is-panel .rail-item:hover,
 .rail.is-panel .rail-add:hover {
   background: var(--tile-hover);
+}
+
+/* The one row that earns a surface without the pointer on it. The rule above made it transparent
+   along with everything else, so the focused service had only its 3px bar. */
+.rail.is-panel .rail-item.is-focused {
+  background: var(--tile-focused);
+}
+
+/* A list of rows has no use for the dashed outlines that mark Add and a folder as different from a
+   tile in the square layout. */
+.rail.is-panel .rail-add,
+.rail.is-panel .rail-folder {
+  border-color: transparent;
+}
+
+/* Members sit under their folder, inset, so the grouping reads in a list too. */
+.rail.is-panel .rail-item.is-nested {
+  padding-left: 28px;
 }
 
 /* The 3px accent bar hangs off the left of a centred 52px tile. A full-width row has no margin for
@@ -368,7 +417,7 @@ body[data-route='drag'] {
   min-width: 17px;
   padding: 0 4px;
   border-radius: 9px;
-  background: #ff453a;
+  background: var(--badge);
   color: #fff;
   font-size: 10px;
   line-height: 17px;
@@ -397,6 +446,11 @@ body[data-route='drag'] {
   color: var(--muted);
 }
 
+/* Settings is a place, not something to add: no dashed "add" outline. */
+.rail-add.rail-settings {
+  border-color: transparent;
+}
+
 .rail-add:hover {
   background: var(--tile);
   color: var(--fg);
@@ -417,7 +471,7 @@ body[data-route='drag'] {
   flex-direction: column;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #232329;
+  background: var(--surface);
   box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
   overflow: hidden;
 }
@@ -458,6 +512,18 @@ body[data-route='drag'] {
   width: 30px;
   height: 30px;
   object-fit: contain;
+}
+
+/* A catalog entry with no vendored logo. The class was in the markup with no rule behind it, so ~20
+   entries showed bare initials in the corner of their tile. Same treatment as the rail's. */
+.grid-initials {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--tile-focused);
+  color: var(--accent, var(--fg));
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .grid-name {
@@ -522,7 +588,7 @@ body[data-route='drag'] {
   padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #1b1b1f;
+  background: var(--field);
   color: var(--fg);
   font: inherit;
   font-size: 13px;
@@ -570,7 +636,7 @@ body[data-route='drag'] {
   width: min(560px, 82vw);
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #232329;
+  background: var(--surface);
   box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
   overflow: hidden;
 }
@@ -606,7 +672,7 @@ body[data-route='drag'] {
 }
 
 .palette-results li.is-active {
-  background: #34343c;
+  background: var(--selected);
 }
 
 .palette-hint,
@@ -622,7 +688,7 @@ body[data-route='drag'] {
   min-width: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: #ff453a;
+  background: var(--badge);
   color: #fff;
   font-size: 11px;
   line-height: 18px;
@@ -646,7 +712,7 @@ kbd {
   padding: 1px 5px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #2b2b32;
+  background: var(--key);
   font-family: inherit;
 }
 
@@ -734,6 +800,15 @@ kbd {
   margin: 0 0 4px;
 }
 
+/* A heading inside a section. It had no rule, so it rendered at the browser's 18.7px bold — larger
+   than the section heading it sits under. */
+.settings h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 18px 0 6px;
+}
+
 .settings section {
   margin-bottom: 30px;
 }
@@ -795,7 +870,7 @@ kbd {
   padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #2b2b32;
+  background: var(--key);
   color: inherit;
   font: inherit;
   font-size: 12px;
@@ -809,8 +884,8 @@ kbd {
 
 /* Listening. Distinct enough that it's obvious the next keystroke goes somewhere unusual. */
 .settings button.chord.is-capturing {
-  border-color: #6ea8fe;
-  color: #6ea8fe;
+  border-color: var(--focus);
+  color: var(--focus);
 }
 
 /*
@@ -819,16 +894,17 @@ kbd {
  * worth saying out loud.
  */
 .settings button.chord.is-conflicted {
-  border-color: #ff6b6040;
-  color: #ff6b60;
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+  color: var(--danger);
 }
 
 .settings .hint.refused {
-  color: #ff6b60;
+  color: var(--danger);
 }
 
 .settings button.danger,
-.settings button.secondary {
+.settings button.secondary,
+.settings :where(button:not([class])) {
   padding: 5px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -840,22 +916,33 @@ kbd {
 }
 
 .settings button.danger:hover {
-  color: #ff6b60;
-  border-color: #ff6b6040;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
 /* Same shape as `danger`, without the red: for Add, Export, Import and Default, which were styled as
    destructive for want of anything else and so turned red under the pointer. */
-.settings button.secondary:hover {
+.settings button.secondary:hover,
+.settings :where(button:not([class])):hover {
   color: var(--text);
   border-color: var(--muted);
 }
 
+/* Disabled looked enabled, and a disabled Delete still turned red under the pointer. */
+.settings button:disabled,
+.settings button:disabled:hover {
+  opacity: 0.45;
+  color: var(--muted);
+  border-color: var(--line);
+  background: none;
+  cursor: default;
+}
+
 /* A ConfirmButton after its first click: now it is asking, and it should look like it. */
 .settings button.danger.is-armed {
-  color: #ff6b60;
-  border-color: #ff6b60;
-  background: #ff6b6014;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
 /* Confirms an action whose effect might otherwise be invisible — focusing a service that is
@@ -913,11 +1000,12 @@ kbd {
 }
 
 .pref select,
-.pref input[type='number'] {
+.pref input[type='number'],
+.settings :where(input[type='text'], input[type='password'], input[type='url'], input[type='number'], input:not([type])):not(.field):not(.rail-rename-field) {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #1b1b1f;
+  background: var(--field);
   color: var(--fg);
   font: inherit;
   font-size: 12px;
@@ -926,7 +1014,7 @@ kbd {
 .pref input[type='checkbox'] {
   width: 16px;
   height: 16px;
-  accent-color: #4b8bf5;
+  accent-color: var(--control-accent);
 }
 
 .pref.is-pending {
@@ -967,6 +1055,17 @@ kbd {
   width: 13px;
   height: 13px;
   object-fit: contain;
+}
+
+.folder-mini-initial {
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--tile-focused);
+  color: var(--accent, var(--fg));
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .folder-empty {
@@ -1016,8 +1115,12 @@ kbd {
 }
 
 /* Dimmed, but not so far that it reads as disabled — the tile is fully clickable and clicking is
-   how you wake it. Hover brings it back to full strength to say so. */
-.rail-item.is-sleeping {
+   how you wake it. Hover brings it back to full strength to say so.
+
+   The mark only, not the tile: dimming the whole button dimmed its unread badge to 2.4:1, and a
+   sleeping service's count is exactly what Web Push and the endpoint poller exist to deliver. */
+.rail-item.is-sleeping .rail-icon,
+.rail-item.is-sleeping .rail-initials {
   opacity: 0.5;
 }
 
@@ -1040,8 +1143,10 @@ kbd {
   order: 2;
 }
 
-.rail-item.is-sleeping:hover,
-.rail-item.is-sleeping:focus-visible {
+.rail-item.is-sleeping:hover .rail-icon,
+.rail-item.is-sleeping:hover .rail-initials,
+.rail-item.is-sleeping:focus-visible .rail-icon,
+.rail-item.is-sleeping:focus-visible .rail-initials {
   opacity: 1;
 }
 
@@ -1198,18 +1303,21 @@ kbd {
     --tile-hover: #dedee4;
     --tile-visible: #d6d6dd;
     --tile-focused: #c9c9d2;
+    --surface: #ffffff;
+    --field: #ffffff;
+    --selected: #dcdce4;
+    --key: #ebebf0;
+    /* Darker than the dark theme's, so text in them stays readable on a light surface. */
+    --danger: #c42b22;
+    --badge: #e0271d;
+    --focus: #2b6fe0;
+    --control-accent: #2b6fe0;
+    --scheme: light;
   }
 
   .sheet,
   .palette {
-    background: #ffffff;
     box-shadow: 0 24px 64px rgb(0 0 0 / 18%);
-  }
-
-  .field,
-  .pref select,
-  .pref input[type='number'] {
-    background: #ffffff;
   }
 
   .scrim {
@@ -1352,7 +1460,7 @@ kbd {
   min-width: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: #ff453a;
+  background: var(--badge);
   color: #fff;
   font-size: 11px;
   line-height: 18px;
@@ -1383,7 +1491,6 @@ kbd {
   margin: 0;
   font-size: 15px;
   font-weight: 500;
-  text-transform: capitalize;
 }
 
 .route-error p {
@@ -1433,15 +1540,9 @@ kbd {
   padding: 0 6px 0 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #232329;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
-}
-
-@media (prefers-color-scheme: light) {
-  .findbar {
-    background: #ffffff;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
-  }
+  background: var(--surface);
+  /* No shadow: the bar fills its view exactly, and a view can't paint outside itself, so a shadow
+     was only ever a hard-clipped smudge along its edges. The border does the separating. */
 }
 
 .findbar input {
@@ -1499,11 +1600,14 @@ kbd {
 }
 
 /* Anything focused by keyboard gets a visible ring. Several controls previously relied on the
-   browser default, which the custom backgrounds here render nearly invisible. */
-:focus-visible {
-  outline: 2px solid var(--focus, #6ea8fe);
+   browser default, which the custom backgrounds here render nearly invisible.
+
+   `:where`, so it never outranks a component's own rules: at full specificity its `border-radius`
+   squared off every rounded tile it focused, and it put a ring back on the palette's own field. The
+   outline follows each element's radius by itself. */
+:where(:focus-visible) {
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* Motion is decoration here, never information: the loading pulse, the waking shimmer and the
@@ -1601,7 +1705,7 @@ kbd {
 }
 
 .custom-form .hint.refused {
-  color: #ff6b60;
+  color: var(--danger);
 }
 
 /* Per-service extras: one disclosure per service, so the long fields stay out of the way. */
@@ -1658,6 +1762,12 @@ kbd {
   margin-bottom: 6px;
 }
 
+/* In a row the gap does the spacing, and a bottom margin in a centred row only lifts the switcher
+   3px above the tiles beside it. */
+.rail.is-horizontal .rail-workspace {
+  margin-bottom: 0;
+}
+
 .rail-workspace-mark {
   font-size: 11px;
   font-weight: 600;
@@ -1671,5 +1781,5 @@ kbd {
 }
 
 .settings .pref-note.refused {
-  color: #ff6b60;
+  color: var(--danger);
 }

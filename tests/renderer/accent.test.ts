@@ -5,7 +5,7 @@
 // nothing in the console, nothing to notice.
 
 import { describe, it, expect } from 'vitest';
-import { brightenForDark } from '../../src/renderer/accent';
+import { accentFor, brightenForDark, hexFor } from '@shared/accent';
 
 /** What the module is ultimately for: readable against the tile background. */
 const TILE_BG = '#26262c';
@@ -99,5 +99,49 @@ describe('output shape and caching', () => {
       expect(brightenForDark(junk)).not.toContain('NaN');
       expect(brightenForDark(junk)).toBe(junk);
     }
+  });
+});
+
+describe('the light theme', () => {
+  const LIGHT_TILE = '#e7e7ec';
+  const contrastOn = (hex: string, bg: string) => {
+    const channel = (v: number) => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const lum = (rgb: number[]) =>
+      0.2126 * channel(rgb[0]!) + 0.7152 * channel(rgb[1]!) + 0.0722 * channel(rgb[2]!);
+    const [hi, lo] = [lum(parse(hex)), lum(parse(bg))].sort((a, b) => b - a) as [number, number];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it('LEAVES A COLOUR MADE FOR WHITE ALONE — it used to be washed out to 2.5:1', () => {
+    // Slack's purple is 11:1 on the light tile as published. Lifted for the dark theme it became
+    // #a58aa5, which is 2.5:1 there.
+    expect(accentFor('#4A154B', 'light')).toBe('#4A154B'.toLowerCase());
+  });
+
+  it('darkens a colour that is too pale for a light tile', () => {
+    const out = accentFor('#ffd600', 'light');
+    expect(contrastOn(out, LIGHT_TILE)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('the themes are cached apart', () => {
+    expect(accentFor('#4A154B', 'dark')).not.toBe(accentFor('#4A154B', 'light'));
+  });
+});
+
+describe('hsl, which every custom connection has', () => {
+  it('is adjusted rather than passed through when it is too dark to read', () => {
+    const out = accentFor('hsl(147 55% 12%)', 'dark');
+    expect(out).toMatch(/^#[0-9a-f]{6}$/);
+    expect(contrastAgainstTile(out)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('converts for native APIs that take only hex', () => {
+    expect(hexFor('hsl(0 100% 50%)')).toBe('#ff0000');
+    expect(hexFor('hsl(120, 100%, 25%)')).toBe('#008000');
+    expect(hexFor('#abc')).toBe('#aabbcc');
+    expect(hexFor('not a colour')).toBeNull();
   });
 });

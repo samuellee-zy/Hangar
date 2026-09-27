@@ -421,6 +421,8 @@ export type ServiceView = ServiceInstance & {
   loading: boolean;
   sleeping: boolean;
   unread: number;
+  /** Changes when a new favicon has been cached. Absent is 0. */
+  iconVersion?: number;
 };
 
 export interface DownloadEntry {

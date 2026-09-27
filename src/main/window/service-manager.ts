@@ -129,7 +129,7 @@ export class ServiceManager {
     // Bound here, once per view, rather than on the focus path — see attachShortcuts.
     attachShortcuts(view.webContents, this.onCommand, () => this.keyContext(svc.id));
     // No-op for services with a vendored logo; only custom connections need this.
-    captureFavicon(view.webContents, svc, ses);
+    captureFavicon(view.webContents, svc, ses, () => this.onChange());
     this.onViewCreated(view.webContents);
 
     view.webContents.on('did-start-loading', () => {

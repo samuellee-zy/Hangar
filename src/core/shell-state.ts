@@ -76,6 +76,8 @@ export interface ProjectionInput {
   downloads?: ShellState['downloads'];
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
+  /** Bumped each time a service's favicon is cached, so the renderer refetches it. */
+  iconVersions?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -98,6 +100,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
       // No runtime *is* the definition of asleep — there's no separate flag to disagree with.
       sleeping: !runtime,
       unread: input.unread.get(svc.id) ?? 0,
+      iconVersion: input.iconVersions?.get(svc.id) ?? 0,
     };
   };
   return {

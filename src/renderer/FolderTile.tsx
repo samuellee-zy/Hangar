@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { badgeText } from './badge';
+import { iconUrl } from './ServiceIcon';
 import type { RailItem, ServiceView } from '@shared/types';
 
 /**
@@ -47,7 +49,7 @@ export function FolderTile({
       <span className="folder-grid">
         {/* Four at most; a fuller folder just shows its first four. */}
         {members.slice(0, 4).map((m) => (
-          <img key={m.id} className="folder-mini" src={`hangar-icon://${m.id}`} alt="" />
+          <MiniIcon key={m.id} member={m} />
         ))}
         {members.length === 0 && <span className="folder-empty">·</span>}
       </span>
@@ -63,5 +65,26 @@ export function FolderTile({
         </span>
       )}
     </button>
+  );
+}
+
+/**
+ * One member's icon in the folder's grid. Falls back to its first initial: a bare <img> left an
+ * empty slot for every service with no logo and no favicon yet, so a folder of custom connections
+ * drew as nothing at all.
+ */
+function MiniIcon({ member }: { member: ServiceView }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [member.id, member.iconVersion]);
+  if (failed) {
+    return <span className="folder-mini folder-mini-initial">{member.initials.slice(0, 1)}</span>;
+  }
+  return (
+    <img
+      className="folder-mini"
+      src={iconUrl(member.id, member.iconVersion)}
+      alt=""
+      onError={() => setFailed(true)}
+    />
   );
 }

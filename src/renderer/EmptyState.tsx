@@ -76,7 +76,7 @@ export function EmptyState() {
           {here.map((svc) => (
             <li key={svc.id}>
               <button onClick={() => window.hangar.send({ type: 'focus-service', serviceId: svc.id })}>
-                <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} />
+                <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} version={svc.iconVersion} />
                 <span className="wake-name">{svc.name}</span>
                 {svc.unread > 0 && <span className="wake-unread">{svc.unread}</span>}
                 <span className="wake-state">{svc.sleeping ? 'asleep' : 'open'}</span>

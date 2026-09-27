@@ -41,13 +41,14 @@ import { PreferenceEffects } from '@main/window/preference-effects';
 import { TileDrag } from '@main/window/tile-drag';
 import { route, type ShellContext } from '@main/window/commands';
 import { closePopOuts } from '@main/features/popout';
-import { deleteCachedIcon } from '@main/features/icons';
+import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { expiredQuiet } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
 import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
 import { railCanExpand } from '@shared/chrome';
+import { accentFor, hexFor } from '@shared/accent';
 import {
   releaseGlobalShortcut,
   globalShortcutStatus,
@@ -431,6 +432,7 @@ export class AppWindow {
       flashServiceId: this.flashServiceId,
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
+      iconVersions: iconVersions(),
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
       isDefaultMailApp: app.isPackaged && app.isDefaultProtocolClient('mailto'),
@@ -1500,7 +1502,16 @@ export class AppWindow {
       this.win.contentView.addChildView(this.focusRing, 0);
     }
     const svc = loadConfig().services.find((s) => s.id === focused!.serviceId);
-    const colour = svc?.color ?? catalogById(svc?.catalogId ?? '')?.color ?? '#8a8a96';
+    // Adjusted the way the rail adjusts its tiles. The raw brand colour was drawn against the window
+    // background, where GitHub's #181717, X's #111 and Slack's #4A154B are all but invisible — the
+    // ring existed and nobody could see it.
+    const colour =
+      hexFor(
+        accentFor(
+          svc?.color ?? catalogById(svc?.catalogId ?? '')?.color ?? '#8a8a92',
+          nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
+        ),
+      ) ?? '#8a8a92';
     const ring = 2;
     this.focusRing.setBounds({
       x: rect.x - ring,
@@ -1509,7 +1520,7 @@ export class AppWindow {
       height: rect.height + ring * 2,
     });
     this.focusRing.setBorderRadius(PANE_RADIUS + ring);
-    this.focusRing.setBackgroundColor(/^#[0-9a-f]{6}$/i.test(colour) ? `${colour}cc` : '#8a8a96cc');
+    this.focusRing.setBackgroundColor(`${colour}cc`);
     this.focusRing.setVisible(true);
   }
 
