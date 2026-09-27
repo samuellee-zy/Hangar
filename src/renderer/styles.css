@@ -6,7 +6,7 @@
 :root {
   --bg: #1b1b1f;
   --fg: #e8e8ea;
-  --muted: #8a8a92;
+  --muted: #96969e; /* 4.9:1 on a tile; #8a8a92 was 4.4:1 */
   --line: #2e2e34;
   --radius: 10px;
 
@@ -489,7 +489,9 @@ body[data-route='drag'] {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: var(--tile-focused);
+  /* Outlined, on the tile itself: the accent is adjusted for contrast against --tile, and a lighter
+     box under it undid that — 3.5:1 for Webex and Google Voice. */
+  border: 1px solid var(--line);
   color: var(--accent, var(--fg));
   font-size: 13px;
   font-weight: 600;
@@ -510,8 +512,8 @@ body[data-route='drag'] {
 .grid-caveat {
   font-size: 10px;
   line-height: 1.35;
+  /* No extra opacity: --muted is already the quietest text that stays readable (4.5:1). */
   color: var(--muted);
-  opacity: 0.85;
   text-align: center;
   text-wrap: balance;
 }
@@ -648,6 +650,11 @@ body[data-route='drag'] {
 .palette-empty {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* On the highlighted row the muted grey sat on a lighter surface — 4.2:1 in dark. */
+.palette-results li.is-active .palette-hint {
+  color: var(--fg);
 }
 
 /* Between the name and the hint, so a service with messages waiting stands out in the list. */
@@ -1088,9 +1095,14 @@ kbd {
 
    The mark only, not the tile: dimming the whole button dimmed its unread badge to 2.4:1, and a
    sleeping service's count is exactly what Web Push and the endpoint poller exist to deliver. */
-.rail-item.is-sleeping .rail-icon,
-.rail-item.is-sleeping .rail-initials {
+.rail-item.is-sleeping .rail-icon {
   opacity: 0.5;
+}
+
+/* Initials are text, and text at half opacity can't be read: a dimmed brand colour on a tile was
+   2.9:1. Grey says asleep just as well, at full contrast. */
+.rail-item.is-sleeping .rail-initials {
+  color: var(--muted);
 }
 
 /* A mark as well as the dimming, because 50% opacity alone reads as "disabled" — and clicking a
@@ -1113,10 +1125,13 @@ kbd {
 }
 
 .rail-item.is-sleeping:hover .rail-icon,
-.rail-item.is-sleeping:hover .rail-initials,
-.rail-item.is-sleeping:focus-visible .rail-icon,
-.rail-item.is-sleeping:focus-visible .rail-initials {
+.rail-item.is-sleeping:focus-visible .rail-icon {
   opacity: 1;
+}
+
+.rail-item.is-sleeping:hover .rail-initials,
+.rail-item.is-sleeping:focus-visible .rail-initials {
+  color: var(--accent, var(--fg));
 }
 
 /* --- rail orientation --------------------------------------------------------------------- */
@@ -1270,7 +1285,8 @@ kbd {
   :root {
     --bg: #f4f4f6;
     --fg: #1b1b1f;
-    --muted: #6b6b74;
+    /* 5:1 on a tile. It was #6b6b74 — 4.3:1, so every note under a Settings row failed. */
+    --muted: #5c5c65;
     --line: #d8d8de;
     --tile: #e7e7ec;
     --tile-hover: #dedee4;

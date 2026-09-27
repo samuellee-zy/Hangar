@@ -56,6 +56,30 @@ test('SWITCHING TO A SERVICE PUTS THE KEYBOARD IN ITS PAGE — ⌘K↵ and a til
   await expect.poll(focusedUrl).toMatch(/127\.0\.0\.1:\d+\/$/);
 });
 
+test('THE SETTINGS WINDOW RENDERS, AND ITS SECTIONS SWITCH', async () => {
+  // Opened and never looked at: the only check was that `open-settings` didn't throw, so a Settings
+  // window that rendered nothing would have passed.
+  h = await launch();
+  await h.rail();
+  await h.app.evaluate(() =>
+    (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch({
+      type: 'open-settings',
+    }),
+  );
+  await expect.poll(() => h.app.windows().some((w) => w.url().includes('#settings'))).toBeTruthy();
+  const settings = h.app.windows().find((w) => w.url().includes('#settings'))!;
+
+  await expect(settings.getByRole('heading', { level: 1, name: 'General' })).toBeVisible();
+  await expect(settings.getByLabel('Rail position')).toBeVisible();
+
+  await settings.getByRole('button', { name: 'Connections' }).click();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible();
+
+  // Search finds a setting from another section, and says where it isn't.
+  await settings.getByLabel('Search settings').fill('proxy');
+  await expect(settings.getByLabel('Proxy')).toBeVisible();
+});
+
 test('the overlay stops eating clicks once closed', async () => {
   // The overlay is a transparent full-window view. Hiding rather than *removing* it leaves it
   // hit-testing across its whole bounds, so every click meant for a pane lands on nothing and the

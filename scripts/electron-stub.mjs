@@ -15,7 +15,36 @@ const dir = path.join(os.tmpdir(), `hangar-check-${process.env['VITEST_POOL_ID']
 export const app = {
   getPath: () => dir,
   getAppPath: () => process.cwd(),
+  // Recorded: the Dock badge is one of the attention centre's outputs, and the only way a unit test
+  // can see it.
+  badgeCount: 0,
+  setBadgeCount(n) {
+    app.badgeCount = n;
+    return true;
+  },
 };
+
+/**
+ * A banner that records what it was given and never reaches Notification Center. `emit('click')`
+ * is how a test clicks one. Tests clear `shown` themselves.
+ */
+export class Notification {
+  static shown = [];
+  constructor(options) {
+    this.options = options;
+    this.handlers = new Map();
+  }
+  on(event, handler) {
+    this.handlers.set(event, [...(this.handlers.get(event) ?? []), handler]);
+    return this;
+  }
+  emit(event, ...args) {
+    for (const handler of this.handlers.get(event) ?? []) handler(...args);
+  }
+  show() {
+    Notification.shown.push(this);
+  }
+}
 
 // True, because the interesting assertions are about what the poller refuses to do while it *can*
 // reach the network. A stub that claimed to be offline would make every one of them pass vacuously.
@@ -48,4 +77,4 @@ export const nativeTheme = {
   shouldUseDarkColors: false,
 };
 
-export default { app, net, dialog, shell, nativeTheme };
+export default { app, net, dialog, shell, nativeTheme, Notification };
