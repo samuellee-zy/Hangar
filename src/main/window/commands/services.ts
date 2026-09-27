@@ -1,3 +1,4 @@
+import { muteUntil, settleMute, unmute } from '@core/notify/policy';
 import {
   addService,
   loadConfig,
@@ -44,11 +45,13 @@ export const serviceCommands: CommandTable = {
     updateConfig((c) => {
       const svc = c.services.find((s) => s.id === command.serviceId);
       if (!svc) return;
+      const levelBefore = svc.notificationLevel;
       Object.assign(svc, patch);
       // A mute or unmute set by hand — Settings' checkbox, "Until I unmute it" — ends any timed
       // one. Otherwise a timer left from an earlier "for 1 hour" would lift a mute that is now
       // meant to be indefinite.
       if ('notificationLevel' in patch && !('mutedUntil' in patch)) delete svc.mutedUntil;
+      if ('notificationLevel' in patch) settleMute(svc, levelBefore);
       // Canonicalised on the way in — Settings sends what it captured, and a list holding
       // `Meta+K` and `meta+k` would claim one chord twice and match neither reliably. Only
       // when the patch actually carries it, so every other update leaves it alone.
@@ -101,13 +104,8 @@ export const serviceCommands: CommandTable = {
     updateConfig((c) => {
       const svc = c.services.find((s) => s.id === command.serviceId);
       if (!svc) return;
-      if (command.until === null) {
-        svc.notificationLevel = 'all';
-        delete svc.mutedUntil;
-      } else {
-        svc.notificationLevel = 'muted';
-        svc.mutedUntil = command.until;
-      }
+      if (command.until === null) unmute(svc);
+      else muteUntil(svc, command.until);
     });
     // Same as muting from Settings: the page is told to stop (or start) watching for a count.
     shell.clearUnread(command.serviceId);

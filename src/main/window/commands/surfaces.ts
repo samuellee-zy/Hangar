@@ -1,4 +1,5 @@
 import { loadConfig } from '@main/platform/config';
+import { MAX_PANES } from '@core/workspace/layout';
 import {
   showFolderMenu,
   showRailMenu,
@@ -56,7 +57,13 @@ export const surfaceCommands: CommandTable = {
   'show-folder-menu': (command, shell) => {
     const ws = shell.activeWorkspace(loadConfig().activeWorkspaceId);
     const folder = ws && findFolder(ws, command.folderId);
-    if (folder) showFolderMenu(shell.win, folder, (c: Command) => shell.dispatch(c));
+    if (folder) {
+      showFolderMenu(shell.win, folder, (c: Command) => shell.dispatch(c), {
+        visible: shell.layout.visibleServiceIds(),
+        // The focused pane is replaced by the first, and each free one takes another.
+        room: 1 + Math.max(0, MAX_PANES - shell.layout.panes.length),
+      });
+    }
   },
 
   'show-service-menu': (command, shell) => {

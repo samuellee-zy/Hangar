@@ -2,6 +2,7 @@ import { app, dialog, nativeTheme } from 'electron';
 import { loadConfig, updateConfig } from '@main/platform/config';
 import { resetPreferences, setPreference } from '@core/config/preferences';
 import { rebind } from '@core/keyboard/keymap';
+import { setDnd } from '@core/notify/policy';
 import type { CommandTable } from '@main/window/commands/context';
 
 /** Preferences, key bindings, Do Not Disturb, and the settings that reach outside the app. */
@@ -46,10 +47,7 @@ export const preferenceCommands: CommandTable = {
   },
 
   'set-dnd': (command, shell) => {
-    updateConfig((c) => {
-      c.preferences.notifications.dnd = command.on;
-      c.preferences.notifications.dndUntil = command.on ? command.until : null;
-    });
+    updateConfig((c) => setDnd(c.preferences.notifications, command.on, command.until));
     shell.sync();
   },
 

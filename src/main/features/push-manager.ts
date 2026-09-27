@@ -252,6 +252,11 @@ export class PushManager {
   }
 
   private scheduleReconnect(serviceId: string, vapidKey: string): void {
+    // Not once push is off or the service is gone. A retry already in flight when `stopAll` ran
+    // gives up at its next await — and its failure landed here, which armed a fresh timer, and that
+    // timer opened a socket nothing tracked: pushes with push switched off, or every one twice
+    // after the window was closed and reopened.
+    if (!this.started || this.abandoned.has(serviceId)) return;
     if (this.timers.has(serviceId)) return;
     const attempt = this.attempts.get(serviceId) ?? 0;
     this.attempts.set(serviceId, attempt + 1);
@@ -259,6 +264,7 @@ export class PushManager {
     this.deps.log(`push: ${serviceId} disconnected, retrying in ${Math.round(delay / 1000)}s`);
     const timer = setTimeout(() => {
       this.timers.delete(serviceId);
+      if (!this.started || this.abandoned.has(serviceId)) return;
       const registration = this.current(serviceId, vapidKey);
       void this.connect(registration).catch((error) => {
         this.deps.log(`push: retry failed for ${serviceId}: ${String(error)}`);

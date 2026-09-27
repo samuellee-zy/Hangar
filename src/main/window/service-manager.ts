@@ -216,14 +216,34 @@ export class ServiceManager {
       );
     });
 
+    // Whether the pane is showing the crash page now. Loading it needs a renderer too, and one that
+    // can't start (`launch-failed`) fails again — which, unguarded, loaded the crash page again, and
+    // again, with no counter and no delay. Cleared by leaving it: its Reload goes back to the page.
+    let showingCrashPage = false;
+    // The next crash was asked for — "Reload" on a hung page — and isn't one of the three.
+    let crashRequested = false;
+    view.webContents.on('did-navigate', (_e, url) => {
+      if (!url.startsWith('data:')) showingCrashPage = false;
+    });
     view.webContents.on('render-process-gone', (_e, details) => {
       if (details.reason === 'clean-exit' || view.webContents.isDestroyed()) return;
+      if (crashRequested) {
+        crashRequested = false;
+        console.warn(`[crash] ${svc.name}: reloading, as asked`);
+        view.webContents.reload();
+        return;
+      }
       // Forgiven after a healthy stretch, like load failures: three crashes over a week is not a
       // crash loop, and counting them for the whole session would end in the crash page.
       const now = Date.now();
       const attempts = attemptsSoFar(runtime, now);
       if (!shouldRecoverFromCrash(attempts, details.reason)) {
         // Out of automatic reloads: say so, with a way back. The pane used to stay dead and blank.
+        if (showingCrashPage) {
+          console.warn(`[crash] ${svc.name}: ${details.reason} — the crash page itself, leaving it`);
+          return;
+        }
+        showingCrashPage = true;
         console.warn(`[crash] ${svc.name}: ${details.reason} — giving up, showing the crash page`);
         void view.webContents.loadURL(crashedPageHtml({ serviceName: svc.name, reason: details.reason }));
         return;
@@ -256,8 +276,9 @@ export class ServiceManager {
         .then(({ response }) => {
           if (response !== 1 || view.webContents.isDestroyed()) return;
           // The crash handler reloads it. A reload asked for isn't a failure, so it doesn't count
-          // towards the three that end in the crash page.
-          runtime.failures = 0;
+          // towards the three that end in the crash page. (A renderer can host more than one page;
+          // any other on it is taken down too, and comes back through its own crash recovery.)
+          crashRequested = true;
           view.webContents.forcefullyCrashRenderer();
         })
         .catch(() => {})
