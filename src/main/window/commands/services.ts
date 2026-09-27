@@ -60,6 +60,12 @@ export const serviceCommands: CommandTable = {
     const runtime = shell.services.get(command.serviceId);
     const zoom = patch.zoom;
     if (runtime && typeof zoom === 'number') runtime.view.webContents.setZoomFactor(zoom);
+    // The user agent too, for the next load: set on the page, and cleared back to the session's
+    // default rather than left at the old value until the service was next woken from sleep.
+    if (runtime && 'userAgent' in patch) {
+      const wc = runtime.view.webContents;
+      wc.setUserAgent(patch.userAgent || wc.session.getUserAgent());
+    }
     // Unread detection applies live too, and has to: the field is edited by someone looking at
     // the page, and a selector you must reload to test is a selector nobody tunes. Muting also
     // lands here, which is how it stops the page watching for a count it isn't allowed to set.
@@ -104,11 +110,6 @@ export const serviceCommands: CommandTable = {
   },
 
   'mark-read': (command, shell) => {
-    shell.clearUnread(command.serviceId);
-    shell.sync();
-  },
-
-  'clear-unread': (command, shell) => {
     shell.clearUnread(command.serviceId);
     shell.sync();
   },

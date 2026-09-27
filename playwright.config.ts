@@ -18,6 +18,11 @@ export default defineConfig({
   // Electron launch plus a page load is slow; the default 30s trips on a cold start.
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  reporter: process.env['CI'] ? 'list' : [['list']],
-  use: { trace: 'retain-on-failure' },
+  // On CI, an HTML report as well: the workflow uploads `playwright-report/` on failure, and with
+  // only the list reporter that directory never existed.
+  reporter: process.env['CI'] ? [['list'], ['html', { open: 'never' }]] : [['list']],
+  // One retry on CI, traced. A test that passes on its retry is reported as flaky rather than
+  // failing the build — and the trace of the failed attempt is what says why.
+  retries: process.env['CI'] ? 1 : 0,
+  use: { trace: process.env['CI'] ? 'on-first-retry' : 'retain-on-failure' },
 });

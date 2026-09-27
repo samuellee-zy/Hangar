@@ -1,7 +1,7 @@
 import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
 import { persistAll, startMaintenance } from '@main/boot/maintenance';
-import { setUpLogFile } from '@main/platform/log-file';
+import { setUpLogFile, sinceLaunch } from '@main/platform/log-file';
 import { flushConfig, loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
 import { installMenu } from '@main/boot/menu';
@@ -13,6 +13,7 @@ import { AppWindow } from '@main/window/app-window';
 import { setNotificationClickRoute } from '@main/window/attention';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
+import { redactUrl } from '@core/runtime/urls';
 
 /**
  * Process entry point. Owns boot order, the single-instance lock, the IPC surface and quitting.
@@ -157,6 +158,7 @@ app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
 });
 
 app.whenReady().then(() => {
+  console.log(`[boot] ready at ${sinceLaunch()}ms`);
   // First, before any session or view exists. See ua.ts for why this is the whole UA story.
   applyUserAgent();
   const config = loadConfig();
@@ -180,6 +182,7 @@ app.whenReady().then(() => {
   });
 
   shell = new AppWindow();
+  console.log(`[boot] window built at ${sinceLaunch()}ms`);
   trackWindow(shell);
   publishTestHandle();
   // The bindings are read on every rebuild rather than captured, so `refreshMenu` after a rebind
@@ -200,7 +203,10 @@ app.whenReady().then(() => {
     shell.openMailto(pendingMailto);
     pendingMailto = null;
   }
-});
+})
+  // Logged by name. Unhandled, a throw anywhere in startup was a bare "unhandled rejection" line
+  // with nothing to say it was the app failing to come up.
+  .catch((err: unknown) => console.error('[boot] startup failed:', err));
 
 /**
  * The app's own channels answer only the app's own screens.
@@ -212,7 +218,9 @@ app.whenReady().then(() => {
  */
 function fromApp(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, channel: string): boolean {
   if (isInternalSender(event)) return true;
-  console.warn(`[ipc] ignored ${channel} from ${event.senderFrame?.url.slice(0, 80) ?? 'a closed frame'}`);
+  // Redacted: a sign-in page's URL carries `login_hint` and nonces in its query.
+  const from = event.senderFrame ? redactUrl(event.senderFrame.url).slice(0, 80) : 'a closed frame';
+  console.warn(`[ipc] ignored ${channel} from ${from}`);
   return false;
 }
 
@@ -226,12 +234,15 @@ const fromRecoveryPage = (event: Electron.IpcMainEvent): boolean =>
 
 function registerIpc(): void {
   ipcMain.handle('shell:get-state', (event) =>
-    fromApp(event, 'shell:get-state') ? (shell?.state() ?? null) : null,
+    fromApp(event, 'shell:get-state') ? (shell?.stateFor(event.sender) ?? null) : null,
   );
   ipcMain.handle('overlay:get-mode', (event) =>
     fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
   );
-  // Memory readout for Settings, so the hibernation setting has a visible consequence.
+  ipcMain.handle('drag:get-highlight', (event) =>
+    fromApp(event, 'drag:get-highlight') ? (shell?.dragHighlight() ?? null) : null,
+  );
+  // Memory and process counts, for a readout nothing draws yet (backlog §14.2, task manager).
   ipcMain.handle('app:metrics', (event) => {
     if (!fromApp(event, 'app:metrics')) return null;
     const metrics = app.getAppMetrics();

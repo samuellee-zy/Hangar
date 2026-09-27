@@ -1,0 +1,27 @@
+# Weekly, grouped, so an update is one PR to read rather than a dozen to close. CI runs on each, and
+# branch protection means nothing lands without it passing.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      runtime-dependencies:
+        dependency-type: production
+    # Electron is a major-version decision — new APIs, removed ones, a different Chromium — not a
+    # routine bump. Taken on purpose, by hand.
+    ignore:
+      - dependency-name: electron
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

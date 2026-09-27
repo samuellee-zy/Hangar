@@ -134,6 +134,49 @@ test('hibernateIdle unloads an idle background service', async () => {
 
 type ShellHandle = { win: { close: () => void; isVisible: () => boolean; getBounds: () => unknown } };
 
+test('CLOSING THE WINDOW AND REOPENING IT LEAVES ONE RAIL — the old one used to keep running', async () => {
+  // With close-to-tray off, ⌘W on the last pane destroys the window and a Dock click builds a new
+  // one. The old rail's webContents was never closed, so each round trip left another rail renderer
+  // alive, off screen, receiving every state broadcast.
+  h = await launch();
+  await h.rail();
+
+  const rails = () =>
+    h.app.evaluate(({ webContents }) =>
+      webContents.getAllWebContents().filter((wc) => wc.getURL().includes('#rail')).length,
+    );
+  await expect.poll(rails).toBe(1);
+
+  await h.app.evaluate(() =>
+    (globalThis as never as { __hangarShell: { win: { close: () => void } } }).__hangarShell.win.close(),
+  );
+  await expect.poll(rails, { message: 'the closed window took its rail with it' }).toBe(0);
+
+  await h.app.evaluate(({ app }) => app.emit('activate'));
+  await expect.poll(rails, { message: 'and the new window has exactly one' }).toBe(1);
+});
+
+test('A START PAGE SURVIVES A RELAUNCH — every launch used to put the catalog address back', async () => {
+  // A catalog service given its own address in Settings — a self-hosted GitLab. Loading the config
+  // dropped `url` from every catalog service, so the next launch sent it to gitlab.com.
+  h = await launch((origin) => {
+    const c = seedConfig(origin) as { services: Array<Record<string, unknown>> };
+    c.services[0] = { ...c.services[0], catalogId: 'gitlab', name: 'GitLab', url: `${origin}/` };
+    return c;
+  });
+  await h.rail();
+  const startPage = `${h.fixture.origin}/`;
+  const userData = h.userData;
+  await h.close({ keepProfile: true });
+
+  h = await launch(undefined, { reuseUserData: userData });
+  await h.rail();
+  const stored = JSON.parse(fs.readFileSync(path.join(userData, 'config.json'), 'utf8')) as {
+    services: Array<{ catalogId: string; url?: string }>;
+  };
+  expect(stored.services.find((s) => s.catalogId === 'gitlab')?.url).toBe(startPage);
+});
+
 test('A DOCK CLICK SHOWS A WINDOW THAT WAS CLOSED TO THE TRAY', async () => {
   h = await launch((origin) => seedConfig(origin, { preferences: { behaviour: { closeToTray: true } } }));
   await h.rail();

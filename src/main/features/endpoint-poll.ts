@@ -9,6 +9,7 @@ import {
 import { isAllowedHost, sessionFor } from '@main/platform/session';
 import { catalogById } from '@shared/catalog';
 import type { EndpointRule, ServiceInstance } from '@shared/types';
+import { redactUrl } from '@core/runtime/urls';
 
 /**
  * Asking a sleeping service how much mail it has.
@@ -131,7 +132,7 @@ export function eligibleRule(svc: ServiceInstance): EndpointRule | null {
   // service they authenticate — otherwise a typo, an imported config or a synced one is a
   // credentialled request to a host of someone else's choosing.
   if (!isAllowedHost(svc, rule.url)) {
-    console.error(`[endpoint] refusing ${rule.url} — not on ${svc.name}'s allowlist`);
+    console.error(`[endpoint] refusing ${redactUrl(rule.url)} — not on ${svc.name}'s allowlist`);
     return null;
   }
 

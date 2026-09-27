@@ -13,11 +13,15 @@ import path from 'node:path';
  * on disk. Config is written on every preference change, every layout change and a 400ms
  * window-bounds debounce, so the window for a bad write was not small.
  *
- * Three guarantees now:
+ * Four guarantees now:
  *   1. **Atomic writes.** Temp file plus rename, which is atomic within a filesystem. A reader sees
  *      either the whole old file or the whole new one, never half of either.
  *   2. **A corrupt file is never overwritten.** It's moved aside for inspection.
  *   3. **A rolling backup**, so recovery doesn't depend on the user having exported.
+ *   4. **A copy as of this launch** (`snapshotForLaunch`). The rolling backup is one write behind,
+ *      and writes come a few hundred milliseconds apart, so a write that is valid JSON but wrong —
+ *      the class of decisions #47 — has replaced the backup too within a second. The launch copy
+ *      is the state the app last started from, and nothing touches it until the next launch.
  */
 
 export interface ConfigPaths {
@@ -25,12 +29,24 @@ export interface ConfigPaths {
   main: string;
   /** `.../config.backup.json` — the previous good copy. */
   backup: string;
+  /** `.../config.launch.json` — the config this launch started from. */
+  launch: string;
 }
 
 export const pathsFor = (dir: string): ConfigPaths => ({
   main: path.join(dir, 'config.json'),
   backup: path.join(dir, 'config.backup.json'),
+  launch: path.join(dir, 'config.launch.json'),
 });
+
+/** Keeps the config as it stands now, once per launch, before anything this launch writes. */
+export function snapshotForLaunch(paths: ConfigPaths): void {
+  try {
+    if (fs.existsSync(paths.main)) fs.copyFileSync(paths.main, paths.launch);
+  } catch {
+    // A copy that failed must not stop the app starting: it is a spare, not the config.
+  }
+}
 
 /**
  * `Date.now()` is millisecond-resolution, so two failures in the same tick would collide and the

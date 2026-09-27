@@ -34,6 +34,12 @@ export class DragLayer {
   private attached = false;
   /** The tile in flight. Null when no drag is in progress, which is the authoritative check. */
   private serviceId: string | null = null;
+  /**
+   * What the layer should be drawing now, for a layer that asks. The first highlight of a drag is
+   * sent the moment the view exists, and on a slow machine that is before its page is listening —
+   * so it was lost, and nothing was drawn until the pointer moved again. On CI it often didn't.
+   */
+  private current: DropHighlight | null = null;
 
   constructor(private win: BaseWindow) {}
 
@@ -47,6 +53,8 @@ export class DragLayer {
       webPreferences: {
         preload: path.join(__dirname, '../preload/sidebar.cjs'),
         contextIsolation: true,
+        // Explicit rather than left to the default: these views hold the app's bridge (decisions #97).
+        sandbox: true,
       },
     });
     // Fully transparent: the panes underneath have to stay visible, or the user is aiming at a grey
@@ -79,8 +87,14 @@ export class DragLayer {
 
   /** Draws the drop indicator, in the layer's own coordinates. Null erases it. */
   highlight(highlight: DropHighlight | null): void {
+    this.current = highlight;
     if (!this.view) return;
     safeSend(this.view.webContents, 'drag:highlight', highlight);
+  }
+
+  /** For the layer's page, once it's listening. See `current`. */
+  currentHighlight(): DropHighlight | null {
+    return this.serviceId ? this.current : null;
   }
 
   /**

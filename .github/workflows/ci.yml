@@ -25,19 +25,21 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v7
+      # Actions are pinned to a commit, not a tag: a tag can be moved to point at anything, and this
+      # job runs with the repo checked out. Dependabot keeps the pins current (dependabot.yml).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          # 24 is the active LTS. Local development is on 26; if that divergence ever matters this
-          # becomes a matrix, but one slow macOS job is the right default for a solo project.
-          node-version: 24
+          # From .nvmrc, so CI and `nvm use` can't name different versions. 24 is the active LTS;
+          # `engines` in package.json is the floor below which the toolchain stops working.
+          node-version-file: .nvmrc
           cache: npm
 
       # ~180 MB, and it does not change between runs of the same Electron version. Restored
       # *before* `npm ci`, because our postinstall is what downloads it — see below.
       - name: Cache the Electron binary
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -47,6 +49,13 @@ jobs:
       # path.txt, and Playwright's `_electron.launch` failed before anything downloaded it. Our
       # package.json now runs `install-electron` as its postinstall, idempotently.
       - run: npm ci
+
+      # The main process's dependencies, not the toolchain: a high-severity advisory in one of those
+      # runs beside every service's session. Not everything that ships, though — React, react-dom
+      # and dnd-kit are devDependencies, bundled into the renderer by Vite, so `--omit=dev` skips
+      # them. They're left to Dependabot with the build tools; auditing all of devDependencies fails
+      # on advisories in vitest, electron-builder and postcss that never reach the app.
+      - run: npm audit --omit=dev --audit-level=high
 
       # typecheck (app + tests), the vitest unit suite, and the dependency-cruiser boundary rules
       # between core/, main/ and shared/. None of this needs the Electron binary.
@@ -59,6 +68,9 @@ jobs:
       # never fires, and shutdown. The worst bug this project has shipped lived in exactly that
       # gap and passed every unit test.
       - run: npm run test:e2e
+
+      # The build the e2e step just made. See the script for the budget and why it exists.
+      - run: node scripts/check-bundle-size.mjs
 
       # Everything gated on `app.isPackaged` — icons served from `process.resourcesPath`, the launch
       # agent, the production context menu — is invisible to the unpackaged E2E run above, and the
@@ -81,11 +93,11 @@ jobs:
           npx --no-install asar list "$resources/app.asar" | grep -q '@ghostery/adblocker-electron-preload'
           npx --no-install asar list "$resources/app.asar" | grep -q '^/out/main/index.js$'
 
-      # trace: 'retain-on-failure' means this only has content when something broke, which is the
-      # only time anyone wants to download it.
+      # CI traces the retry of a failed test (`on-first-retry`), so this only has content when
+      # something broke — the only time anyone wants to download it.
       - name: Upload Playwright trace on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-report
           path: |

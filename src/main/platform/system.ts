@@ -85,10 +85,6 @@ export async function applyProxy(sessions: Iterable<Electron.Session>, prefs: Pr
 const downloadHandlerAttached = new WeakSet<Electron.Session>();
 
 /**
- * Downloads land in the configured folder without a prompt unless asked otherwise. Attaching per
- * session rather than globally, because each service has its own. Idempotent — see above.
- */
-/**
  * Recent downloads, for the tray and Settings. A file used to land silently — no progress, and no
  * way back to it afterwards short of opening the Downloads folder and hunting.
  */
@@ -136,6 +132,10 @@ function track(item: Electron.DownloadItem): void {
   downloadsChanged?.();
 }
 
+/**
+ * Downloads land in the configured folder without a prompt unless asked otherwise. Attaching per
+ * session rather than globally, because each service has its own. Idempotent — see above.
+ */
 export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Preferences): void {
   if (downloadHandlerAttached.has(ses)) return;
   downloadHandlerAttached.add(ses);

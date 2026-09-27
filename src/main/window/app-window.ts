@@ -21,6 +21,7 @@ import {
   configFilePath,
   onConfigSaved,
   saveConfig,
+  flushConfig,
 } from '@main/platform/config';
 import {
   Layout,
@@ -77,6 +78,7 @@ import {
   projectShellState,
   removeServiceFromConfig,
   resolveCommand,
+  withoutServiceCode,
 } from '@core/shell-state';
 import { ConfigSync } from '@main/features/sync';
 import { readSyncBase, writeSyncBase } from '@main/platform/sync-base';
@@ -85,7 +87,7 @@ import { EndpointPoller } from '@main/features/endpoint-poll';
 import { firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import { resolveRepoPath } from '@core/config/sync';
-import { LOG_FILE } from '@main/platform/log-file';
+import { LOG_FILE, sinceLaunch } from '@main/platform/log-file';
 import type {
   Command,
   DomUnreadRule,
@@ -121,6 +123,15 @@ function restoreBounds(saved: WindowBounds | undefined): WindowBounds {
     screen.getPrimaryDisplay().workArea,
   );
 }
+
+/** The `[boot]` mark for the first service page: once per process, not once per rebuilt window. */
+let firstPaneTimed = false;
+
+/** The Settings window, the one renderer that edits a service's custom CSS and JavaScript. */
+const isSettingsView = (wc: WebContents): boolean => !wc.isDestroyed() && wc.getURL().includes('#settings');
+
+/** How often config sync asks the remote for changes made on another machine. */
+const SYNC_POLL_MS = 5 * 60_000;
 
 /**
  * Composes the shell: window, rail, panes, overlay. Every mutation funnels through `dispatch`,
@@ -221,7 +232,13 @@ export class AppWindow {
       () => this.sync(),
       (c) => this.dispatch(c),
       (serviceId) => this.keyContextFor(serviceId),
-      (wc) => installWebContextMenu(wc, this.win),
+      (wc) => {
+        installWebContextMenu(wc, this.win);
+        if (!firstPaneTimed) {
+          firstPaneTimed = true;
+          wc.once('did-finish-load', () => console.log(`[boot] first pane loaded at ${sinceLaunch()}ms`));
+        }
+      },
       (active, total) => {
         const contents = this.findBar.contents;
         if (contents) safeSend(contents, 'find:result', { active, total });
@@ -236,10 +253,15 @@ export class AppWindow {
       webPreferences: {
         preload: path.join(__dirname, '../preload/sidebar.cjs'),
         contextIsolation: true,
+        // Explicit rather than left to the default: these views hold the app's bridge (decisions #97).
+        sandbox: true,
       },
     });
     this.win.contentView.addChildView(this.rail);
     loadRoute(this.rail.webContents, 'rail');
+    this.rail.webContents.once('did-finish-load', () =>
+      console.log(`[boot] rail loaded at ${sinceLaunch()}ms`),
+    );
     this.adoptSurface(this.rail.webContents);
 
     this.win.on('resize', () => {
@@ -290,8 +312,13 @@ export class AppWindow {
       // Defaulting to false is the safe direction — the guard stays on.
       allowPublicRepo: () => loadConfig().preferences.sync?.allowPublicRepo ?? false,
       read: () => loadConfig(),
-      // `sync: false` — this write comes *from* sync, and the default hook would feed it back.
-      write: (next) => saveConfig(next, { sync: false }),
+      // `sync: false` — this write comes *from* sync, and the default hook would feed it back. Flushed
+      // at once, because the base is written straight after: a crash between the two left the old
+      // config on disk beside the new base, and the next launch pushed it back over the other Mac's.
+      write: (next) => {
+        saveConfig(next, { sync: false });
+        flushConfig();
+      },
       readBase: () => readSyncBase(),
       writeBase: (text) => writeSyncBase(text),
       onApplied: (previous) => {
@@ -322,6 +349,7 @@ export class AppWindow {
     // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
     // time an incoming config could land.
     void this.configSync.reconcile();
+    this.configSync.startPolling(SYNC_POLL_MS);
 
     this.scanOrphanPartitions();
     this.restoreLayout();
@@ -438,6 +466,18 @@ export class AppWindow {
     return this.defaultMailApp;
   }
 
+  /**
+   * What `shell:get-state` answers a renderer with: the same split as `broadcast`.
+   *
+   * Pulled by each renderer on mount. The push in `Overlay.open()` races the view's first load — on
+   * the very first open the renderer hasn't subscribed yet, so the message vanished and the overlay
+   * rendered nothing while still swallowing every click.
+   */
+  stateFor(wc: WebContents): ShellState {
+    const state = this.state();
+    return isSettingsView(wc) ? state : withoutServiceCode(state);
+  }
+
   state(): ShellState {
     return projectShellState({
       config: loadConfig(),
@@ -460,11 +500,6 @@ export class AppWindow {
     });
   }
 
-  /**
-   * Pulled by the overlay renderer on mount. The push in `Overlay.open()` races the view's first
-   * load — on the very first open the renderer hasn't subscribed yet, so the message vanished and
-   * the overlay rendered nothing while still swallowing every click.
-   */
   /** Current on-screen rectangle of a pane, for positioning the find bar. */
   private paneRect(paneId: string) {
     const { width, height } = this.win.getContentBounds();
@@ -479,6 +514,11 @@ export class AppWindow {
     const pane = this.layout.focused();
     const svc = pane && loadConfig().services.find((s) => s.id === pane.serviceId);
     this.win.setTitle(svc ? `${svc.name} — Hangar` : 'Hangar');
+  }
+
+  /** What the drag layer should be drawing, for its page once it's listening. */
+  dragHighlight() {
+    return this.dragLayer.currentHighlight();
   }
 
   get overlayOpen(): { mode: OverlayMode; nonce: number } | null {
@@ -516,18 +556,16 @@ export class AppWindow {
   /** User-triggered only. Deleting cookie jars is not something to do automatically at boot. */
   private purgeOrphanPartitions(): void {
     if (!this.orphanPartitions.length) return;
-    const { response } = {
-      response: dialog.showMessageBoxSync(this.win as never, {
-        type: 'warning',
-        buttons: ['Delete', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Delete ${this.orphanPartitions.length} unused session(s)?`,
-        detail:
-          'These belong to connections that were removed. Deleting frees disk space and clears ' +
-          'their cookies. If you re-add one of those services you will need to sign in again.',
-      }),
-    };
+    const response = dialog.showMessageBoxSync(this.win, {
+      type: 'warning',
+      buttons: ['Delete', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Delete ${this.orphanPartitions.length} unused session(s)?`,
+      detail:
+        'These belong to connections that were removed. Deleting frees disk space and clears ' +
+        'their cookies. If you re-add one of those services you will need to sign in again.',
+    });
     if (response !== 0) return;
 
     const base = path.join(app.getPath('userData'), 'Partitions');
@@ -703,11 +741,18 @@ export class AppWindow {
   private broadcast(): void {
     if (this.win.isDestroyed()) return;
     const state = this.state();
-    const signature = JSON.stringify(state);
+    // Scripts and stylesheets only to Settings, which edits them — see `withoutServiceCode`.
+    const lean = withoutServiceCode(state);
+    const signatures = new Map([
+      [state, JSON.stringify(state)],
+      [lean, JSON.stringify(lean)],
+    ]);
     for (const wc of this.consumers) {
+      const payload = isSettingsView(wc) ? state : lean;
+      const signature = signatures.get(payload)!;
       if (this.lastSent.get(wc) === signature) continue;
       this.lastSent.set(wc, signature);
-      safeSend(wc, 'shell:state', state);
+      safeSend(wc, 'shell:state', payload);
     }
     refreshTray(state, (c) => this.dispatch(c));
     this.refreshMenuIfRebound(state.preferences.keyboard?.bindings);
@@ -855,10 +900,6 @@ export class AppWindow {
     this.saveLayout();
   }
 
-  /**
-   * Attach exactly the visible views, in pane order, then keep the overlay on top. Detaching
-   * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
-   */
   /** Follows the theme — the system's, or the preference's — as it changes. See `appBackground`. */
   private readonly repaintBackground = (): void => {
     if (!this.win.isDestroyed()) this.win.setBackgroundColor(appBackground());
@@ -923,6 +964,8 @@ export class AppWindow {
         webPreferences: {
           preload: path.join(__dirname, '../preload/sidebar.cjs'),
           contextIsolation: true,
+          // Explicit rather than left to the default: these views hold the app's bridge (decisions #97).
+          sandbox: true,
         },
       });
       loadRoute(this.emptyView.webContents, 'empty');
@@ -940,6 +983,10 @@ export class AppWindow {
     this.emptyView.setBorderRadius(PANE_RADIUS);
   }
 
+  /**
+   * Attach exactly the visible views, in pane order, then keep the overlay on top. Detaching
+   * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
+   */
   private relayout(): void {
     // A drag holds a frozen copy of the pane rectangles, and this is the one thing that invalidates
     // them. Ending it is the honest answer: the alternative is a highlight over a pane that has
@@ -1016,11 +1063,20 @@ export class AppWindow {
    *
    * `removeChildView` then `addChildView`, matching `Overlay.raise()`: re-adding an existing child
    * is not documented to reorder it.
+   *
+   * Only when something is actually above it, though. Every relayout — each resize event, the
+   * 30-second sweep — detached and re-attached the rail's view, and a rail mid-gesture being taken
+   * off the window and put back is exactly the kind of thing that ends a drag in its renderer.
    */
   private raiseChrome(width: number, height: number): void {
     this.rail.setBounds(this.railRect(width, height));
-    this.win.contentView.removeChildView(this.rail);
-    this.win.contentView.addChildView(this.rail);
+    const children = this.win.contentView.children;
+    const railAt = children.indexOf(this.rail);
+    const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
+    if (railAt < 0 || children.slice(railAt + 1).some((child) => panes.has(child))) {
+      this.win.contentView.removeChildView(this.rail);
+      this.win.contentView.addChildView(this.rail);
+    }
     // Both sit above the rail. The drag layer does too, and needs no raise here: the rail can't be
     // resized during a drag, and `relayout` ends one before it reaches this.
     this.overlay.raise();
@@ -1263,7 +1319,6 @@ export class AppWindow {
     this.services.ensure(replacement);
   }
 
-  /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */
   /**
    * Ends timed Do Not Disturb and timed mutes whose time is up. Runs on the 30-second sweep, so a
    * quiet period ends within half a minute of when it said it would.
@@ -1287,6 +1342,7 @@ export class AppWindow {
     this.sync();
   }
 
+  /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */
   hibernateIdle(): void {
     // First, and whatever the hibernation setting: the sweep is the only clock timed quiet has.
     this.expireQuietPeriods();
@@ -1439,11 +1495,17 @@ export class AppWindow {
     }
 
     // `destroy`, not `close`: both surfaces cache their view for reuse and only detach on close, so
-    // one that the user has opened and closed is a detached renderer the window won't collect. The
-    // rail and the empty state are attached children and go with the window, so they need nothing.
+    // one that the user has opened and closed is a detached renderer the window won't collect.
     this.findBar.destroy();
     this.overlay.destroy();
     this.dragLayer.destroy();
+    // The rail and the empty view too. They were thought to go with the window as attached children;
+    // they don't — a view's webContents lives until it is closed — so each ⌘W and reopen left one
+    // more rail renderer running, receiving every broadcast, with nothing on screen.
+    for (const view of [this.rail, this.emptyView]) {
+      if (view && !view.webContents.isDestroyed()) view.webContents.close();
+    }
+    this.emptyView = null;
     this.consumers.clear();
   }
 

@@ -196,7 +196,29 @@ export class PushManager {
     client.on('ON_CONNECT', () => {
       // Reset the backoff only on a *successful* connection, so a flapping socket still backs off.
       this.attempts.delete(serviceId);
+      // The receiver retries a dropped socket by itself, and so do we — one drop was two
+      // reconnects. Whichever lands first wins: the library's own retry cancels ours here, and ours
+      // tears the library's down (`teardown` → `destroy`, which clears its timer) if it fires first.
+      // Ours stays because the library's gives up for good when re-registering fails.
+      const pending = this.timers.get(serviceId);
+      if (pending) clearTimeout(pending);
+      this.timers.delete(serviceId);
     });
+
+    // Whether this client is still the one the manager holds. `stopAll`, `unsubscribe` or a newer
+    // connect can replace it during any await below; carrying on would open a socket nothing tracks —
+    // the receiver's `connect()` builds a fresh one even after `destroy()` — and deliver into a
+    // window that may no longer exist. The duplicate-notification bug of decisions #54, by another
+    // road.
+    const superseded = () => this.clients.get(serviceId) !== client;
+    const giveUp = () => {
+      try {
+        client.destroy();
+      } catch {
+        // Already gone, which is the state we want.
+      }
+      return new Error(`push: ${serviceId} was stopped while connecting`);
+    };
 
     let credentials: PushTypes.Credentials;
     try {
@@ -213,8 +235,10 @@ export class PushManager {
       this.teardown(serviceId);
       throw new Error(`push: ${serviceId} was removed while registering`);
     }
+    if (superseded()) throw giveUp();
     this.persist({ serviceId, vapidKey, credentials, seenIds: registration.seenIds });
     await client.connect();
+    if (superseded()) throw giveUp();
     this.deps.log(`push: connected for ${serviceId}`);
     return credentials;
   }
@@ -228,6 +252,11 @@ export class PushManager {
   }
 
   private scheduleReconnect(serviceId: string, vapidKey: string): void {
+    // Not once push is off or the service is gone. A retry already in flight when `stopAll` ran
+    // gives up at its next await — and its failure landed here, which armed a fresh timer, and that
+    // timer opened a socket nothing tracked: pushes with push switched off, or every one twice
+    // after the window was closed and reopened.
+    if (!this.started || this.abandoned.has(serviceId)) return;
     if (this.timers.has(serviceId)) return;
     const attempt = this.attempts.get(serviceId) ?? 0;
     this.attempts.set(serviceId, attempt + 1);
@@ -235,6 +264,7 @@ export class PushManager {
     this.deps.log(`push: ${serviceId} disconnected, retrying in ${Math.round(delay / 1000)}s`);
     const timer = setTimeout(() => {
       this.timers.delete(serviceId);
+      if (!this.started || this.abandoned.has(serviceId)) return;
       const registration = this.current(serviceId, vapidKey);
       void this.connect(registration).catch((error) => {
         this.deps.log(`push: retry failed for ${serviceId}: ${String(error)}`);

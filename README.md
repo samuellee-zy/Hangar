@@ -42,8 +42,8 @@ npm run cert:local
 ```
 
 A bundle you built yourself is not quarantined, so there is no Gatekeeper prompt. `npm run dist`
-still makes an unsigned DMG for someone else; on their Mac it opens via System Settings → Privacy &
-Security → **Open Anyway** (macOS 15 removed the right-click → Open bypass). Homebrew stopped
+still makes an unsigned DMG, but on anyone else's Mac it shows the "damaged and can't be opened"
+dialog — which means unsigned, and which System Settings can't override for them. Homebrew stopped
 accepting casks that fail Gatekeeper on **1 September 2026**, so distribution beyond "build it
 yourself" needs a Developer ID. Details: [packaging.md](docs/packaging.md).
 
@@ -59,8 +59,8 @@ Google login; a *second* Gmail gets its own. Unlimited, because a partition cost
 layout, switchable with ⌘⌥1…9. Folders group services within a rail, one level deep, with unread
 rolled up.
 
-**Connections.** A catalog of common services with real logos, plus any website by URL — those get
-their favicon captured from the page itself.
+**Connections.** A catalog of common services, most with a vendored logo, plus any website by URL —
+those, and catalog entries without a logo yet, get their favicon captured from the page itself.
 
 **Notifications.** A service's own notifications are intercepted and attributed, so the dock badge,
 tray count and folder roll-ups all reflect real unread. Do Not Disturb silences the banner but keeps
@@ -177,6 +177,7 @@ that has never opened Gmail.
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
+| [unread-selectors.md](docs/unread-selectors.md) | Finding the element a service draws its unread count in |
 | [sync.md](docs/sync.md) | Config sync across machines: setup, what travels, conflicts |
 | [decisions.md](docs/decisions.md) | **Every finding that cost real time. Start here.** |
 

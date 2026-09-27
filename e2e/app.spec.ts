@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
- * Sixteen tests covering what unit tests structurally cannot: real windows, real `WebContentsView`
+ * Tests covering what unit tests structurally cannot: real windows, real `WebContentsView`
  * hit-testing and z-order, real layout for drag and for CSS geometry, the preload's main-world
  * patches, and process lifecycle.
  *
@@ -54,6 +54,30 @@ test('SWITCHING TO A SERVICE PUTS THE KEYBOARD IN ITS PAGE — ⌘K↵ and a til
     shell.dispatch({ type: 'focus-service', serviceId: 'one' });
   });
   await expect.poll(focusedUrl).toMatch(/127\.0\.0\.1:\d+\/$/);
+});
+
+test('THE SETTINGS WINDOW RENDERS, AND ITS SECTIONS SWITCH', async () => {
+  // Opened and never looked at: the only check was that `open-settings` didn't throw, so a Settings
+  // window that rendered nothing would have passed.
+  h = await launch();
+  await h.rail();
+  await h.app.evaluate(() =>
+    (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch({
+      type: 'open-settings',
+    }),
+  );
+  await expect.poll(() => h.app.windows().some((w) => w.url().includes('#settings'))).toBeTruthy();
+  const settings = h.app.windows().find((w) => w.url().includes('#settings'))!;
+
+  await expect(settings.getByRole('heading', { level: 1, name: 'General' })).toBeVisible();
+  await expect(settings.getByLabel('Rail position')).toBeVisible();
+
+  await settings.getByRole('button', { name: 'Connections' }).click();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible();
+
+  // Search finds a setting from another section, and says where it isn't.
+  await settings.getByLabel('Search settings').fill('proxy');
+  await expect(settings.getByLabel('Proxy')).toBeVisible();
 });
 
 test('the overlay stops eating clicks once closed', async () => {

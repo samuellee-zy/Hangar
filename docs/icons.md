@@ -7,7 +7,9 @@
 SVGs) by `npm run icons`, which reads the slugs out of the catalog so the two can't drift, and
 records the upstream commit in `assets/icons/NOTICE`.
 
-**Captured favicons** for custom connections, which have no brand mark. Grabbed from the page's own
+**Captured favicons** for custom connections, which have no brand mark, and for catalog entries
+not yet vendored (`npm run icons` fills those in). A new one shows without a restart: the icon URL
+carries a version that moves when a favicon is cached. Grabbed from the page's own
 `page-favicon-updated` event and fetched through *that service's session*, so authenticated
 favicons work and the request follows the same proxy as everything else.
 

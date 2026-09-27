@@ -46,6 +46,8 @@ export class FindBar {
       webPreferences: {
         preload: path.join(__dirname, '../preload/sidebar.cjs'),
         contextIsolation: true,
+        // Explicit rather than left to the default: these views hold the app's bridge (decisions #97).
+        sandbox: true,
       },
     });
     this.view.setBackgroundColor('#00000000');

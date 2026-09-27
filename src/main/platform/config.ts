@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { isWebUrl } from '@core/runtime/urls';
 import { catalog, catalogById } from '@shared/catalog';
 import { createAccount, resolveAccount } from '@core/services/accounts';
-import { findQuarantined, pathsFor, quarantine, readWithRecovery, writeAtomic } from '@core/config/store';
+import {
+  findQuarantined,
+  pathsFor,
+  quarantine,
+  readWithRecovery,
+  snapshotForLaunch,
+  writeAtomic,
+} from '@core/config/store';
 import { CONFIG_VERSION, migrateConfig } from '@core/config/migrate';
 import { withDefaults } from '@core/config/preferences';
 import type { Config, ServiceInstance } from '@shared/types';
@@ -155,6 +162,9 @@ export function loadConfig(): Config {
 
   try {
     cached = migrateConfig(raw);
+    // After the migration succeeded — a copy of a file that can't be read would be no spare at all
+    // — and before the first write of this launch, which the resave below may be.
+    snapshotForLaunch(configPaths());
     if ((raw as { version?: number }).version !== CONFIG_VERSION) saveConfig(cached, { sync: false });
   } catch (err) {
     // Migration failed on structurally-valid JSON — parseable, but self-inconsistent in a way that

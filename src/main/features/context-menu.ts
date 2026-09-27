@@ -277,7 +277,7 @@ export function showServiceMenu(
 }
 
 function dialogSyncRemove(window: BaseWindow, name: string): { response: number } {
-  const response = dialog.showMessageBoxSync(window as never, {
+  const response = dialog.showMessageBoxSync(window, {
     type: 'warning',
     buttons: ['Remove', 'Cancel'],
     defaultId: 1,

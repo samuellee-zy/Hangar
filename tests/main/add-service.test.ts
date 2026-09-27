@@ -8,11 +8,11 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { app } from 'electron';
 
-// config.ts writes on load, so start from a clean directory every run.
-fs.rmSync(path.join(os.tmpdir(), 'hangar-check'), { recursive: true, force: true });
+// config.ts writes on load, so start from a clean directory every run — this worker's own, from the
+// stub, which is what config.ts will read.
+fs.rmSync(app.getPath('userData'), { recursive: true, force: true });
 
 const { addService, loadConfig, makeCustomInstance, makeInstance } = await import(
   '@main/platform/config'

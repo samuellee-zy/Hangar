@@ -40,6 +40,11 @@ export default defineConfig({
     resolve: { alias },
     root: resolve('src/renderer'),
     plugins: [react()],
-    build: { rollupOptions: { input: resolve('src/renderer/index.html') } },
+    build: {
+      // Explicit: electron-vite leaves the renderer unminified by default, and it shipped as 831 KB
+      // of readable source, parsed cold by each of the six views that load it.
+      minify: 'esbuild',
+      rollupOptions: { input: resolve('src/renderer/index.html') },
+    },
   },
 });

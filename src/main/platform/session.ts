@@ -183,7 +183,8 @@ export function sessionFor(svc: ServiceInstance): Session {
     if (!removed && cookie.session) needsPromotion.add(partition);
   });
 
-  if (svc.userAgent) ses.setUserAgent(svc.userAgent);
+  // Not the session's user agent: that is shared by every service on the account, and was set by
+  // whichever one happened to configure it first. Per page now — see ServiceManager.ensure.
 
   // Deny-by-default, with curated services trusted further than arbitrary URLs, and only a
   // service's own frames trusted at all. See permissions.ts.
@@ -308,6 +309,11 @@ export function attachNavigationGuards(
   // redirects and any of them can spawn another popup.
   wc.on('did-create-window', (child) => {
     attachNavigationGuards(child.webContents, svc, partition);
+    // The service's own user agent, which is set per page now rather than on the session: a sign-in
+    // popup is often exactly what the user agent was set to get through. From its next request on —
+    // the first has already been sent by the time the window exists.
+    const userAgent = current().userAgent;
+    if (userAgent) child.webContents.setUserAgent(userAgent);
   });
 
   /**

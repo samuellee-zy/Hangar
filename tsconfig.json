@@ -27,10 +27,7 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  // tests/ is deliberately NOT typechecked yet. Including it surfaces 181 errors, and 86 of them
-  // are one real finding rather than test sloppiness: `migrateV1` declares its input as full
-  // `ServiceInstance`s, but v1 data has no `accountId` — creating it is the migration's whole job.
-  // The fixtures are honest and the signature is a lie. Fixing that is A11; typing the tests rides
-  // along with it. Until then Vitest type-strips and the tests are verified by running.
+  // tests/ is typechecked by tsconfig.test.json (`npm run typecheck:tests`), which extends this one
+  // and relaxes the two rules that are friction in fixtures. See docs/backlog.md §10.
   "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts", "vitest.config.ts"]
 }

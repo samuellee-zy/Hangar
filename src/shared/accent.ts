@@ -15,10 +15,20 @@
  * code, because main draws the pane's focus ring in the same colour.
  */
 
+import { THEME } from './theme';
+
 export type ColorScheme = 'dark' | 'light';
 
-/** `--tile` in each theme (styles.css). */
-const TILE_BG: Record<ColorScheme, string> = { dark: '#26262c', light: '#e7e7ec' };
+/**
+ * Every tile a colour is drawn on, in each theme: `--tile`, and `--tile-focused` — the lightest of
+ * the dark ramp and the darkest of the light one. The colour has to read on all of them. It was
+ * adjusted against `--tile` alone, so Slack's lifted #a58aa5 cleared 4.5:1 there and made 4.03:1
+ * on the focused tile — the tile you're looking at.
+ */
+const TILE_BGS: Record<ColorScheme, readonly string[]> = {
+  dark: [THEME.dark.tile, THEME.dark.tileFocused],
+  light: [THEME.light.tile, THEME.light.tileFocused],
+};
 const TARGET_CONTRAST = 4.5;
 
 type RGB = [number, number, number];
@@ -117,15 +127,18 @@ export function accentFor(color: string, scheme: ColorScheme): string {
     cache.set(key, color);
     return color;
   }
-  // TILE_BG is a literal we control, so this cannot be null — but assert rather than assume.
-  const bg = parse(TILE_BG[scheme]);
-  if (!bg) return color;
+  // TILE_BGS are literals we control, so none can be null — but assert rather than assume.
+  const bgs = TILE_BGS[scheme].map(parse);
+  if (bgs.some((bg) => !bg)) return color;
+  const worst = (rgb: RGB) => Math.min(...bgs.map((bg) => contrast(rgb, bg!)));
   const step = scheme === 'dark' ? lighten : darken;
 
   let result = base;
   // 5% steps: fine enough that nothing overshoots into pastel, coarse enough to terminate fast.
-  for (let amount = 0; amount <= 1 && contrast(result, bg) < TARGET_CONTRAST; amount += 0.05) {
-    result = step(base, amount);
+  // Judged as it will be drawn — rounded to whole channels. Measured before rounding, a colour could
+  // clear 4.5:1 by a hair and come out of `toHex` just under it.
+  for (let amount = 0; amount <= 1 && worst(result) < TARGET_CONTRAST; amount += 0.05) {
+    result = step(base, amount).map(Math.round) as RGB;
   }
 
   // A colour that was readable as given comes back as given — hex or hsl — rather than rewritten.

@@ -23,7 +23,7 @@ const NOTE =
   'to sign in again.';
 
 export async function exportConfig(window: BaseWindow): Promise<void> {
-  const { canceled, filePath } = await dialog.showSaveDialog(window as never, {
+  const { canceled, filePath } = await dialog.showSaveDialog(window, {
     title: 'Export Hangar configuration',
     defaultPath: 'hangar-config.json',
     filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -31,18 +31,31 @@ export async function exportConfig(window: BaseWindow): Promise<void> {
   if (canceled || !filePath) return;
 
   const config = loadConfig();
+  const { notifications } = config.preferences;
   fs.writeFileSync(
     filePath,
     // Not `pushRegistrations`: each holds the private keys that decrypt this machine's pushes, and
     // is bound to this one receiver — useless on another Mac, and not something to leave in a file
-    // in Downloads.
-    JSON.stringify({ _note: NOTE, ...config, window: undefined, pushRegistrations: undefined }, null, 2)
+    // in Downloads. Not the Firebase credential either, for the second of those reasons; sync keeps
+    // it local too. Custom scripts *are* kept: this is your own backup, and they are your own code —
+    // it's the importing side that has to be careful with them.
+    JSON.stringify(
+      {
+        _note: NOTE,
+        ...config,
+        window: undefined,
+        pushRegistrations: undefined,
+        preferences: { ...config.preferences, notifications: { ...notifications, firebase: undefined } },
+      },
+      null,
+      2
+    )
   );
   console.log(`[transfer] exported to ${filePath}`);
 }
 
 export async function importConfig(window: BaseWindow, onLoaded: () => void): Promise<void> {
-  const { canceled, filePaths } = await dialog.showOpenDialog(window as never, {
+  const { canceled, filePaths } = await dialog.showOpenDialog(window, {
     title: 'Import Hangar configuration',
     properties: ['openFile'],
     filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -54,7 +67,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   try {
     parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<Config>;
   } catch {
-    await dialog.showMessageBox(window as never, {
+    await dialog.showMessageBox(window, {
       type: 'error',
       message: "That file isn't valid JSON.",
     });
@@ -62,7 +75,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   }
 
   if (!Array.isArray(parsed.services) || !Array.isArray(parsed.workspaces)) {
-    await dialog.showMessageBox(window as never, {
+    await dialog.showMessageBox(window, {
       type: 'error',
       message: "That doesn't look like a Hangar configuration.",
       detail: 'It has no services or workspaces.',
@@ -70,18 +83,30 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
     return;
   }
 
-  const { response } = await dialog.showMessageBox(window as never, {
+  // Custom JavaScript runs inside a signed-in page with everything that page can do. From a file,
+  // it is someone else's code in your Gmail unless you wrote it — so it is its own decision, and
+  // the default leaves it out.
+  const scripted = parsed.services.filter((svc) => typeof svc?.customJs === 'string' && svc.customJs.trim());
+  const replaced =
+    `This replaces ${loadConfig().services.length} service(s) with ${parsed.services.length} ` +
+    'from the file. Existing sessions stay on disk but their services may no longer reference ' +
+    'them, so expect to sign in again.';
+  const { response } = await dialog.showMessageBox(window, {
     type: 'warning',
-    buttons: ['Replace', 'Cancel'],
-    defaultId: 1,
-    cancelId: 1,
+    buttons: scripted.length
+      ? ['Replace, without its scripts', 'Replace, with its scripts', 'Cancel']
+      : ['Replace', 'Cancel'],
+    // Cancel by default: Return on a dialog that replaces everything should not replace everything.
+    defaultId: scripted.length ? 2 : 1,
+    cancelId: scripted.length ? 2 : 1,
     message: 'Replace your current configuration?',
-    detail:
-      `This replaces ${loadConfig().services.length} service(s) with ${parsed.services.length} ` +
-      'from the file. Existing sessions stay on disk but their services may no longer reference ' +
-      'them, so expect to sign in again.',
+    detail: scripted.length
+      ? `${replaced}\n\nIt also adds JavaScript to ${scripted.map((s) => s.name).join(', ')} — code ` +
+        'that runs inside those pages, signed in as you. Keep it only if you wrote it.'
+      : replaced,
   });
-  if (response !== 0) return;
+  const keepScripts = scripted.length > 0 && response === 1;
+  if (response === (scripted.length ? 2 : 1)) return;
 
   // Through the SAME normalisation loadConfig uses. This previously did
   // `saveConfig({ ...parsed })` with no defaults, no migration and no version handling, so
@@ -93,7 +118,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   try {
     normalised = migrateConfig(parsed);
   } catch (err) {
-    await dialog.showMessageBox(window as never, {
+    await dialog.showMessageBox(window, {
       type: 'error',
       message: "That configuration can't be imported.",
       detail: String(err instanceof Error ? err.message : err),
@@ -101,8 +126,32 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
     return;
   }
 
-  // Keep the current window bounds: they describe this machine's display, not the config.
-  saveConfig({ ...normalised, window: loadConfig().window });
+  if (!keepScripts) {
+    normalised = {
+      ...normalised,
+      services: normalised.services.map(({ customJs: _script, ...svc }) => svc),
+    };
+  }
+
+  // Keep what describes this machine rather than the setup: the window bounds are this display's,
+  // and the push registrations are this receiver's keys — an export leaves both out, as it leaves
+  // out the Firebase credential, so importing one used to wipe them and push stopped until the
+  // credential was typed in again. The file's own credential still wins, from an older export.
+  const current = loadConfig();
+  const importedFirebase = normalised.preferences.notifications.firebase;
+  const hasCredential = Object.values(importedFirebase ?? {}).some((v) => typeof v === 'string' && v.trim());
+  saveConfig({
+    ...normalised,
+    window: current.window,
+    pushRegistrations: current.pushRegistrations,
+    preferences: {
+      ...normalised.preferences,
+      notifications: {
+        ...normalised.preferences.notifications,
+        firebase: hasCredential ? importedFirebase : current.preferences.notifications.firebase,
+      },
+    },
+  });
   onLoaded();
   console.log(`[transfer] imported from ${file}`);
 }
