@@ -24,9 +24,13 @@ test('boots, renders the rail, and loads a service into the first pane', async (
   // Two services plus the add and settings buttons.
   expect(await rail.locator('.rail-item').count()).toBeGreaterThanOrEqual(2);
 
-  // The pane is a separate WebContentsView, so it's its own page.
-  const pane = await h.app.windows().find((w) => w.url().includes('127.0.0.1'));
-  expect(pane, 'a service should have loaded').toBeTruthy();
+  // The pane is a separate WebContentsView, so it's its own page — which Playwright learns about on
+  // its own schedule, hence a poll rather than a single look.
+  await expect
+    .poll(() => h.app.windows().some((w) => w.url().includes('127.0.0.1')), {
+      message: 'a service should have loaded',
+    })
+    .toBeTruthy();
 });
 
 test('the overlay stops eating clicks once closed', async () => {
@@ -388,8 +392,10 @@ test('A COMPACT RAIL OPENS ON THE CHEVRON AND GIVES THE WIDTH BACK WHEN SHUT', a
   };
 
   await expect.poll(width).toBe(48);
+  // Polled: the rail settling says nothing about whether the pane's page has registered with
+  // Playwright yet, and on a slower runner it hadn't.
+  await expect.poll(paneWidth, { message: 'a service should have loaded' }).toBeTruthy();
   const paneCollapsed = await paneWidth();
-  expect(paneCollapsed, 'a service should have loaded').toBeTruthy();
 
   // Hovering must do nothing at all. The rail used to open here and then depend on a `pointerleave`
   // that Chromium does not deliver when the pointer crosses into a pane's view, so it stayed open

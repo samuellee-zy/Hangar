@@ -42,8 +42,12 @@ test('A SERVICE PAGE CANNOT SEND SHELL COMMANDS — IPC answers only the app\'s 
 
   // Straight at the channel, the way a compromised renderer could, bypassing the preload's API.
   // The only frames we can script as "not the app" are service panes, so send from one.
+  await expect
+    .poll(() => h.app.windows().some((w) => w.url().startsWith(h.fixture.origin)), {
+      message: 'a service pane should be loaded',
+    })
+    .toBeTruthy();
   const pane = h.app.windows().find((w) => w.url().startsWith(h.fixture.origin));
-  expect(pane, 'a service pane should be loaded').toBeTruthy();
   await h.app.evaluate(({ webContents, ipcMain }, origin) => {
     const wc = webContents.getAllWebContents().find((c) => c.getURL().startsWith(origin));
     // Main-side emit with the pane as the sender: exactly what an IPC message from it looks like.
