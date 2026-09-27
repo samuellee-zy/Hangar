@@ -597,3 +597,32 @@ describe('closing and reopening, and moving panes', () => {
     assert.equal(l.moveFocused(-1), false, 'already at the start');
   });
 });
+
+describe('a service is in one pane at most', () => {
+  it('SHOWING A SERVICE THAT IS ALREADY IN A PANE FOCUSES IT THERE — it was drawn twice, one blank', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b'); // focused
+    const pane = l.show('a');
+    assert.equal(pane.id, a.id);
+    assert.equal(l.focusedPaneId, a.id);
+    assert.deepEqual(l.panes.map((p) => p.serviceId), ['a', 'b']);
+  });
+
+  it('opening one beside that is already on screen adds nothing', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b');
+    assert.equal(l.add('a').id, a.id);
+    assert.equal(l.panes.length, 2);
+  });
+
+  it('a maximised view follows it', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b');
+    l.toggleMaximise();
+    l.show('a');
+    assert.equal(l.maximisedPaneId, a.id);
+  });
+});

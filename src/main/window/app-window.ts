@@ -21,6 +21,7 @@ import {
   configFilePath,
   onConfigSaved,
   saveConfig,
+  flushConfig,
 } from '@main/platform/config';
 import {
   Layout,
@@ -45,7 +46,7 @@ import { closePopOuts } from '@main/features/popout';
 import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { expiredQuiet } from '@core/notify/policy';
+import { expiredQuiet, unmute } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
 import { openExternalSafely } from '@main/platform/external';
 import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
@@ -318,8 +319,13 @@ export class AppWindow {
       // Defaulting to false is the safe direction — the guard stays on.
       allowPublicRepo: () => loadConfig().preferences.sync?.allowPublicRepo ?? false,
       read: () => loadConfig(),
-      // `sync: false` — this write comes *from* sync, and the default hook would feed it back.
-      write: (next) => saveConfig(next, { sync: false }),
+      // `sync: false` — this write comes *from* sync, and the default hook would feed it back. Flushed
+      // at once, because the base is written straight after: a crash between the two left the old
+      // config on disk beside the new base, and the next launch pushed it back over the other Mac's.
+      write: (next) => {
+        saveConfig(next, { sync: false });
+        flushConfig();
+      },
       readBase: () => readSyncBase(),
       writeBase: (text) => writeSyncBase(text),
       onApplied: (previous) => {
@@ -940,7 +946,10 @@ export class AppWindow {
 
     if (newPane && !this.layout.isFull) this.layout.add(serviceId, beside);
     else this.layout.show(serviceId);
-    this.noteUsed(serviceId);
+    // Not while a saved layout is being put back: that is the app arranging panes, not anyone
+    // using them, and it filled the list — ⌃Tab after switching workspace went to whichever pane
+    // was restored last, not to the service you came from.
+    if (!this.restoring) this.noteUsed(serviceId);
 
     this.relayout();
     this.saveLayout();
@@ -1417,9 +1426,7 @@ export class AppWindow {
         c.preferences.notifications.dndUntil = null;
       }
       for (const svc of c.services) {
-        if (!expired.services.includes(svc.id)) continue;
-        svc.notificationLevel = 'all';
-        delete svc.mutedUntil;
+        if (expired.services.includes(svc.id)) unmute(svc);
       }
     });
     for (const serviceId of expired.services) this.pushUnreadRules(serviceId);

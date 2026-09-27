@@ -50,9 +50,11 @@ jobs:
       # package.json now runs `install-electron` as its postinstall, idempotently.
       - run: npm ci
 
-      # What ships, not the toolchain: a high-severity advisory in a runtime dependency runs inside
-      # every service's session. Build tools are left to Dependabot, where a fix is a PR rather than
-      # a red build nobody can act on.
+      # The main process's dependencies, not the toolchain: a high-severity advisory in one of those
+      # runs beside every service's session. Not everything that ships, though — React, react-dom
+      # and dnd-kit are devDependencies, bundled into the renderer by Vite, so `--omit=dev` skips
+      # them. They're left to Dependabot with the build tools; auditing all of devDependencies fails
+      # on advisories in vitest, electron-builder and postcss that never reach the app.
       - run: npm audit --omit=dev --audit-level=high
 
       # typecheck (app + tests), the vitest unit suite, and the dependency-cruiser boundary rules
@@ -91,8 +93,8 @@ jobs:
           npx --no-install asar list "$resources/app.asar" | grep -q '@ghostery/adblocker-electron-preload'
           npx --no-install asar list "$resources/app.asar" | grep -q '^/out/main/index.js$'
 
-      # trace: 'retain-on-failure' means this only has content when something broke, which is the
-      # only time anyone wants to download it.
+      # CI traces the retry of a failed test (`on-first-retry`), so this only has content when
+      # something broke — the only time anyone wants to download it.
       - name: Upload Playwright trace on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

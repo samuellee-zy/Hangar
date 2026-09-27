@@ -1,9 +1,9 @@
 // Timed Do Not Disturb and timed mutes. A timed quiet period sets the same flags a manual one does
 // — `dnd`, `notificationLevel: 'muted'` — plus an alarm; these decide when the alarm has gone off.
 
-import { describe, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import assert from 'node:assert/strict';
-import { expiredQuiet, tomorrowMorning } from '@core/notify/policy';
+import { expiredQuiet, muteUntil, settleMute, tomorrowMorning, unmute, type MuteFields } from '@core/notify/policy';
 
 const at = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 
@@ -50,5 +50,48 @@ describe('which quiet periods are over', () => {
       ],
     });
     assert.deepEqual(expiredQuiet(c, 600).services, ['timed']);
+  });
+});
+
+describe('what a mute goes back to', () => {
+  it('A BADGE-ONLY SERVICE MUTED FOR AN HOUR COMES BACK BADGE-ONLY — it came back with banners', () => {
+    const svc: MuteFields = { notificationLevel: 'badge' };
+    muteUntil(svc, 1_000);
+    expect(svc).toEqual({ notificationLevel: 'muted', mutedUntil: 1_000, mutedFrom: 'badge' });
+    unmute(svc);
+    expect(svc).toEqual({ notificationLevel: 'badge' });
+  });
+
+  it('a re-mute moves the end and keeps what it goes back to', () => {
+    const svc: MuteFields = { notificationLevel: 'badge' };
+    muteUntil(svc, 1_000);
+    muteUntil(svc, 5_000);
+    expect(svc).toEqual({ notificationLevel: 'muted', mutedUntil: 5_000, mutedFrom: 'badge' });
+  });
+
+  it("UNMUTING WHAT ISN'T MUTED CHANGES NOTHING — a badge-only service kept its banners off", () => {
+    const svc: MuteFields = { notificationLevel: 'badge' };
+    unmute(svc);
+    expect(svc).toEqual({ notificationLevel: 'badge' });
+  });
+
+  it('a level chosen outright forgets the memory; Off from badge-only remembers it', () => {
+    const svc: MuteFields = { notificationLevel: 'muted', mutedFrom: 'badge' };
+    svc.notificationLevel = 'all';
+    settleMute(svc, 'muted');
+    expect(svc.mutedFrom).toBeUndefined();
+
+    const other: MuteFields = { notificationLevel: 'muted' };
+    settleMute(other, 'badge');
+    expect(other.mutedFrom).toBe('badge');
+    unmute(other);
+    expect(other.notificationLevel).toBe('badge');
+  });
+
+  it('an ordinary service unmutes to all', () => {
+    const svc: MuteFields = {};
+    muteUntil(svc, 1_000);
+    unmute(svc);
+    expect(svc).toEqual({ notificationLevel: 'all' });
   });
 });

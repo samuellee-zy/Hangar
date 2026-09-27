@@ -117,6 +117,43 @@ export function normaliseNotification(payload: unknown): NotificationContent {
 
 export { HOUR_MS, tomorrowMorning } from '@shared/time';
 
+/** The fields a mute touches. Mutated in place, like the `updateConfig` callbacks they serve. */
+export interface MuteFields {
+  notificationLevel?: NotificationLevel;
+  mutedUntil?: number;
+  mutedFrom?: 'badge';
+}
+
+/**
+ * The level just changed from `before`: remember a badge-only service's level when it's muted, and
+ * forget it when a level is chosen outright. So "unmute" means *back to what it was*, and choosing
+ * All or Badge only in Settings is never undone by a stale memory.
+ */
+export function settleMute(svc: MuteFields, before: NotificationLevel | undefined): void {
+  if (svc.notificationLevel !== 'muted') delete svc.mutedFrom;
+  else if (before === 'badge') svc.mutedFrom = 'badge';
+  else if (before !== 'muted') delete svc.mutedFrom;
+}
+
+/** Muted until `until` (epoch ms). A re-mute moves the end and keeps what it goes back to. */
+export function muteUntil(svc: MuteFields, until: number): void {
+  const before = svc.notificationLevel;
+  svc.notificationLevel = 'muted';
+  svc.mutedUntil = until;
+  settleMute(svc, before);
+}
+
+/**
+ * The mute ends — by hand, or its time is up. Back to badge-only if that's what it muted. A service
+ * that isn't muted is left alone: unmuting a badge-only one used to turn its banners on.
+ */
+export function unmute(svc: MuteFields): void {
+  if (svc.notificationLevel !== 'muted') return;
+  svc.notificationLevel = svc.mutedFrom ?? 'all';
+  delete svc.mutedUntil;
+  delete svc.mutedFrom;
+}
+
 /** The quiet periods whose time is up at `now`: whether DND should end, and which mutes. */
 export function expiredQuiet(
   config: {
