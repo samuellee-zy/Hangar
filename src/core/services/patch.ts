@@ -56,10 +56,10 @@ export function sanitiseServicePatch(patch: unknown): Partial<ServiceInstance> {
 
   if ('notificationLevel' in raw) {
     const level = str(raw.notificationLevel);
-    if (level === 'all' || level === 'muted') out.notificationLevel = level;
+    if (level === 'all' || level === 'badge' || level === 'muted') out.notificationLevel = level;
   }
 
-  for (const key of ['hibernate', 'notifications', 'allowMedia'] as const) {
+  for (const key of ['hibernate', 'notifications', 'allowMedia', 'keepRunning'] as const) {
     if (!(key in raw)) continue;
     const value = bool(raw[key]);
     if (value !== undefined) out[key] = value;

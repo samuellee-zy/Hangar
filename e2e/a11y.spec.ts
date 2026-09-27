@@ -65,5 +65,9 @@ for (const scheme of ['light', 'dark'] as const) {
     await h.app.evaluate(() => (globalThis as never as Shell).__hangarShell.dispatch({ type: 'open-connections' }));
     await expect(overlay.getByRole('dialog')).toBeVisible();
     expect(await violations(overlay, scheme)).toEqual([]);
+
+    await h.app.evaluate(() => (globalThis as never as Shell).__hangarShell.dispatch({ type: 'open-activity' }));
+    await expect(overlay.getByRole('dialog', { name: /Recent notifications/ })).toBeVisible();
+    expect(await violations(overlay, scheme)).toEqual([]);
   });
 }

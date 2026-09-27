@@ -25,6 +25,32 @@ export const paneCommands: CommandTable = {
     if (!command.keepFocus) shell.focusActivePane();
   },
 
+  'focus-next-unread': (_command, shell) => {
+    // Rail order, this workspace first and then the rest, starting after the focused service and
+    // wrapping — so pressing it again walks on through everything waiting rather than bouncing
+    // between the first two.
+    const config = loadConfig();
+    const order = [
+      ...shell.activeServices(config.activeWorkspaceId),
+      ...config.workspaces
+        .filter((w) => w.id !== config.activeWorkspaceId)
+        .flatMap((w) => shell.activeServices(w.id)),
+    ].map((svc) => svc.id);
+    const unique = [...new Set(order)];
+    const current = shell.layout.focused()?.serviceId;
+    const start = current ? unique.indexOf(current) + 1 : 0;
+    const next = [...unique.slice(start), ...unique.slice(0, start)].find((id) => shell.unreadOf(id) > 0);
+    if (!next) return false;
+    return shell.dispatch({ type: 'focus-service', serviceId: next });
+  },
+
+  'focus-previous-service': (_command, shell) => {
+    const current = shell.layout.focused()?.serviceId;
+    const previous = shell.recentServiceIds().find((id) => id !== current);
+    if (!previous || !loadConfig().services.some((s) => s.id === previous)) return false;
+    return shell.dispatch({ type: 'focus-service', serviceId: previous });
+  },
+
   'open-in-new-pane': (command, shell) => {
     shell.overlay.close();
     shell.openService(command.serviceId, { newPane: true });
@@ -117,6 +143,9 @@ export const paneCommands: CommandTable = {
 
   'sleep-others': (_command, shell) => {
     const keep = shell.layout.visibleServiceIds();
+    // Nor the ones set to keep running — that setting exists so they don't go quiet off screen.
+    // Each can still be put to sleep on its own, from its tile's menu.
+    for (const svc of loadConfig().services) if (svc.keepRunning) keep.add(svc.id);
     for (const [serviceId] of [...shell.services.all()]) {
       if (!keep.has(serviceId)) shell.sleep(serviceId);
     }

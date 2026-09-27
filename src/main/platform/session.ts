@@ -34,6 +34,18 @@ const liveSessions = new Map<string, Session>();
 
 export const allLiveSessions = () => liveSessions;
 
+/** Whether the account on this partition blocks ads: its own setting, or else the global one. */
+export function adsBlockedFor(partition: string): boolean {
+  const config = loadConfig();
+  const own = config.accounts.find((a) => a.partition === partition)?.blockAds;
+  return own ?? config.preferences.network.blockAds;
+}
+
+/** Applies each live session's effective setting — after the global one or an account's changes. */
+export function applyAdBlockingEverywhere(): void {
+  for (const [partition, ses] of liveSessions) applyAdBlocking(ses, adsBlockedFor(partition));
+}
+
 /**
  * Partitions that have gained a session cookie since they were last promoted.
  *
@@ -218,7 +230,7 @@ export function sessionFor(svc: ServiceInstance): Session {
   void applyProxy([ses], loadConfig().preferences);
   // Same reasoning as the proxy above, and the same trap: applied here rather than in a bulk pass
   // so a view woken from hibernation is covered too.
-  applyAdBlocking(ses, loadConfig().preferences.network.blockAds);
+  applyAdBlocking(ses, adsBlockedFor(partition));
   attachDownloadHandler(ses, () => loadConfig().preferences);
 
   return ses;

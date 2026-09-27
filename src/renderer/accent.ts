@@ -1,22 +1,18 @@
-import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { accentFor } from '@shared/accent';
 
 export { accentFor, brightenForDark, type ColorScheme } from '@shared/accent';
 
-const LIGHT = '(prefers-color-scheme: light)';
-
 /**
- * The theme this renderer is drawing, following changes live. Electron drives
- * `prefers-color-scheme` from `nativeTheme.themeSource`, so this is the `theme` preference.
+ * A service's colour for both themes, as custom properties; `.accented` in styles.css picks one.
+ *
+ * Chosen in CSS rather than here. Picking in JavaScript meant listening for `prefers-color-scheme`
+ * to change, and a change that fires no event — a theme emulated in a test, a view that missed the
+ * switch — left a tile coloured for the other theme: dark purple initials on a dark tile.
  */
-export function useColorScheme(): 'dark' | 'light' {
-  const query = () => (typeof window.matchMedia === 'function' ? window.matchMedia(LIGHT) : null);
-  const [light, setLight] = useState(() => query()?.matches ?? false);
-  useEffect(() => {
-    const mq = query();
-    if (!mq) return;
-    const update = () => setLight(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return light ? 'light' : 'dark';
+export function accentStyle(colour: string): CSSProperties {
+  return {
+    ['--accent-dark' as string]: accentFor(colour, 'dark'),
+    ['--accent-light' as string]: accentFor(colour, 'light'),
+  };
 }

@@ -416,7 +416,7 @@ describe('compact rail chevron', () => {
       ),
     );
     expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
-    expect(sent).not.toContainEqual({ type: 'open-settings' });
+    expect(sent.some((c) => (c as { type: string }).type === 'open-settings')).toBe(false);
   });
 
   it('AN UNRELATED BROADCAST DOES NOT REOPEN a finished edit', async () => {
@@ -448,7 +448,8 @@ describe('compact rail chevron', () => {
     await renderRail(state());
     await act(async () => pushState(state({ renameRequest: { id: 'gmail', nonce: 1 } })));
     expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
-    expect(sent).toContainEqual({ type: 'open-settings' });
+    // To that service's own page, where its name can be edited — not to General.
+    expect(sent).toContainEqual({ type: 'open-settings', serviceId: 'gmail' });
   });
 
   it('A REQUEST ALREADY WAITING WHEN THE RAIL LOADS IS NOT ACTED ON — a reloaded rail reopened the last edit', () => {
@@ -457,7 +458,7 @@ describe('compact rail chevron', () => {
     return (async () => {
       await renderRail(compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 7 } }));
       expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
-      expect(sent).not.toContainEqual({ type: 'open-settings' });
+      expect(sent.some((c) => (c as { type: string }).type === 'open-settings')).toBe(false);
 
       // The next genuine request still works.
       await act(async () =>
@@ -491,7 +492,7 @@ describe('compact rail chevron', () => {
       await userEvent.clear(field);
       await userEvent.type(field, 'Work{Enter}');
       expect(sent).toContainEqual({ type: 'rename-folder', folderId: 'f1', name: 'Work' });
-      expect(sent).not.toContainEqual({ type: 'open-settings' });
+      expect(sent.some((c) => (c as { type: string }).type === 'open-settings')).toBe(false);
     });
 
     it('typing a space in the folder name does not start a drag', async () => {
@@ -589,5 +590,78 @@ describe('the workspace switcher', () => {
   it('is not there with one workspace — there is nothing to switch to', async () => {
     await renderRail(state({ workspaces: [{ id: 'w', name: 'All', items: [] }] }));
     expect(screen.queryByRole('button', { name: /^Workspace/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('states the rail shows', () => {
+  it('DO NOT DISTURB IS VISIBLE WHILE IT IS ON, and a click turns it off', async () => {
+    await renderRail(
+      state({
+        preferences: {
+          ...DEFAULT_PREFERENCES,
+          notifications: { ...DEFAULT_PREFERENCES.notifications, dnd: true, dndUntil: null },
+        },
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Do Not Disturb is on/ }));
+    expect(sent).toContainEqual({ type: 'set-dnd', on: false, until: null });
+  });
+
+  it('and not there at all while it is off', async () => {
+    await renderRail(state());
+    expect(screen.queryByRole('button', { name: /Do Not Disturb/ })).not.toBeInTheDocument();
+  });
+
+  it('A MUTED TILE SAYS SO — it looked exactly like one that would interrupt you', async () => {
+    const s = state();
+    s.services = s.services.map((svc) => (svc.id === 'gmail' ? { ...svc, notificationLevel: 'muted' } : svc));
+    s.allServices = s.services;
+    await renderRail(s);
+    expect(screen.getByRole('button', { name: /^gmail.*muted/i })).toBeInTheDocument();
+    expect(document.querySelectorAll('.rail-mute-mark')).toHaveLength(1);
+  });
+});
+
+
+describe('a maximised pane', () => {
+  const twoPanes = (maximisedPaneId: string | null) =>
+    state({
+      panes: [
+        { id: 'p1', serviceId: 'gmail' },
+        { id: 'p2', serviceId: 'slack' },
+      ],
+      focusedPaneId: 'p1',
+      maximisedPaneId,
+    });
+
+  it('SAYS SO, WITH THE WAY BACK — the other panes simply vanished', async () => {
+    await renderRail(twoPanes('p1'));
+    await userEvent.click(screen.getByRole('button', { name: /Maximised, 1 of 2 panes/ }));
+    expect(sent).toContainEqual({ type: 'toggle-maximise-pane' });
+  });
+
+  it("the pane waiting behind it no longer looks on screen", async () => {
+    await renderRail(twoPanes('p1'));
+    const slack = screen.getByRole('button', { name: /^slack/i });
+    expect(slack.classList.contains('is-visible')).toBe(false);
+  });
+
+  it('and with nothing maximised there is no indicator, and both tiles show', async () => {
+    await renderRail(twoPanes(null));
+    expect(screen.queryByRole('button', { name: /Maximised/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^slack/i }).classList.contains('is-visible')).toBe(true);
+  });
+});
+
+describe('workspaceMark', () => {
+  it('AN EMOJI, OR THE INITIALS OF TWO WORDS — "Workspace" drew as WO', async () => {
+    const { workspaceMark } = await import('../../src/renderer/Rail');
+    expect(workspaceMark('🏠 Home')).toBe('🏠');
+    expect(workspaceMark('👩‍💻 Code')).toBe('👩‍💻');
+    expect(workspaceMark('Side projects')).toBe('SP');
+    expect(workspaceMark('Workspace')).toBe('W');
+    expect(workspaceMark('   ')).toBe('··');
+    // The second word's first grapheme, not its first UTF-16 unit — half an emoji.
+    expect(workspaceMark('Side 🚀')).toBe('S🚀');
   });
 });

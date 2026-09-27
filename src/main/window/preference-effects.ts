@@ -1,8 +1,7 @@
 import { nativeTheme } from 'electron';
 import { loadConfig } from '@main/platform/config';
 import { applyGlobalShortcut, applyLoginItem, applyProxy } from '@main/platform/system';
-import { allLiveSessions } from '@main/platform/session';
-import { setAdBlocking } from '@main/platform/adblock';
+import { allLiveSessions, applyAdBlockingEverywhere } from '@main/platform/session';
 import { destroyTray, ensureTray } from '@main/features/tray';
 import type { PushManager } from '@main/features/push-manager';
 import {
@@ -112,7 +111,8 @@ export class PreferenceEffects {
         return;
 
       case 'adblock':
-        setAdBlocking(allLiveSessions().values(), prefs.network.blockAds);
+        // Per session, so an account that has its own setting keeps it.
+        applyAdBlockingEverywhere();
         return;
 
       case 'shortcut':

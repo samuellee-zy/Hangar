@@ -8,7 +8,11 @@
  * opposite — you asked not to care, so it doesn't count either.
  */
 
-export type NotificationLevel = 'all' | 'muted';
+/**
+ * `badge`: counted, never a banner — for a service you want to see waiting without it interrupting.
+ * Not "mentions only", which would mean guessing a mention from a title (see the type's field doc).
+ */
+export type NotificationLevel = 'all' | 'badge' | 'muted';
 
 export interface NotifyContext {
   /** Global toggle. */
@@ -56,8 +60,9 @@ export function decideNotification(ctx: NotifyContext): NotifyDecision {
   // are required — a pane inside a hidden window is not something you are looking at.
   if (ctx.inVisiblePane && ctx.windowVisible) return { banner: false, count: false };
 
-  // DND silences the interruption but keeps the tally, so nothing is lost while you focus.
-  if (ctx.dnd) return { banner: false, count: true };
+  // DND silences the interruption but keeps the tally, so nothing is lost while you focus. A
+  // badge-only service is that, always.
+  if (ctx.dnd || ctx.level === 'badge') return { banner: false, count: true };
 
   return { banner: true, count: true };
 }
@@ -111,6 +116,43 @@ export function normaliseNotification(payload: unknown): NotificationContent {
 }
 
 export { HOUR_MS, tomorrowMorning } from '@shared/time';
+
+/** The fields a mute touches. Mutated in place, like the `updateConfig` callbacks they serve. */
+export interface MuteFields {
+  notificationLevel?: NotificationLevel;
+  mutedUntil?: number;
+  mutedFrom?: 'badge';
+}
+
+/**
+ * The level just changed from `before`: remember a badge-only service's level when it's muted, and
+ * forget it when a level is chosen outright. So "unmute" means *back to what it was*, and choosing
+ * All or Badge only in Settings is never undone by a stale memory.
+ */
+export function settleMute(svc: MuteFields, before: NotificationLevel | undefined): void {
+  if (svc.notificationLevel !== 'muted') delete svc.mutedFrom;
+  else if (before === 'badge') svc.mutedFrom = 'badge';
+  else if (before !== 'muted') delete svc.mutedFrom;
+}
+
+/** Muted until `until` (epoch ms). A re-mute moves the end and keeps what it goes back to. */
+export function muteUntil(svc: MuteFields, until: number): void {
+  const before = svc.notificationLevel;
+  svc.notificationLevel = 'muted';
+  svc.mutedUntil = until;
+  settleMute(svc, before);
+}
+
+/**
+ * The mute ends — by hand, or its time is up. Back to badge-only if that's what it muted. A service
+ * that isn't muted is left alone: unmuting a badge-only one used to turn its banners on.
+ */
+export function unmute(svc: MuteFields): void {
+  if (svc.notificationLevel !== 'muted') return;
+  svc.notificationLevel = svc.mutedFrom ?? 'all';
+  delete svc.mutedUntil;
+  delete svc.mutedFrom;
+}
 
 /** The quiet periods whose time is up at `now`: whether DND should end, and which mutes. */
 export function expiredQuiet(

@@ -237,7 +237,8 @@ body[data-route='drag'] {
 
 /* The 3px accent bar hangs off the left of a centred 52px tile. A full-width row has no margin for
    it to hang in, so it moves inside the row's padding. */
-.rail.is-panel .rail-item.is-focused::before {
+.rail.is-panel .rail-item.is-focused::before,
+.rail.is-panel .rail-item.is-visible::before {
   left: 3px;
   height: 18px;
 }
@@ -305,6 +306,22 @@ body[data-route='drag'] {
   display: none;
 }
 
+/* A service's colour, in the variant for the theme on screen. Both come from `accentStyle`; which
+   applies is the stylesheet's business, so it follows the theme without anything listening. */
+.rail-item,
+.rail-rename,
+.grid-tile {
+  --accent: var(--accent-dark);
+}
+
+@media (prefers-color-scheme: light) {
+  .rail-item,
+  .rail-rename,
+  .grid-tile {
+    --accent: var(--accent-light);
+  }
+}
+
 /* One neutral surface for every tile. State is carried by surface *value* plus an edge indicator,
    never by the brand colour — tinting the tile with brand at low opacity collapsed Slack to 1.03:1
    against the rail and made Linear and Teams identical to each other. */
@@ -336,7 +353,8 @@ body[data-route='drag'] {
   background: var(--tile-focused);
 }
 
-.rail-item.is-focused::before {
+.rail-item.is-focused::before,
+.rail-item.is-visible::before {
   content: '';
   position: absolute;
   /* The tile is 52px centred in a 72px rail, so there are only 10px of margin to sit in.
@@ -427,10 +445,10 @@ body[data-route='drag'] {
   color: var(--fg);
 }
 
-.rail-plus {
-  font-size: 20px;
-  font-weight: 400;
-  line-height: 1;
+/* One size and one baseline, now that both are the same drawing rather than two text glyphs. */
+.icon {
+  display: block;
+  flex: none;
 }
 
 /* --- add connection sheet ---------------------------------------------------------------- */
@@ -636,12 +654,47 @@ body[data-route='drag'] {
 
 .palette-results li {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 9px 12px;
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* The name takes the room, pushing the count and the hint to the right-hand end. */
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.palette-icon .rail-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.palette-icon .rail-initials {
+  font-size: 10px;
+}
+
+/* A group's name above its first row: Services, Workspaces, Actions. */
+.palette-results li.palette-group {
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: default;
 }
 
 .palette-results li.is-active {
@@ -661,7 +714,6 @@ body[data-route='drag'] {
 
 /* Between the name and the hint, so a service with messages waiting stands out in the list. */
 .palette-unread {
-  margin-left: auto;
   margin-right: 10px;
   min-width: 18px;
   padding: 0 6px;
@@ -955,10 +1007,7 @@ kbd {
   white-space: nowrap;
 }
 
-.rail-gear {
-  font-size: 17px;
-  line-height: 1;
-}
+
 
 /* --- settings: preference controls -------------------------------------------------------- */
 
@@ -1107,22 +1156,28 @@ kbd {
   color: var(--muted);
 }
 
-/* A mark as well as the dimming, because 50% opacity alone reads as "disabled" — and clicking a
-   sleeping tile is exactly what wakes it. A small crescent in the corner the badge doesn't use. */
-.rail-item.is-sleeping::after {
-  content: '☾';
+/* Marks for what a colour can't say, each in a corner the unread badge doesn't use: a crescent for
+   asleep — dimming alone reads as "disabled", when clicking is exactly what wakes it — and a
+   struck-through bell for muted. */
+.rail-mark {
   position: absolute;
-  left: 4px;
-  bottom: 2px;
-  font-size: 10px;
-  line-height: 1;
+  bottom: 3px;
   color: var(--muted);
   pointer-events: none;
 }
 
-.rail.is-panel .rail-item.is-sleeping::after {
+.rail-sleep-mark {
+  left: 4px;
+}
+
+.rail-mute-mark {
+  right: 4px;
+}
+
+/* At the end of the row, after the name and any count — the icon keeps the start. */
+.rail.is-panel .rail-mark {
   position: static;
-  margin-left: auto;
+  flex: none;
   order: 2;
 }
 
@@ -1199,12 +1254,14 @@ kbd {
 }
 
 /* The focus bar sits on whichever edge faces the content. */
-.rail.is-right .rail-item.is-focused::before {
+.rail.is-right .rail-item.is-focused::before,
+.rail.is-right .rail-item.is-visible::before {
   left: auto;
   right: -7px;
 }
 
-.rail.is-horizontal .rail-item.is-focused::before {
+.rail.is-horizontal .rail-item.is-focused::before,
+.rail.is-horizontal .rail-item.is-visible::before {
   left: 50%;
   top: auto;
   bottom: -7px;
@@ -1213,28 +1270,33 @@ kbd {
   height: 3px;
 }
 
-.rail.is-bottom .rail-item.is-focused::before {
+.rail.is-bottom .rail-item.is-focused::before,
+.rail.is-bottom .rail-item.is-visible::before {
   top: -7px;
   bottom: auto;
 }
 
 /* A 36px tile in a 48px rail has 6px either side, so the -7px above hung a pixel off the window.
    -5px puts the 3px bar 2–5px from the edge, the same inside-the-margin placement as a full rail. */
-.rail.is-compact .rail-item.is-focused::before {
+.rail.is-compact .rail-item.is-focused::before,
+.rail.is-compact .rail-item.is-visible::before {
   left: -5px;
 }
 
-.rail.is-compact.is-right .rail-item.is-focused::before {
+.rail.is-compact.is-right .rail-item.is-focused::before,
+.rail.is-compact.is-right .rail-item.is-visible::before {
   left: auto;
   right: -5px;
 }
 
-.rail.is-compact.is-top .rail-item.is-focused::before {
+.rail.is-compact.is-top .rail-item.is-focused::before,
+.rail.is-compact.is-top .rail-item.is-visible::before {
   left: 50%;
   bottom: -5px;
 }
 
-.rail.is-compact.is-bottom .rail-item.is-focused::before {
+.rail.is-compact.is-bottom .rail-item.is-focused::before,
+.rail.is-compact.is-bottom .rail-item.is-visible::before {
   left: 50%;
   top: -5px;
 }
@@ -1774,4 +1836,213 @@ kbd {
 
 .settings .pref-note.refused {
   color: var(--danger);
+}
+
+/* Settings → Connections: one row a service. */
+.service-row {
+  gap: 10px;
+}
+
+.service-row-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.service-row-icon .rail-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.service-row-icon .rail-initials {
+  font-size: 10px;
+}
+
+.settings button.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* On while Do Not Disturb is: the accent colour, so it reads as a state rather than a button. */
+.rail-add.rail-dnd {
+  border-style: solid;
+  border-color: transparent;
+  color: var(--focus);
+}
+
+/* A hovered or focused tile is lighter, and the muted grey under its name dropped below 4.5:1 on it. */
+.grid-tile:hover .grid-sub,
+.grid-tile:hover .grid-caveat,
+.grid-tile:focus-visible .grid-sub,
+.grid-tile:focus-visible .grid-caveat {
+  color: var(--text);
+}
+
+/* --- recent notifications and downloads --------------------------------------------------- */
+
+.activity-sheet {
+  max-height: min(600px, 86vh);
+}
+
+.activity-body {
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.activity-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 8px 4px;
+}
+
+.activity-section-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.activity-action {
+  border: none;
+  background: none;
+  color: var(--focus);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-row:hover:not(:disabled) {
+  background: var(--selected);
+}
+
+.activity-row:disabled {
+  cursor: default;
+}
+
+.activity-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-detail {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-time {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.activity-empty {
+  margin: 0;
+  padding: 4px 8px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* On screen in a pane, but not the focused one: the same bar, shorter and grey. With two to four
+   panes the tile colours alone (1.1:1 apart) couldn't say which services were showing. */
+.rail-item.is-visible:not(.is-focused)::before {
+  height: 10px;
+  background: var(--muted);
+}
+
+.rail.is-horizontal .rail-item.is-visible:not(.is-focused)::before {
+  width: 10px;
+  height: 3px;
+}
+
+.rail.is-panel .rail-item.is-visible:not(.is-focused)::before {
+  height: 8px;
+}
+
+/* Maximised: the count of panes, in the accent, like Do Not Disturb — a state, not an action. */
+.rail-add.rail-maximised {
+  border-style: solid;
+  border-color: transparent;
+  color: var(--focus);
+}
+
+.rail-maximised-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+
+.shortcut-group-head {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shortcut-list dl {
+  margin: 0;
+}
+
+.empty-tips {
+  margin: 4px 0 14px;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.empty-tips kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--key);
+  color: var(--fg);
+  font-family: inherit;
+}
+
+.settings .reorder {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.settings .reorder button {
+  padding: 2px 6px;
+}
+
+/* A folder a tile is being dragged over: dropping files it inside. */
+.rail-slot.is-drop-target > .rail-folder {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }

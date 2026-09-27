@@ -3,7 +3,7 @@
 // error handling at all.
 //
 
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   HEALTHY_AFTER_MS,
@@ -159,5 +159,42 @@ describe('when a failure counts against the backoff', () => {
       now += action.retryAfterMs;
     }
     assert.equal(retries, MAX_AUTO_RETRIES, 'stops after the cap instead of looping');
+  });
+});
+
+describe('the crash page', () => {
+  it('names the service and offers the reload the automatic ones ran out of', async () => {
+    const { crashedPageHtml } = await import('@core/runtime/recovery');
+    const html = decodeURIComponent(crashedPageHtml({ serviceName: 'Slack <3', reason: 'oom' }));
+    expect(html).toContain('Slack &lt;3 keeps crashing');
+    expect(html).toContain('__hangar.retry()');
+    expect(html).toContain('oom');
+  });
+});
+
+describe('what a failed load says', () => {
+  it('IN WORDS, WITH THE HOST — it said ERR_NAME_NOT_RESOLVED (-105) and nothing else', async () => {
+    const { explainLoadError, errorPageHtml } = await import('@core/runtime/recovery');
+    expect(explainLoadError(-105, 'git.acme.io')).toBe(
+      "Couldn't find git.acme.io. Check the address, or whether this Mac can reach it.",
+    );
+    expect(explainLoadError(-202, 'x.test')).toMatch(/certificate isn't trusted/);
+    expect(explainLoadError(-999, 'x.test')).toBe('The page failed to load.');
+
+    const html = decodeURIComponent(
+      errorPageHtml({ serviceName: 'GitLab', url: 'https://git.acme.io/', errorCode: -105, description: 'ERR_NAME_NOT_RESOLVED', offline: false }),
+    );
+    expect(html).toContain("Couldn&#39;t find git.acme.io".replace('&#39;', "'"));
+    expect(html).toContain('ERR_NAME_NOT_RESOLVED (-105)'); // still there, in the small print
+    expect(html).toContain('openInBrowser()');
+  });
+
+  it('offline says it is reconnecting, and offers no browser — that would be offline too', async () => {
+    const { errorPageHtml } = await import('@core/runtime/recovery');
+    const html = decodeURIComponent(
+      errorPageHtml({ serviceName: 'Gmail', url: 'https://mail.google.com/', errorCode: -106, description: '', offline: true }),
+    );
+    expect(html).toContain('Reconnecting by itself');
+    expect(html).not.toContain('openInBrowser()');
   });
 });

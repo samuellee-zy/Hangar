@@ -133,7 +133,7 @@ export function untilLabel(until: number, now = Date.now()): string {
  * Do Not Disturb, with a time limit. It was a checkbox — on until you remembered to turn it off —
  * while the config had carried an unused `dndUntil` all along.
  */
-function dndMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron.MenuItemConstructorOptions {
+export function dndMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron.MenuItemConstructorOptions {
   const { dnd, dndUntil } = state.preferences.notifications;
   const set = (on: boolean, until: number | null) => () => dispatch({ type: 'set-dnd', on, until });
   return {

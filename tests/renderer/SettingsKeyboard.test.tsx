@@ -140,8 +140,8 @@ describe('rebinding', () => {
         state={state({
           keyboard: {
             actions: [
-              { id: 'palette', label: 'Command palette', chord: 'meta+k', conflict: true },
-              { id: 'find', label: 'Find in page…', chord: 'meta+k', conflict: true },
+              { id: 'palette', label: 'Command palette', chord: 'meta+k', conflict: true, command: { type: 'open-palette' } },
+              { id: 'find', label: 'Find in page…', chord: 'meta+k', conflict: true, command: { type: 'open-find' } },
             ],
             reserved: [],
             passthrough: {},

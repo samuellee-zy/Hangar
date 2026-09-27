@@ -71,6 +71,20 @@ for (const theme of THEMES) {
     }
   }
 
+  test(`${theme}-split`, async () => {
+    await open(theme, { railPosition: 'left' });
+    await h!.app.evaluate(() => {
+      const shell = (globalThis as never as { __hangarShell: Shell }).__hangarShell;
+      shell.dispatch({ type: 'open-in-new-pane', serviceId: 'two' });
+      shell.dispatch({ type: 'open-in-new-pane', serviceId: 's3' });
+    });
+    await capture(`${theme}-split`);
+    await h!.app.evaluate(() =>
+      (globalThis as never as { __hangarShell: Shell }).__hangarShell.dispatch({ type: 'toggle-maximise-pane' }),
+    );
+    await capture(`${theme}-maximised`);
+  });
+
   test(`${theme}-panel`, async () => {
     await open(theme, { railPosition: 'left', compactRail: true });
     await h!.app.evaluate(() => {
@@ -80,17 +94,20 @@ for (const theme of THEMES) {
     await capture(`${theme}-panel`);
   });
 
-  test(`${theme}-settings`, async () => {
+  for (const [name, target] of [
+    ['settings', {}],
+    ['service-settings', { serviceId: 'one' }],
+  ] as const) test(`${theme}-${name}`, async () => {
     await open(theme, {});
-    await h!.app.evaluate(({ BrowserWindow }, bounds) => {
-      (globalThis as never as { __hangarShell: Shell }).__hangarShell.dispatch({ type: 'open-settings' });
+    await h!.app.evaluate(({ BrowserWindow }, { bounds, target }) => {
+      (globalThis as never as { __hangarShell: Shell }).__hangarShell.dispatch({ type: 'open-settings', ...target });
       const settings = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Settings'));
       settings?.setBounds(bounds);
       settings?.setAlwaysOnTop(true);
       settings?.focus();
-    }, BOUNDS);
+    }, { bounds: BOUNDS, target });
     await new Promise((r) => setTimeout(r, 800));
     await scheme(theme);
-    await capture(`${theme}-settings`);
+    await capture(`${theme}-${name}`);
   });
 }

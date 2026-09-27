@@ -2,6 +2,8 @@ import path from 'node:path';
 import { BrowserWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
 import { appBackground } from '@main/platform/native-chrome';
+import { safeSend } from '@main/platform/safe-send';
+import type { SettingsTarget } from '@shared/types';
 
 /**
  * Settings is a real window rather than another overlay mode, following the macOS Preferences
@@ -14,11 +16,28 @@ import { appBackground } from '@main/platform/native-chrome';
 
 let win: BrowserWindow | null = null;
 
-export function openSettingsWindow(register: (wc: Electron.WebContents) => void): void {
+/**
+ * Where a window still loading should open to. It asks on mount (`settings:get-target`) — a message
+ * sent before its renderer subscribed would simply be lost, the overlay's old first-open bug.
+ */
+let pendingTarget: SettingsTarget | null = null;
+
+export function takeSettingsTarget(): SettingsTarget | null {
+  const target = pendingTarget;
+  pendingTarget = null;
+  return target;
+}
+
+export function openSettingsWindow(
+  register: (wc: Electron.WebContents) => void,
+  target: SettingsTarget | null = null,
+): void {
   if (win && !win.isDestroyed()) {
     win.focus();
+    if (target) safeSend(win.webContents, 'settings:navigate', target);
     return;
   }
+  pendingTarget = target;
 
   win = new BrowserWindow({
     width: 880,

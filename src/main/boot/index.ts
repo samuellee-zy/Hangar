@@ -4,13 +4,14 @@ import { persistAll, startMaintenance } from '@main/boot/maintenance';
 import { setUpLogFile, sinceLaunch } from '@main/platform/log-file';
 import { flushConfig, loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
-import { installMenu } from '@main/boot/menu';
+import { installMenu, refreshMenu } from '@main/boot/menu';
 import { DEFAULT_BINDINGS } from '@core/keyboard/keymap';
 import { applyUserAgent } from '@main/platform/ua';
 import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
 import { AppWindow } from '@main/window/app-window';
 import { setNotificationClickRoute } from '@main/window/attention';
+import { takeSettingsTarget } from '@main/features/settings-window';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
 import { redactUrl } from '@core/runtime/urls';
@@ -60,6 +61,9 @@ const trackWindow = (w: AppWindow) => {
     w.dispose();
     shell = null;
     publishTestHandle();
+    // The Dock and Go menus list services with their unread counts, and Do Not Disturb. Left as
+    // they were, the Dock went on saying "Slack (5)" with the badge cleared and nothing behind it.
+    refreshMenu();
   });
 };
 
@@ -192,11 +196,14 @@ app.whenReady().then(() => {
   // with close-to-tray off there is no shell to dispatch to, and "Show Hangar" has to build one.
   installMenu(
     (command) => {
-      if (command.type !== 'show-window') return shell?.dispatch(command) ?? false;
-      ensureShell();
-      return true;
+      // A menu choice made with no window builds one first: Do Not Disturb from the Dock, or a Go
+      // item, after ⌘W did nothing at all.
+      if (command.type === 'show-window' || !shell) ensureShell();
+      if (command.type === 'show-window') return true;
+      return shell?.dispatch(command) ?? false;
     },
-    () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS
+    () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS,
+    () => shell?.state() ?? null,
   );
   shell.applySystemPreferences();
   if (pendingMailto) {
@@ -238,6 +245,9 @@ function registerIpc(): void {
   );
   ipcMain.handle('overlay:get-mode', (event) =>
     fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
+  );
+  ipcMain.handle('settings:get-target', (event) =>
+    fromApp(event, 'settings:get-target') ? takeSettingsTarget() : null,
   );
   ipcMain.handle('drag:get-highlight', (event) =>
     fromApp(event, 'drag:get-highlight') ? (shell?.dragHighlight() ?? null) : null,
@@ -304,6 +314,20 @@ function registerIpc(): void {
     if (!fromRecoveryPage(event)) return;
     const serviceId = shell?.serviceIdForContents(event.sender);
     if (serviceId) shell?.allowBlockedHost(serviceId);
+  });
+
+  // Only from our own pages, like the two above, and only ever the address that just failed for
+  // this sender's service — never one the page names.
+  ipcMain.on('service:open-in-browser', (event) => {
+    if (!fromRecoveryPage(event)) return;
+    const serviceId = shell?.serviceIdForContents(event.sender);
+    if (serviceId) shell?.openFailedInBrowser(serviceId);
+  });
+
+  ipcMain.on('service:open-settings', (event) => {
+    if (!fromRecoveryPage(event)) return;
+    const serviceId = shell?.serviceIdForContents(event.sender);
+    if (serviceId) shell?.dispatch({ type: 'open-settings', serviceId });
   });
 
   ipcMain.on('service:blank', (event) => {

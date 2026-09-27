@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('__hangar', {
    * the host it just blocked for this service and nothing else.
    */
   allowHost: () => ipcRenderer.send('service:allow-host'),
+  /** The error page's "Open in browser": the address that failed, which main remembers. */
+  openInBrowser: () => ipcRenderer.send('service:open-in-browser'),
+  /** The orphan page's button: this service's own page in Settings. */
+  openSettings: () => ipcRenderer.send('service:open-settings'),
   /**
    * Registers with FCM on the site's behalf and returns what a `PushSubscription` needs. Resolves
    * to `null` when push is off, unconfigured, or registration failed — the caller then falls back

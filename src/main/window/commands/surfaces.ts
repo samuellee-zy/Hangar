@@ -1,4 +1,5 @@
 import { loadConfig } from '@main/platform/config';
+import { MAX_PANES } from '@core/workspace/layout';
 import {
   showFolderMenu,
   showRailMenu,
@@ -28,6 +29,7 @@ function toggleOverlay(shell: ShellContext, mode: OverlayMode): void {
 export const surfaceCommands: CommandTable = {
   'open-palette': (_command, shell) => toggleOverlay(shell, 'palette'),
   'open-shortcuts': (_command, shell) => toggleOverlay(shell, 'shortcuts'),
+  'open-activity': (_command, shell) => toggleOverlay(shell, 'activity'),
   'open-connections': (_command, shell) => shell.openOverlay('connections'),
 
   'close-overlay': (_command, shell) => {
@@ -40,7 +42,13 @@ export const surfaceCommands: CommandTable = {
     return wasOpen;
   },
 
-  'open-settings': (_command, shell) => openSettingsWindow((wc) => shell.registerConsumer(wc)),
+  'open-settings': (command, shell) =>
+    openSettingsWindow(
+      (wc) => shell.registerConsumer(wc),
+      command.section || command.serviceId
+        ? { section: command.section, serviceId: command.serviceId }
+        : null,
+    ),
   'show-window': (_command, shell) => shell.showWindow(),
   'toggle-rail': (_command, shell) => shell.toggleRail(),
 
@@ -49,7 +57,13 @@ export const surfaceCommands: CommandTable = {
   'show-folder-menu': (command, shell) => {
     const ws = shell.activeWorkspace(loadConfig().activeWorkspaceId);
     const folder = ws && findFolder(ws, command.folderId);
-    if (folder) showFolderMenu(shell.win, folder, (c: Command) => shell.dispatch(c));
+    if (folder) {
+      showFolderMenu(shell.win, folder, (c: Command) => shell.dispatch(c), {
+        visible: shell.layout.visibleServiceIds(),
+        // The focused pane is replaced by the first, and each free one takes another.
+        room: 1 + Math.max(0, MAX_PANES - shell.layout.panes.length),
+      });
+    }
   },
 
   'show-service-menu': (command, shell) => {

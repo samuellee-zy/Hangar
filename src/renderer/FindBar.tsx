@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Icon } from './Icon';
 
 /**
  * The find-in-page bar. Lives in its own small view over the top-right of the focused pane rather
@@ -56,13 +57,13 @@ export function FindBar() {
       {/* Glyph-only, so each needs a name of its own: "↑" is not something a screen reader says
           usefully, and `title` is not an accessible name. */}
       <button title="Previous (⇧↵)" aria-label="Previous match" onClick={() => search(query, false, true)}>
-        <span aria-hidden="true">↑</span>
+        <Icon name="arrow-up" size={14} />
       </button>
       <button title="Next (↵)" aria-label="Next match" onClick={() => search(query, true, true)}>
-        <span aria-hidden="true">↓</span>
+        <Icon name="arrow-down" size={14} />
       </button>
       <button title="Close (esc)" aria-label="Close find" onClick={close}>
-        <span aria-hidden="true">✕</span>
+        <Icon name="close" size={14} />
       </button>
     </div>
   );

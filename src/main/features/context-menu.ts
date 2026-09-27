@@ -179,14 +179,27 @@ export function showServiceMenu(
           dispatch({ type: 'mute-service', serviceId: svc.id, until: tomorrowMorning(Date.now()) }),
       },
       {
-        // Far enough away to mean "until I say so" — the same flag Settings' mute checkbox sets,
-        // just reached from here.
+        // Far enough away to mean "until I say so" — the same flag Settings' "Off" sets, just
+        // reached from here.
         label: 'Until I unmute it',
         click: () =>
           dispatch({
             type: 'update-service',
             serviceId: svc.id,
             patch: { notificationLevel: 'muted' },
+          }),
+      },
+      { type: 'separator' },
+      {
+        // The quieter setting between the two: counted, never a banner.
+        label: 'Badge only, no banners',
+        type: 'checkbox',
+        checked: svc.notificationLevel === 'badge',
+        click: () =>
+          dispatch({
+            type: 'update-service',
+            serviceId: svc.id,
+            patch: { notificationLevel: svc.notificationLevel === 'badge' ? 'all' : 'badge' },
           }),
       },
     ],
@@ -229,6 +242,10 @@ export function showServiceMenu(
           ]
         : []),
       { type: 'separator' },
+      {
+        label: `Settings for ${svc.name}…`,
+        click: () => dispatch({ type: 'open-settings', serviceId: svc.id }),
+      },
       {
         label: 'Rename…',
         // Native menus can't prompt for text and Electron has no text dialog, so this used to fall
@@ -296,12 +313,40 @@ export function showFolderMenu(
   window: BaseWindow,
   folder: { id: string; name: string; serviceIds: string[]; collapsed: boolean },
   dispatch: Dispatch,
+  /** What's on screen, and how many more members fit: the focused pane, plus the free ones. */
+  panes: { visible: ReadonlySet<string>; room: number },
 ): void {
+  const members = folder.serviceIds;
+  const each = (command: (serviceId: string) => Command) => () => {
+    for (const serviceId of members) dispatch(command(serviceId));
+  };
   popup(
     [
       {
         label: folder.collapsed ? 'Expand' : 'Collapse',
         click: () => dispatch({ type: 'toggle-folder', folderId: folder.id }),
+      },
+      { type: 'separator' },
+      // What a folder is for: acting on the group. Open all fills panes up to the limit — the first
+      // replaces the focused pane, the rest open beside it. Only as many as fit: past the limit each
+      // "new" pane replaced the one just opened, so the last member overwrote the one before it.
+      // Members already on screen stay where they are and take no room.
+      {
+        label: 'Open all',
+        enabled: members.length > 0,
+        click: () =>
+          members
+            .filter((serviceId) => !panes.visible.has(serviceId))
+            .slice(0, panes.room)
+            .forEach((serviceId, i) =>
+              dispatch(i === 0 ? { type: 'focus-service', serviceId } : { type: 'open-in-new-pane', serviceId }),
+            ),
+      },
+      { label: 'Mark all as read', enabled: members.length > 0, click: each((serviceId) => ({ type: 'mark-read', serviceId })) },
+      {
+        label: 'Mute all for an hour',
+        enabled: members.length > 0,
+        click: each((serviceId) => ({ type: 'mute-service', serviceId, until: Date.now() + HOUR_MS })),
       },
       { type: 'separator' },
       { label: 'Rename…', click: () => dispatch({ type: 'begin-rename-folder', folderId: folder.id }) },
@@ -350,8 +395,16 @@ export function showWorkspaceMenu(
         click: () => dispatch({ type: 'set-workspace', workspaceId: w.id }),
       })),
       { type: 'separator' },
-      { label: 'New workspace', click: () => dispatch({ type: 'create-workspace', name: 'Workspace' }) },
-      { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings' }) },
+      {
+        // Straight to its name: a new workspace called "Workspace" was never renamed, because
+        // nothing asked.
+        label: 'New workspace…',
+        click: () => {
+          dispatch({ type: 'create-workspace', name: 'New workspace' });
+          dispatch({ type: 'open-settings', section: 'workspaces' });
+        },
+      },
+      { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings', section: 'workspaces' }) },
     ],
     window,
   );

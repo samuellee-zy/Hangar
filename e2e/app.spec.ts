@@ -38,9 +38,22 @@ test('SWITCHING TO A SERVICE PUTS THE KEYBOARD IN ITS PAGE — ⌘K↵ and a til
   // rail, in a pane now detached — so the first keystrokes after ⌘K↵ went nowhere.
   h = await launch();
   const rail = await h.rail();
+  // Keyboard focus is only reported for the active app's key window, and a freshly launched test
+  // app is not always the active one — another window on the machine may have kept that.
+  await h.app.evaluate(({ app }) => {
+    app.focus({ steal: true });
+    (globalThis as never as { __hangarShell: { win: { focus: () => void } } }).__hangarShell.win.focus();
+  });
 
+  // Brought forward on every look. Which view has the keyboard *inside* the window survives the
+  // window losing and regaining focus, but it's only reported while the window is the active one —
+  // and in a full run another test's window can have just taken that.
   const focusedUrl = () =>
-    h.app.evaluate(({ webContents }) => webContents.getFocusedWebContents()?.getURL() ?? '');
+    h.app.evaluate(({ app, webContents }) => {
+      app.focus({ steal: true });
+      (globalThis as never as { __hangarShell: { win: { focus: () => void } } }).__hangarShell.win.focus();
+      return webContents.getFocusedWebContents()?.getURL() ?? '';
+    });
 
   // A pointer click on the second tile.
   await rail.locator('.rail-item[aria-label*="Two"]').first().click();
@@ -78,6 +91,95 @@ test('THE SETTINGS WINDOW RENDERS, AND ITS SECTIONS SWITCH', async () => {
   // Search finds a setting from another section, and says where it isn't.
   await settings.getByLabel('Search settings').fill('proxy');
   await expect(settings.getByLabel('Proxy')).toBeVisible();
+});
+
+test("SETTINGS OPENS WHERE IT WAS ASKED TO — a service's own page, then another section", async () => {
+  // Every route into Settings landed on General: "Rename…" on a rail with no room to rename,
+  // "Manage workspaces…", and the tile menu, which had no way in at all.
+  h = await launch();
+  await h.rail();
+  const open = (target: Record<string, string>) =>
+    h.app.evaluate((_electron, t) => {
+      (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch({
+        type: 'open-settings',
+        ...t,
+      });
+    }, target);
+
+  await open({ serviceId: 'two' });
+  await expect.poll(() => h.app.windows().some((w) => w.url().includes('#settings'))).toBeTruthy();
+  const settings = h.app.windows().find((w) => w.url().includes('#settings'))!;
+  await expect(settings.getByRole('heading', { level: 1, name: 'Two' })).toBeVisible();
+  await expect(settings.getByLabel('Start page for Two')).toBeVisible();
+
+  // Already open: it goes where it is told, rather than only coming to the front.
+  await open({ section: 'keyboard' });
+  await expect(settings.getByRole('heading', { level: 1, name: 'Keyboard' })).toBeVisible();
+});
+
+test('⌃TAB GOES BACK TO THE LAST SERVICE, AND ⇧⌘U TO THE NEXT ONE WITH UNREAD', async () => {
+  h = await launch();
+  await h.rail();
+  const focused = () =>
+    h.app.evaluate(() => {
+      const s = (globalThis as never as {
+        __hangarShell: { state: () => { panes: Array<{ id: string; serviceId: string }>; focusedPaneId: string | null } };
+      }).__hangarShell.state();
+      return s.panes.find((p) => p.id === s.focusedPaneId)?.serviceId ?? null;
+    });
+  const run = (command: unknown) =>
+    h.app.evaluate((_electron, c) => {
+      const s = (globalThis as never as {
+        __hangarShell: { dispatch: (c: unknown) => boolean; handleNotification: (id: string, p: unknown) => void };
+      }).__hangarShell;
+      if ((c as { type: string }).type === 'notify') s.handleNotification('two', { title: 'hi' });
+      else s.dispatch(c);
+    }, command);
+
+  await run({ type: 'focus-service', serviceId: 'one' });
+  await run({ type: 'focus-service', serviceId: 'two' });
+  await expect.poll(focused).toBe('two');
+  await run({ type: 'focus-previous-service' });
+  await expect.poll(focused, { message: '⌃Tab goes back' }).toBe('one');
+
+  // A message for Two while One is in front, then the next-unread action walks to it.
+  await run({ type: 'notify' });
+  await run({ type: 'focus-next-unread' });
+  await expect.poll(focused, { message: 'to the service with something waiting' }).toBe('two');
+});
+
+test('AN ACCOUNT CAN CLEAR ITS CACHE WITHOUT SIGNING OUT, and have ad blocking of its own', async () => {
+  h = await launch();
+  await h.rail();
+  const run = (command: unknown) =>
+    h.app.evaluate((_electron, c) => {
+      (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch(c);
+    }, command);
+  const accountOne = () =>
+    (JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8')) as {
+      accounts: Array<{ id: string; blockAds?: boolean }>;
+    }).accounts.find((a) => a.id === 'acct-one');
+
+  // A cookie the page set, which a cache clear must leave alone.
+  await h.app.evaluate(async ({ session }) => {
+    await session.fromPartition('persist:acct-one').cookies.set({
+      url: 'http://127.0.0.1/',
+      name: 'signed_in',
+      value: 'yes',
+      expirationDate: Date.now() / 1000 + 3600,
+    });
+  });
+  await run({ type: 'clear-account-cache', accountId: 'acct-one' });
+  await expect.poll(() => h.log()).toContain('[account] cleared the cache for One');
+  const cookies = await h.app.evaluate(({ session }) =>
+    session.fromPartition('persist:acct-one').cookies.get({ name: 'signed_in' }),
+  );
+  expect(cookies, 'still signed in').toHaveLength(1);
+
+  await run({ type: 'set-account-adblock', accountId: 'acct-one', on: false });
+  await expect.poll(() => accountOne()?.blockAds).toBe(false);
+  await run({ type: 'set-account-adblock', accountId: 'acct-one', on: null });
+  await expect.poll(() => accountOne() && 'blockAds' in accountOne()!).toBe(false);
 });
 
 test('the overlay stops eating clicks once closed', async () => {
@@ -322,7 +424,10 @@ test('DRAGGING A TILE ONTO A PANE PUTS IT THERE, AND GIVES THE PANES BACK AFTERW
         state: () => { panes: Array<{ serviceId: string }> };
       };
     };
-    g.__hangarShell?.dispatch({ type: 'begin-tile-drag', serviceId: 'one' });
+    // Two, which the rail click above took off the screen. (One is in the pane, and a service
+    // already on screen is focused where it is rather than opened a second time — this used to
+    // pass by drawing One twice.)
+    g.__hangarShell?.dispatch({ type: 'begin-tile-drag', serviceId: 'two' });
     // Top-left of the content area is gutter, never a pane.
     g.__hangarShell?.dispatch({
       type: 'drop-tile',
@@ -332,7 +437,7 @@ test('DRAGGING A TILE ONTO A PANE PUTS IT THERE, AND GIVES THE PANES BACK AFTERW
     });
     return g.__hangarShell?.state().panes.map((p) => p.serviceId);
   });
-  expect(opened).toHaveLength(2);
+  expect(opened).toEqual(['one', 'two']);
 });
 
 test('DRAGGING A TILE ONTO A FOLDER FILES IT THERE, AND DRAGGING IT OUT TAKES IT BACK', async () => {
@@ -420,6 +525,36 @@ test('DRAGGING A TILE ONTO A FOLDER FILES IT THERE, AND DRAGGING IT OUT TAKES IT
     .poll(async () => (await items())?.find((i) => i.kind === 'folder')?.serviceIds)
     .toEqual([]);
   await expect.poll(async () => (await items())?.some((i) => i.id === 'one')).toBeTruthy();
+});
+
+test("NEAR A PANE'S EDGE A TILE OPENS BESIDE IT — and the preview says beside what", async () => {
+  // With one pane there is no gutter, so opening beside it by drag was all but impossible.
+  h = await launch();
+  await h.rail();
+  const dispatch = (command: unknown) =>
+    h.app.evaluate((_electron, c) => {
+      (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch(c);
+    }, command);
+
+  await dispatch({ type: 'begin-tile-drag', serviceId: 'two' });
+  await expect.poll(() => h.app.windows().some((w) => w.url().includes('#drag'))).toBeTruthy();
+  const layer = h.app.windows().find((w) => w.url().includes('#drag'))!;
+  const size = await layer.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const nearRight = { x: size.w - 30, y: Math.round(size.h / 2) };
+
+  await dispatch({ type: 'drag-tile-to', from: 'content', ...nearRight });
+  await expect(layer.locator('.drop-target')).toHaveText('Open beside One');
+
+  await dispatch({ type: 'drop-tile', from: 'content', ...nearRight });
+  await expect
+    .poll(() =>
+      h.app.evaluate(() =>
+        (globalThis as never as { __hangarShell: { state: () => { panes: Array<{ serviceId: string }> } } })
+          .__hangarShell.state()
+          .panes.map((p) => p.serviceId),
+      ),
+    )
+    .toEqual(['one', 'two']);
 });
 
 test('A COMPACT RAIL OPENS ON THE CHEVRON AND GIVES THE WIDTH BACK WHEN SHUT', async () => {

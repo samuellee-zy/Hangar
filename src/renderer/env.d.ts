@@ -9,7 +9,7 @@
  * The surface is deliberately tiny: read state, send a command. Anything richer would let the
  * renderer accumulate its own state, which is the rule the whole architecture rests on.
  */
-import type { Command, DropHighlight, OverlayOpen, ShellState } from '@shared/types';
+import type { Command, DropHighlight, OverlayOpen, SettingsTarget, ShellState } from '@shared/types';
 
 declare global {
   interface Window {
@@ -19,6 +19,8 @@ declare global {
       onState: (fn: (state: ShellState) => void) => () => void;
       getMetrics: () => Promise<{ processes: number; residentMb: number }>;
       getOverlayOpen: () => Promise<OverlayOpen | null>;
+      getSettingsTarget: () => Promise<SettingsTarget | null>;
+      onSettingsNavigate: (fn: (target: SettingsTarget) => void) => () => void;
       onFindOpened: (fn: () => void) => () => void;
       onFindResult: (fn: (r: { active: number; total: number }) => void) => () => void;
       onOverlayOpen: (fn: (mode: OverlayOpen) => void) => () => void;

@@ -62,7 +62,7 @@ export function DragLayer() {
   }, []);
 
   if (!highlight) return null;
-  const { rect, kind } = highlight;
+  const { rect, kind, label } = highlight;
 
   return (
     <div
@@ -70,7 +70,7 @@ export function DragLayer() {
       style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
       role="presentation"
     >
-      <span className="drop-label">{kind === 'new-pane' ? 'Open alongside' : 'Open here'}</span>
+      <span className="drop-label">{label ?? (kind === 'new-pane' ? 'Open alongside' : 'Open here')}</span>
     </div>
   );
 }

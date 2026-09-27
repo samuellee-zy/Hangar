@@ -78,6 +78,9 @@ export interface ProjectionInput {
   railExpanded: boolean;
   /** Bumped each time a service's favicon is cached, so the renderer refetches it. */
   iconVersions?: ReadonlyMap<string, number>;
+  /** Services by most recent use, newest first. */
+  recentServiceIds?: string[];
+  maximisedPaneId?: string | null;
 }
 
 /**
@@ -127,6 +130,8 @@ export function projectShellState(input: ProjectionInput): ShellState {
     focusedPaneId: input.focusedPaneId,
     activeWorkspaceId: config.activeWorkspaceId,
     railExpanded: input.railExpanded,
+    recentServiceIds: input.recentServiceIds ?? [],
+    maximisedPaneId: input.maximisedPaneId ?? null,
     keyboard: keyboardMapOf(config),
   };
 }
@@ -149,6 +154,8 @@ export function keyboardMapOf(config: Config): KeyboardMap {
         label: action.label,
         chord,
         conflict: clashing.has(chord),
+        command: action.command,
+        menu: action.menu,
       };
     }),
     reserved: [...RESERVED_CHORDS],

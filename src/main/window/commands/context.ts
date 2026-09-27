@@ -42,10 +42,13 @@ export interface ShellContext {
   removeService(serviceId: string): void;
   sleep(serviceId: string): void;
   signOut(accountId: string): Promise<void>;
+  clearAccountCache(partition: string): Promise<void>;
   purgeOrphanPartitions(): void;
   registerConsumer(wc: WebContents): void;
 
   unreadOf(serviceId: string): number;
+  /** Services by most recent use, newest first. */
+  recentServiceIds(): string[];
   clearUnread(serviceId: string): void;
   pushUnreadRules(serviceId: string): void;
 

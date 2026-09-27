@@ -486,3 +486,46 @@ describe('maximising a pane', () => {
     expect(layout.maximisedPaneId).toBeNull();
   });
 });
+
+describe('opening beside a pane', () => {
+  it('INSERTS NEXT TO THAT PANE, ON THE SIDE OF THE DROP — not always at the end', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    const b = l.add('b');
+    l.add('left-of-b', { paneId: b.id, side: 'before' });
+    l.add('right-of-a', { paneId: a.id, side: 'after' });
+    assert.deepEqual(
+      l.panes.map((p) => p.serviceId),
+      ['a', 'right-of-a', 'left-of-b', 'b'],
+    );
+  });
+});
+
+describe('a service is in one pane at most', () => {
+  it('SHOWING A SERVICE THAT IS ALREADY IN A PANE FOCUSES IT THERE — it was drawn twice, one blank', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b'); // focused
+    const pane = l.show('a');
+    assert.equal(pane.id, a.id);
+    assert.equal(l.focusedPaneId, a.id);
+    assert.deepEqual(l.panes.map((p) => p.serviceId), ['a', 'b']);
+  });
+
+  it('opening one beside that is already on screen adds nothing', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b');
+    assert.equal(l.add('a').id, a.id);
+    assert.equal(l.panes.length, 2);
+  });
+
+  it('a maximised view follows it', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b');
+    l.toggleMaximise();
+    l.show('a');
+    assert.equal(l.maximisedPaneId, a.id);
+  });
+});

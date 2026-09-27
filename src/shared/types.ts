@@ -20,6 +20,8 @@ export interface Rect {
 export interface DropHighlight {
   rect: Rect;
   kind: 'replace' | 'new-pane';
+  /** What releasing does, in words — "Open beside Gmail". Main knows which service is there. */
+  label?: string;
 }
 
 /**
@@ -166,6 +168,12 @@ export interface Account {
    * `persist:grp-*` names for exactly this reason.
    */
   partition: string;
+  /**
+   * Ad and tracker blocking for this account's services: on, off, or — unset — whatever Settings →
+   * Network says. Per account because blocking is per session, and a session is an account. "Turn
+   * it off if a service misbehaves" used to mean turning it off everywhere.
+   */
+  blockAds?: boolean;
 }
 
 /** A configured instance. Two Gmail accounts are two of these, pointing at two Accounts. */
@@ -184,6 +192,13 @@ export interface ServiceInstance {
   accountId: string;
   notifications: boolean;
   hibernate: boolean;
+  /**
+   * Loaded at launch and never hibernated, so it notifies and counts without being in a pane. Off
+   * by default: a service not on screen has no page, which is the memory-cheap state, and only
+   * Gmail's endpoint and Web Push could reach you from it. Turned on for the chat and mail you
+   * don't want to miss.
+   */
+  keepRunning?: boolean;
   zoom: number;
   /** Per-service user agent, for a service that refuses Electron's. Set on the service's own page. */
   userAgent?: string;
@@ -219,7 +234,7 @@ export interface ServiceInstance {
    * as a mention from a title string, and a filter that silently drops real messages is worse than
    * no filter.
    */
-  notificationLevel?: 'all' | 'muted';
+  notificationLevel?: 'all' | 'badge' | 'muted';
   /**
    * When a timed mute ends, epoch ms. Set together with `notificationLevel: 'muted'`, which is what
    * everything actually reads — this is only the alarm clock that turns it back to `'all'`. So a
@@ -227,6 +242,12 @@ export interface ServiceInstance {
    * `'muted'` needs to know timers exist.
    */
   mutedUntil?: number;
+  /**
+   * What a mute goes back to when it ends: `badge` if it muted a badge-only service, absent for
+   * `all`. Without it every unmute, and every timed mute running out, set `all` — a badge-only
+   * service muted for an hour came back with banners.
+   */
+  mutedFrom?: 'badge';
   /**
    * Lets a custom connection use the microphone, camera and screen share. Catalog services get
    * these by provenance; a URL the user typed has to ask.
@@ -505,6 +526,13 @@ export interface ShellState {
    * the answer would disagree exactly then.
    */
   railExpanded: boolean;
+  /**
+   * Services by most recent use, newest first — what the palette lists before anything is typed,
+   * and what ⌃Tab goes back through. In memory only: a restart starts a fresh history.
+   */
+  recentServiceIds?: string[];
+  /** The pane filling the content area on its own, while the others wait behind it. */
+  maximisedPaneId?: string | null;
   /** The shortcut table, resolved against the stored bindings. See `KeyboardMap`. */
   keyboard: KeyboardMap;
 }
@@ -525,6 +553,10 @@ export interface KeyboardMap {
     chord: string;
     /** True when another action holds the same chord, which only a hand-edited config produces. */
     conflict: boolean;
+    /** What the action does, so the palette can offer every one of them by name. */
+    command: Command;
+    /** Which menu it's in, which is how the shortcut sheet groups them. */
+    menu?: 'app' | 'file' | 'view' | 'go' | 'help' | null;
   }>;
   /** Chords the menu bar's roles already own. Settings refuses them before sending. */
   reserved: string[];
@@ -562,6 +594,18 @@ export type Command =
   /** `until` null unmutes; a number mutes until then. */
   | { type: 'mute-service'; serviceId: string; until: number | null }
   | { type: 'mark-read'; serviceId: string }
+  /** Every service, everywhere — the palette's "Mark all as read". */
+  | { type: 'mark-all-read' }
+  /** The sheet of recent notifications and downloads. */
+  | { type: 'open-activity' }
+  /** `on: null` returns the account to the global setting. */
+  | { type: 'set-account-adblock'; accountId: string; on: boolean | null }
+  /** The HTTP cache and service-worker caches, not cookies or storage — so it stays signed in. */
+  | { type: 'clear-account-cache'; accountId: string }
+  /** The next service after the focused one, in rail order, with something unread. */
+  | { type: 'focus-next-unread' }
+  /** Back to the service used before this one (⌃Tab). */
+  | { type: 'focus-previous-service' }
   | { type: 'reveal'; what: 'config' | 'log' }
   | { type: 'make-default-mail-app' }
   | { type: 'pop-out-service'; serviceId: string }
@@ -581,7 +625,11 @@ export type Command =
   | { type: 'remove-service'; serviceId: string }
   | { type: 'rename-account'; accountId: string; label: string }
   | { type: 'sign-out-account'; accountId: string }
-  | { type: 'open-settings' }
+  /**
+   * `section` is a Settings group id — `connections`, `workspaces`… — and `serviceId` opens that
+   * service's own page. Without them every route into Settings landed on General.
+   */
+  | { type: 'open-settings'; section?: string; serviceId?: string }
   | { type: 'set-preference'; path: string; value: unknown }
   | { type: 'create-workspace'; name: string }
   | { type: 'rename-workspace'; workspaceId: string; name: string }
@@ -656,7 +704,7 @@ export type Command =
   | { type: 'update-service'; serviceId: string; patch: Partial<ServiceInstance> };
 
 /** What the overlay is currently being used for. One view, three jobs. */
-export type OverlayMode = 'palette' | 'connections' | 'shortcuts';
+export type OverlayMode = 'palette' | 'connections' | 'shortcuts' | 'activity';
 
 /**
  * The nonce exists so reopening the overlay in the *same* mode still remounts the renderer.
@@ -666,3 +714,10 @@ export interface OverlayOpen {
   mode: OverlayMode;
   nonce: number;
 }
+
+/** Where Settings should open to. See `open-settings`. */
+export interface SettingsTarget {
+  section?: string;
+  serviceId?: string;
+}
+

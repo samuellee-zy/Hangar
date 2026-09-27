@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { accentFor, useColorScheme } from './accent';
+import { accentStyle } from './accent';
 import { badgeText } from './badge';
 import { withChord } from './chords';
 import { CommitOnBlur } from './CommitOnBlur';
 import { FolderTile } from './FolderTile';
+import { Icon, type IconName } from './Icon';
 import { ServiceIcon } from './ServiceIcon';
 import { SortableRailList, SortableTile } from './SortableRail';
 import { useShellState } from './useShellState';
@@ -23,12 +24,39 @@ import type { RailItem, ServiceView } from '@shared/types';
  * open right now is main's to decide, and comes back as `railExpanded`.
  */
 /**
+ * What the workspace switcher draws for a workspace: its emoji, if the name starts with one, or the
+ * initials of its first two words. It took the first two letters, so "Workspace" became "WO",
+ * "Side projects" became "SI", and an emoji was cut in half.
+ */
+export function workspaceMark(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return '··';
+  // By grapheme, not UTF-16 unit, everywhere: "Side 🚀" took the second word's first *unit*, half
+  // of the rocket.
+  const graphemes = (text: string) => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((g) => g.segment);
+  const first = graphemes(trimmed)[0] ?? '';
+  if (/\p{Extended_Pictographic}/u.test(first)) return first;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const initial = (word: string) => graphemes(word)[0] ?? '';
+  const letters = words.length > 1 ? initial(words[0]!) + initial(words[1]!) : initial(words[0]!);
+  return letters.toUpperCase();
+}
+
+/** "muted", "muted until 14:30", or null — for a tile's name and tooltip. */
+function muteNote(svc: ServiceView): string | null {
+  if (svc.notificationLevel !== 'muted') return null;
+  if (!svc.mutedUntil) return 'muted';
+  const at = new Date(svc.mutedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `muted until ${at}`;
+}
+
+/**
  * Points the way the rail will move: outward to open, back toward its edge to close. Left and right
  * only — a horizontal rail has no chevron (`railCanExpand`).
  */
-function chevronGlyph(position: string, collapsed: boolean): string {
-  const outward = position === 'right' ? '‹' : '›';
-  const inward = position === 'right' ? '›' : '‹';
+function chevronIcon(position: string, collapsed: boolean): IconName {
+  const outward = position === 'right' ? 'chevron-left' : 'chevron-right';
+  const inward = position === 'right' ? 'chevron-right' : 'chevron-left';
   return collapsed ? outward : inward;
 }
 
@@ -37,7 +65,6 @@ export function Rail() {
   // Which row is being renamed in place, if any. Renderer-local on purpose: an abandoned edit is
   // not worth a round trip to main, and main has nothing to decide about it.
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const scheme = useColorScheme();
 
   // Right-click ▸ Rename… arrives here, from main. Keyed on the nonce and not the id: every other
   // state broadcast carries the same request along with it, and reacting to those would reopen an
@@ -50,6 +77,7 @@ export function Rail() {
   const actedOnNonce = useRef<number | null>(null);
   const request = state?.renameRequest;
   const appearance = state?.preferences.appearance;
+  const allServices = state?.allServices;
   const hasState = state !== null;
   useEffect(() => {
     if (!hasState) return;
@@ -63,8 +91,13 @@ export function Rail() {
     // room for a text field and a horizontal one has no room for a name at all, so those send you
     // to Settings — which lists both services and folders — rather than dropping the request.
     if (railCanExpand(appearance)) setRenamingId(request.id);
-    else window.hangar.send({ type: 'open-settings' });
-  }, [hasState, request, appearance]);
+    // To the thing itself: a service's own page, or the folders list — not General, which is where
+    // it landed before and has neither.
+    else if (allServices?.some((s) => s.id === request.id)) {
+      window.hangar.send({ type: 'open-settings', serviceId: request.id });
+    } else window.hangar.send({ type: 'open-settings', section: 'workspaces' });
+    // `allServices` changes with every broadcast; the nonce above is what keeps this acting once.
+  }, [hasState, request, appearance, allServices]);
 
   // ⌘7 on a tile scrolled out of the rail focused it and left it out of sight. Whichever way focus
   // changes, the tile that has it is brought into view. Optional-called: jsdom has no scrollIntoView.
@@ -77,7 +110,10 @@ export function Rail() {
 
   if (!state) return null;
 
-  const visible = new Set(state.panes.map((p) => p.serviceId));
+  // Drawn, not merely in a pane: behind a maximised pane the others are off the window, and their
+  // tiles looked as on-screen as the one filling it.
+  const maximised = state.maximisedPaneId ? state.panes.find((p) => p.id === state.maximisedPaneId) : undefined;
+  const visible = new Set((maximised ? [maximised] : state.panes).map((p) => p.serviceId));
   const focusedServiceId = state.panes.find((p) => p.id === state.focusedPaneId)?.serviceId;
   const { railPosition, showLabels, density, compactRail } = state.preferences.appearance;
   // A compact rail on a side opens into a labelled panel; one along the top or bottom has no room
@@ -106,6 +142,10 @@ export function Rail() {
     .filter((s) => !here.has(s.id))
     .reduce((sum, s) => sum + s.unread, 0);
   const switcher = state.workspaces.length > 1 && workspace;
+  const { dnd, dndUntil } = state.preferences.notifications;
+  const dndUntilNote = dndUntil
+    ? ` until ${new Date(dndUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : '';
   const send = window.hangar.send;
 
   // Every draggable row in visual order, open folders' members included. One flat list because
@@ -147,7 +187,7 @@ export function Rail() {
           */}
           <div
             className="rail-rename"
-            style={{ ['--accent' as string]: accentFor(svc.color, scheme) }}
+            style={accentStyle(svc.color)}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === 'Escape') setRenamingId(null);
@@ -200,11 +240,12 @@ export function Rail() {
             svc.name,
             svc.sleeping ? 'asleep, click to wake' : null,
             svc.unread > 0 ? `${svc.unread} unread` : null,
+            muteNote(svc),
           ]
             .filter(Boolean)
             .join(', ')}
           // Identity lives in the accent and the icon; the tile surface carries state only.
-          style={{ ['--accent' as string]: accentFor(svc.color, scheme) }}
+          style={accentStyle(svc.color)}
           title={[
             svc.sleeping
               ? `${svc.name} — asleep, click to wake`
@@ -215,6 +256,7 @@ export function Rail() {
                   panel
                   ? `${svc.name} — double-click to rename`
                   : svc.name,
+            muteNote(svc),
             // The two ways to reach a tile that nothing on screen mentions.
             position.has(svc.id) ? `⌘${position.get(svc.id)}` : null,
             '⌥-click to open beside',
@@ -239,6 +281,12 @@ export function Rail() {
           }}
         >
           <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} version={svc.iconVersion} />
+          {/* Marks for the states a colour can't carry, each in a corner the badge doesn't use. A
+              muted tile looked exactly like one that would interrupt you. */}
+          {svc.sleeping && <Icon name="moon" size={10} className="rail-mark rail-sleep-mark" />}
+          {svc.notificationLevel === 'muted' && (
+            <Icon name="bell-off" size={10} className="rail-mark rail-mute-mark" />
+          )}
           {/* In a panel the name goes INSIDE the button, so the whole row is the target — the way
               a Chrome tab is clickable across its width. Beside the button it looked clickable and
               was not, which is a worse affordance than no label at all.
@@ -312,7 +360,7 @@ export function Rail() {
           onClick={() => send({ type: 'show-workspace-menu' })}
         >
           <span className="rail-workspace-mark" aria-hidden="true">
-            {workspace.name.trim().slice(0, 2).toUpperCase() || '··'}
+            {workspaceMark(workspace.name)}
           </span>
           {panel && (
             <span className="rail-label" aria-hidden="true">
@@ -370,8 +418,15 @@ export function Rail() {
 
             return (
               <SortableTile key={item.id} id={item.id}>
-                {({ setNodeRef, style, handleProps }) => (
-                  <div ref={setNodeRef} style={style} {...handleProps} className="rail-slot">
+                {({ setNodeRef, style, handleProps, isOver }) => (
+                  // Dropping a service on a folder files it there, but the drag animated a reorder
+                  // and nothing said "into this folder". A ring does now.
+                  <div
+                    ref={setNodeRef}
+                    style={style}
+                    {...handleProps}
+                    className={`rail-slot${isOver ? ' is-drop-target' : ''}`}
+                  >
                     {panel && renamingId === item.id ? (
                       // Same shape and the same two hazards as a service's rename above: the field
                       // replaces the button, and keydown must not reach the draggable.
@@ -384,9 +439,7 @@ export function Rail() {
                           }}
                           onBlur={() => setRenamingId(null)}
                         >
-                          <span className="rail-rename-folder" aria-hidden="true">
-                            ▦
-                          </span>
+                          <Icon name="folder" size={16} className="rail-rename-folder" />
                           <CommitOnBlur
                             className="rail-rename-field"
                             autoFocus
@@ -458,13 +511,50 @@ export function Rail() {
         reason. The chevron is last: it is the control that changes the shape of everything above it.
       */}
       <div className="rail-footer">
+        {/* Maximised: says so, and how many panes are waiting, with the way back. Nothing did —
+            the other panes simply vanished, and the menu kept offering "Maximise pane". */}
+        {maximised && (
+          <button
+            className="rail-item rail-add rail-maximised"
+            title={withChord(state, `1 of ${state.panes.length} panes — restore the others`, 'maximise-pane')}
+            aria-label={`Maximised, 1 of ${state.panes.length} panes. Restore the others`}
+            onClick={() => send({ type: 'toggle-maximise-pane' })}
+          >
+            <span className="rail-maximised-count" aria-hidden="true">
+              1/{state.panes.length}
+            </span>
+            {panel && (
+              <span className="rail-label" aria-hidden="true">
+                Restore panes
+              </span>
+            )}
+          </button>
+        )}
+        {/* Do Not Disturb, while it's on — the one state that silences everything and was visible
+            nowhere in the window, only as a submenu of a tray icon that is off by default. A click
+            turns it off; turning it on is in the palette, the menu and the tray. */}
+        {dnd && (
+          <button
+            className="rail-item rail-add rail-dnd"
+            title={`Do Not Disturb is on${dndUntilNote} — click to turn it off`}
+            aria-label={`Do Not Disturb is on${dndUntilNote}, turn it off`}
+            onClick={() => send({ type: 'set-dnd', on: false, until: null })}
+          >
+            <Icon name="moon" size={16} />
+            {panel && (
+              <span className="rail-label" aria-hidden="true">
+                Do Not Disturb
+              </span>
+            )}
+          </button>
+        )}
         <button
           className="rail-item rail-add"
           title={withChord(state, 'Add a connection', 'add-connection')}
           aria-label="Add a connection"
           onClick={() => send({ type: 'open-connections' })}
         >
-          <span className="rail-plus">+</span>
+          <Icon name="plus" size={18} className="rail-plus" />
           {/* aria-hidden: `aria-label` above is the accessible name; a visible one inside the
               button as well would be read as a stutter. */}
           {panel && (
@@ -480,7 +570,7 @@ export function Rail() {
           aria-label="Settings"
           onClick={() => send({ type: 'open-settings' })}
         >
-          <span className="rail-gear">⚙</span>
+          <Icon name="gear" size={18} className="rail-gear" />
           {panel && (
             <span className="rail-label" aria-hidden="true">
               Settings
@@ -496,7 +586,7 @@ export function Rail() {
             onClick={() => send({ type: 'toggle-rail' })}
           >
             <span className="rail-chevron-glyph" aria-hidden="true">
-              {chevronGlyph(railPosition, compact)}
+              <Icon name={chevronIcon(railPosition, compact)} size={14} />
             </span>
             {panel && <span className="rail-chevron-text">Collapse</span>}
           </button>

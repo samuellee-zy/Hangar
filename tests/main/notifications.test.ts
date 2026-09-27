@@ -33,6 +33,15 @@ const ctx = (over = {}) => ({
 
 describe("banner vs count", () => {
 
+  it('BADGE ONLY COUNTS AND NEVER BANNERS — a service you want waiting, not interrupting', () => {
+    assert.deepEqual(decideNotification(ctx({ level: 'badge' })), { banner: false, count: true });
+    // Still nothing for a message you were looking at, like every other level.
+    assert.deepEqual(decideNotification(ctx({ level: 'badge', inVisiblePane: true })), {
+      banner: false,
+      count: false,
+    });
+  });
+
   it('a background notification banners and counts', () => {
     assert.deepEqual(decideNotification(ctx()), { banner: true, count: true });
   });

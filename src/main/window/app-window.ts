@@ -45,8 +45,9 @@ import { closePopOuts } from '@main/features/popout';
 import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { expiredQuiet } from '@core/notify/policy';
+import { expiredQuiet, unmute } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
+import { openExternalSafely } from '@main/platform/external';
 import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
 import { railCanExpand } from '@shared/chrome';
 import { accentFor, hexFor } from '@shared/accent';
@@ -391,6 +392,7 @@ export class AppWindow {
     if (serviceIds.length === 0) {
       const first = this.activeServices(workspaceId)[0];
       if (first) this.openService(first.id, { newPane: true });
+      this.startBackgroundServices();
       return;
     }
 
@@ -406,6 +408,18 @@ export class AppWindow {
     const restoredFocus = this.layout.panes[focusedIndex >= 0 ? focusedIndex : 0];
     if (restoredFocus) this.layout.focusedPaneId = restoredFocus.id;
     this.saveLayout();
+    this.startBackgroundServices();
+  }
+
+  /**
+   * Loads every `keepRunning` service that isn't already, from every workspace — a message in
+   * another workspace is still one to hear about. No pane: a view with no bounds renders nothing and
+   * still runs, notifies and reports its unread count.
+   */
+  private startBackgroundServices(): void {
+    for (const svc of loadConfig().services) {
+      if (svc.keepRunning && !this.services.has(svc.id)) this.services.ensure(svc);
+    }
   }
 
   private saveLayout(): void {
@@ -492,6 +506,9 @@ export class AppWindow {
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
       iconVersions: iconVersions(),
+      // Only while it means something: with one pane, maximised and not are the same picture.
+      maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
+      recentServiceIds: this.recentServiceIds.filter((id) => loadConfig().services.some((s) => s.id === id)),
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
       isDefaultMailApp: this.isDefaultMailApp(),
@@ -583,6 +600,12 @@ export class AppWindow {
   }
 
   /** The error page's Try again button. Resets backoff — this is a deliberate human retry. */
+  /** The error page's "Open in browser": the address that failed, in the system browser. */
+  openFailedInBrowser(serviceId: string): void {
+    const url = this.services.get(serviceId)?.lastFailedUrl;
+    if (url) openExternalSafely(url, 'error page');
+  }
+
   retryService(serviceId: string): void {
     const runtime = this.services.get(serviceId);
     const svc = loadConfig().services.find((s) => s.id === serviceId);
@@ -755,7 +778,7 @@ export class AppWindow {
       safeSend(wc, 'shell:state', payload);
     }
     refreshTray(state, (c) => this.dispatch(c));
-    this.refreshMenuIfRebound(state.preferences.keyboard?.bindings);
+    this.refreshMenuIfChanged(state);
   }
 
   /**
@@ -766,18 +789,26 @@ export class AppWindow {
    * whole-config import, and an incoming sync — and a list of call sites is a list of things to
    * forget. Every one of them ends in `sync()`.
    *
-   * The comparison is a stringify of fifteen short strings against a stored copy, which is cheap
-   * enough to do on a broadcast that also fires for a page finishing loading.
+   * The Go and Dock menus list services, workspaces, unread counts and Do Not Disturb, so those
+   * are in the signature too. It is a short stringify against a stored copy — cheap enough for a
+   * broadcast that also fires for a page finishing loading — and a menu is rebuilt only when it
+   * would read differently.
    */
-  private lastMenuBindings: string | null = null;
-  private refreshMenuIfRebound(bindings: Record<string, string> | undefined): void {
-    const signature = JSON.stringify(bindings ?? {});
-    if (signature === this.lastMenuBindings) return;
-    const first = this.lastMenuBindings === null;
-    this.lastMenuBindings = signature;
-    // Nothing to redraw before the first broadcast — `installMenu` has just built it, or hasn't
-    // run yet and will build it against these same bindings.
-    if (!first) refreshMenu();
+  private lastMenuSignature: string | null = null;
+  private refreshMenuIfChanged(state: ShellState): void {
+    const signature = JSON.stringify([
+      state.preferences.keyboard?.bindings ?? {},
+      state.services.map((s) => [s.id, s.name, s.unread]),
+      state.allServices.map((s) => s.unread),
+      state.workspaces.map((w) => [w.id, w.name]),
+      state.activeWorkspaceId,
+      state.preferences.notifications.dnd,
+      state.preferences.notifications.dndUntil,
+      state.maximisedPaneId,
+    ]);
+    if (signature === this.lastMenuSignature) return;
+    this.lastMenuSignature = signature;
+    refreshMenu();
   }
 
   /**
@@ -886,15 +917,22 @@ export class AppWindow {
   /** Suppresses the per-call layout save while a batch of panes is being restored. */
   private restoring = false;
 
-  private openService(serviceId: string, { newPane = false } = {}): void {
+  private openService(
+    serviceId: string,
+    { newPane = false, beside }: { newPane?: boolean; beside?: { paneId: string; side: 'before' | 'after' } } = {},
+  ): void {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
 
     // Shortcuts are bound inside ensure(), once per view.
     this.services.ensure(svc);
 
-    if (newPane && !this.layout.isFull) this.layout.add(serviceId);
+    if (newPane && !this.layout.isFull) this.layout.add(serviceId, beside);
     else this.layout.show(serviceId);
+    // Not while a saved layout is being put back: that is the app arranging panes, not anyone
+    // using them, and it filled the list — ⌃Tab after switching workspace went to whichever pane
+    // was restored last, not to the service you came from.
+    if (!this.restoring) this.noteUsed(serviceId);
 
     this.relayout();
     this.saveLayout();
@@ -1176,9 +1214,11 @@ export class AppWindow {
       removeService: (id) => this.removeService(id),
       sleep: (id) => this.sleep(id),
       signOut: (id) => this.signOut(id),
+      clearAccountCache: (partition) => this.clearAccountCache(partition),
       purgeOrphanPartitions: () => this.purgeOrphanPartitions(),
       registerConsumer: (wc) => this.registerConsumer(wc),
       unreadOf: (id) => this.unread.get(id),
+      recentServiceIds: () => this.recentServiceIds,
       clearUnread: (id) => this.clearUnread(id),
       pushUnreadRules: (id) => this.pushUnreadRules(id),
       applyAllPreferenceEffects: () => this.effects.applyAll(),
@@ -1332,9 +1372,7 @@ export class AppWindow {
         c.preferences.notifications.dndUntil = null;
       }
       for (const svc of c.services) {
-        if (!expired.services.includes(svc.id)) continue;
-        svc.notificationLevel = 'all';
-        delete svc.mutedUntil;
+        if (expired.services.includes(svc.id)) unmute(svc);
       }
     });
     for (const serviceId of expired.services) this.pushUnreadRules(serviceId);
@@ -1356,7 +1394,8 @@ export class AppWindow {
         serviceId: svc.id,
         visible: visible.has(svc.id),
         sleeping: !this.services.has(svc.id),
-        hibernate: svc.hibernate,
+        // Running in the background is the point of `keepRunning`; sleeping it would undo that.
+        hibernate: svc.hibernate && !svc.keepRunning,
         lastActiveAt: this.services.get(svc.id)?.lastActiveAt ?? Date.now(),
       })),
       timeout,
@@ -1644,10 +1683,36 @@ export class AppWindow {
     this.sync();
   }
 
+  /**
+   * The HTTP cache and service-worker caches for one account, then a reload of its services: what
+   * Slack and Teams mean by "clear cache and restart". Not cookies, local storage or IndexedDB, so
+   * nobody is signed out — the one option there was, Sign out, cleared everything.
+   */
+  private async clearAccountCache(partition: string): Promise<void> {
+    const ses = session.fromPartition(partition);
+    await ses.clearCache();
+    await ses.clearStorageData({ storages: ['cachestorage', 'serviceworkers', 'shadercache'] });
+    const account = loadConfig().accounts.find((a) => a.partition === partition);
+    for (const svc of loadConfig().services.filter((s) => s.accountId === account?.id)) {
+      const wc = this.services.get(svc.id)?.view.webContents;
+      if (wc && !wc.isDestroyed()) wc.reloadIgnoringCache();
+    }
+    console.log(`[account] cleared the cache for ${account?.label ?? partition}`);
+  }
+
   private focusActivePane(): void {
     const pane = this.layout.focused();
     if (!pane) return;
+    this.noteUsed(pane.serviceId);
     const runtime = this.services.get(pane.serviceId);
     if (runtime && !runtime.view.webContents.isDestroyed()) runtime.view.webContents.focus();
+  }
+
+  /** Services by most recent use, newest first. See `ShellState.recentServiceIds`. */
+  private recentServiceIds: string[] = [];
+
+  private noteUsed(serviceId: string): void {
+    if (this.recentServiceIds[0] === serviceId) return;
+    this.recentServiceIds = [serviceId, ...this.recentServiceIds.filter((id) => id !== serviceId)].slice(0, 20);
   }
 }

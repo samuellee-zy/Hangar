@@ -18,8 +18,8 @@ describe('the shortcut sheet', () => {
   it('SHOWS A REBOUND CHORD AS REBOUND, and an unbound action as unbound', async () => {
     setShellState(
       state([
-        { id: 'palette', label: 'Command palette', chord: 'meta+j', conflict: false },
-        { id: 'sleep-others', label: 'Sleep background services', chord: '', conflict: false },
+        { id: 'palette', label: 'Command palette', chord: 'meta+j', conflict: false, command: { type: 'open-palette' } },
+        { id: 'sleep-others', label: 'Sleep background services', chord: '', conflict: false, command: { type: 'sleep-others' } },
       ]),
     );
     render(<ShortcutSheet />);

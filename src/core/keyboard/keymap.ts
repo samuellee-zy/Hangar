@@ -112,6 +112,10 @@ export type ActionId =
   | 'forward'
   | 'reload'
   | 'hard-reload'
+  | 'next-unread'
+  | 'previous-service'
+  | 'mark-all-read'
+  | 'activity'
   | 'sleep-others';
 
 export interface KeyAction {
@@ -120,7 +124,7 @@ export interface KeyAction {
   label: string;
   command: Command;
   /** Which menu this action appears under, or null to keep it out of the menu bar. */
-  menu: 'app' | 'file' | 'view' | null;
+  menu: 'app' | 'file' | 'view' | 'go' | 'help' | null;
   /** A separator is drawn above this item. Purely the menu's business; Settings ignores it. */
   group?: boolean;
   defaultChord: string;
@@ -141,7 +145,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     id: 'shortcuts',
     label: 'Keyboard shortcuts',
     command: { type: 'open-shortcuts' },
-    menu: 'app',
+    menu: 'help',
     defaultChord: primaryChord('/'),
   },
   {
@@ -262,6 +266,40 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'reload-service', serviceId: '#focused', ignoreCache: true },
     menu: 'view',
     defaultChord: primaryChord('r', { shift: true }),
+  },
+  // Walks on through everything waiting: each press goes to the next service with unread after the
+  // focused one, across workspaces.
+  {
+    id: 'next-unread',
+    label: 'Next service with unread',
+    command: { type: 'focus-next-unread' },
+    menu: 'go',
+    group: true,
+    defaultChord: primaryChord('u', { shift: true }),
+  },
+  // ⌃Tab, the browser's "other tab": back to the service used before this one. ⌘Tab is the
+  // system's (RESERVED_CHORDS), and ⌃Tab is free in every service we ship.
+  {
+    id: 'previous-service',
+    label: 'Previous service',
+    command: { type: 'focus-previous-service' },
+    menu: 'go',
+    defaultChord: 'ctrl+tab',
+  },
+  {
+    id: 'mark-all-read',
+    label: 'Mark all as read',
+    command: { type: 'mark-all-read' },
+    menu: 'go',
+    defaultChord: '',
+  },
+  // Kept all along and shown only in the tray, which is off by default.
+  {
+    id: 'activity',
+    label: 'Recent notifications and downloads…',
+    command: { type: 'open-activity' },
+    menu: 'go',
+    defaultChord: primaryChord('j', { shift: true }),
   },
   // No default chord. It's a real action, it belongs in the menu, and there is no obvious key for
   // it — which is exactly the case rebinding exists to serve.
