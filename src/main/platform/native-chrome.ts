@@ -14,6 +14,11 @@ export function appBackground(): string {
   return THEME[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'].bg;
 }
 
+/** Behind a service's page while it loads: the tile colour, so an empty pane still reads as a pane. */
+export function paneBackground(): string {
+  return THEME[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'].tile;
+}
+
 /**
  * How big the traffic lights are, which the OS decides and Electron doesn't report.
  *

@@ -1,14 +1,15 @@
 import path from 'node:path';
-import { net, WebContentsView } from 'electron';
+import { dialog, net, WebContentsView } from 'electron';
 import { isOrphaned, resolveUrl } from '@shared/catalog';
 import { loadConfig } from '@main/platform/config';
-import { appBackground } from '@main/platform/native-chrome';
+import { paneBackground } from '@main/platform/native-chrome';
 import { captureFavicon } from '@main/features/icons';
 import { creditSuspendedTime } from '@core/runtime/hibernate';
 import {
   OFFLINE,
   attemptsSoFar,
   decideFailure,
+  crashedPageHtml,
   errorPageHtml,
   orphanPageHtml,
   shouldRecoverFromCrash,
@@ -111,9 +112,10 @@ export class ServiceManager {
     });
 
     // Waking a hibernated service rebuilds the view from nothing, and Chromium paints an unstyled
-    // view white — a full-pane white flash on every wake, including in dark mode. Matching the
-    // app's own background makes the gap read as "loading" rather than as something breaking.
-    view.setBackgroundColor(appBackground());
+    // view white — a full-pane white flash on every wake, including in dark mode. The tile colour,
+    // not the window's: in the window's own colour a loading pane was indistinguishable from the
+    // gutter around it, a hole rather than a card on its way.
+    view.setBackgroundColor(paneBackground());
     // This service's own user agent, on its own page. It was set on the session — shared by every
     // service on the same account, and only ever by the first of them to configure it — so giving
     // one Google service a user agent gave all of them that one, or none.
@@ -202,11 +204,54 @@ export class ServiceManager {
     });
 
     view.webContents.on('render-process-gone', (_e, details) => {
-      if (!shouldRecoverFromCrash(runtime.failures, details.reason)) return;
-      runtime.failures++;
+      if (details.reason === 'clean-exit' || view.webContents.isDestroyed()) return;
+      // Forgiven after a healthy stretch, like load failures: three crashes over a week is not a
+      // crash loop, and counting them for the whole session would end in the crash page.
+      const now = Date.now();
+      const attempts = attemptsSoFar(runtime, now);
+      if (!shouldRecoverFromCrash(attempts, details.reason)) {
+        // Out of automatic reloads: say so, with a way back. The pane used to stay dead and blank.
+        console.warn(`[crash] ${svc.name}: ${details.reason} — giving up, showing the crash page`);
+        void view.webContents.loadURL(crashedPageHtml({ serviceName: svc.name, reason: details.reason }));
+        return;
+      }
+      runtime.failures = attempts + 1;
+      runtime.lastFailureAt = now;
       console.warn(`[crash] ${svc.name}: ${details.reason} — reloading`);
-      if (!view.webContents.isDestroyed()) view.webContents.reload();
+      view.webContents.reload();
     });
+
+    // A page stuck in a loop, or waiting on something that never answers. Chromium's own "page
+    // unresponsive" dialog doesn't exist in Electron, so the pane just froze with nothing to say
+    // why. Asked, not decided: a heavy page can come back on its own, and a reload loses its state.
+    let stalled: AbortController | null = null;
+    view.webContents.on('unresponsive', () => {
+      if (stalled) return;
+      stalled = new AbortController();
+      const signal = stalled.signal;
+      console.warn(`[hang] ${svc.name} is not responding`);
+      void dialog
+        .showMessageBox({
+          type: 'warning',
+          message: `${svc.name} isn't responding`,
+          detail: 'You can wait for it, or reload it. Reloading loses anything not yet saved on that page.',
+          buttons: ['Wait', 'Reload'],
+          defaultId: 0,
+          cancelId: 0,
+          signal,
+        })
+        .then(({ response }) => {
+          if (response !== 1 || view.webContents.isDestroyed()) return;
+          // The crash handler reloads it. A reload asked for isn't a failure, so it doesn't count
+          // towards the three that end in the crash page.
+          runtime.failures = 0;
+          view.webContents.forcefullyCrashRenderer();
+        })
+        .catch(() => {})
+        .finally(() => (stalled = null));
+    });
+    // Came back by itself: the question no longer needs an answer.
+    view.webContents.on('responsive', () => stalled?.abort());
     // Applied on every dom-ready, not just the first: an SPA navigation drops injected styles.
     //
     // Re-read from config, not the `svc` captured when the view was built. With the captured one,

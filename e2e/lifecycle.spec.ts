@@ -337,6 +337,31 @@ test('UNREAD SURVIVES WHILE THE WINDOW IS CLOSED TO THE TRAY — and clears once
   expect(result.afterShow, 'showing the window is what reads it').toBe(0);
 });
 
+test('A SERVICE THAT KEEPS CRASHING GETS A PAGE THAT SAYS SO — it used to stay blank', async () => {
+  // Three automatic reloads, and then the handler returned: a dead pane with nothing on it.
+  h = await launch();
+  await h.rail();
+  const pageOf = () =>
+    h.app.evaluate(({ webContents }) => {
+      const wc = webContents.getAllWebContents().find((c) => /127\.0\.0\.1|^data:/.test(c.getURL()) && !c.getURL().includes('#'));
+      return wc ? { url: wc.getURL(), loading: wc.isLoading(), crashed: wc.isCrashed() } : null;
+    });
+
+  for (let crash = 0; crash < 4; crash++) {
+    await expect.poll(async () => {
+      const p = await pageOf();
+      return Boolean(p && !p.loading && !p.crashed);
+    }).toBe(true);
+    await h.app.evaluate(({ webContents }) => {
+      const wc = webContents.getAllWebContents().find((c) => /127\.0\.0\.1|^data:/.test(c.getURL()) && !c.getURL().includes('#'));
+      wc?.forcefullyCrashRenderer();
+    });
+  }
+  await expect
+    .poll(async () => decodeURIComponent((await pageOf())?.url ?? ''), { timeout: 15_000 })
+    .toContain('keeps crashing');
+});
+
 test('A CRASHED RAIL RENDERER COMES BACK BY ITSELF', async () => {
   // Service views always recovered from a crash; the app's own screens never did, and a dead rail
   // was a blank strip until you quit. Driven from main: Playwright's page handle dies with the

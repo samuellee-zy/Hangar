@@ -166,6 +166,19 @@ export function errorPageHtml(opts: {
 }
 
 /**
+ * Shown when a service's page keeps crashing and the automatic reloads have run out. It used to be
+ * nothing at all: after the third crash the handler returned and the pane stayed dead, with no
+ * page, no message and no way back short of sleeping and waking the service.
+ */
+export function crashedPageHtml(opts: { serviceName: string; reason: string }): string {
+  return page(`
+  <h1>${escape(opts.serviceName)} keeps crashing</h1>
+  <p>Its page stopped ${MAX_AUTO_RETRIES} times, so Hangar has stopped reloading it by itself.</p>
+  <code>${escape(opts.reason)}</code>
+  <div class="actions"><button onclick="window.__hangar && window.__hangar.retry()">Reload ${escape(opts.serviceName)}</button></div>`);
+}
+
+/**
  * Shown when a service's catalog entry has vanished — see `isOrphaned`. There is no in-pane fix
  * (the service needs a URL, or removing), so this offers words rather than a button.
  */

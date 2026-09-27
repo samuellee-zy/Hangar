@@ -3,7 +3,7 @@
 // error handling at all.
 //
 
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   HEALTHY_AFTER_MS,
@@ -159,5 +159,15 @@ describe('when a failure counts against the backoff', () => {
       now += action.retryAfterMs;
     }
     assert.equal(retries, MAX_AUTO_RETRIES, 'stops after the cap instead of looping');
+  });
+});
+
+describe('the crash page', () => {
+  it('names the service and offers the reload the automatic ones ran out of', async () => {
+    const { crashedPageHtml } = await import('@core/runtime/recovery');
+    const html = decodeURIComponent(crashedPageHtml({ serviceName: 'Slack <3', reason: 'oom' }));
+    expect(html).toContain('Slack &lt;3 keeps crashing');
+    expect(html).toContain('__hangar.retry()');
+    expect(html).toContain('oom');
   });
 });
