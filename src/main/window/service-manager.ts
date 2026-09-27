@@ -1,6 +1,7 @@
 import path from 'node:path';
-import { dialog, net, WebContentsView } from 'electron';
-import { isOrphaned, resolveUrl } from '@shared/catalog';
+import { app, dialog, net, WebContentsView } from 'electron';
+import { catalogById, isOrphaned, resolveUrl } from '@shared/catalog';
+import { userAgentFor } from '@core/services/user-agent';
 import { loadConfig } from '@main/platform/config';
 import { paneBackground } from '@main/platform/native-chrome';
 import { captureFavicon } from '@main/features/icons';
@@ -123,8 +124,10 @@ export class ServiceManager {
     view.setBackgroundColor(paneBackground());
     // This service's own user agent, on its own page. It was set on the session — shared by every
     // service on the same account, and only ever by the first of them to configure it — so giving
-    // one Google service a user agent gave all of them that one, or none.
-    if (svc.userAgent) view.webContents.setUserAgent(svc.userAgent);
+    // one Google service a user agent gave all of them that one, or none. Or its catalog entry's
+    // plain one, for WhatsApp, which refuses the app's own token (core/services/user-agent.ts).
+    const userAgent = userAgentFor(svc, catalogById(svc.catalogId), app.userAgentFallback, app.getName());
+    if (userAgent) view.webContents.setUserAgent(userAgent);
 
     const runtime: ServiceRuntime = {
       view,

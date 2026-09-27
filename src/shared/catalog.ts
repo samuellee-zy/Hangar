@@ -118,6 +118,8 @@ const COMMS: CatalogEntry[] = [
     initials: 'Wa', color: '#25D366', provider: 'whatsapp',
     allowedHosts: ['web.whatsapp.com', 'whatsapp.com'],
     unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+    // "WhatsApp works with Google Chrome 100+", at Chrome 150, until the `Hangar/…` token is gone.
+    plainUserAgent: true,
   },
   {
     id: 'signal', icon: 'signal', name: 'Signal', url: 'https://signal.org/',
