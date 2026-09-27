@@ -154,15 +154,60 @@ export function errorPageHtml(opts: {
   offline: boolean;
 }): string {
   const headline = opts.offline ? "You're offline" : `${escape(opts.serviceName)} didn't load`;
+  // In words, with Chromium's own name for it in the small print. The page used to say only
+  // "ERR_NAME_NOT_RESOLVED (-105)", which is a search term, not an explanation.
   const detail = opts.offline
-    ? 'This page will reload by itself when the connection is back.'
-    : `${escape(opts.description || 'The page failed to load')} (${opts.errorCode})`;
+    ? 'Reconnecting by itself as soon as the network is back.'
+    : escape(explainLoadError(opts.errorCode, hostOf(opts.url)));
+  const code = opts.offline ? escape(opts.url) : `${escape(opts.description || 'failed')} (${opts.errorCode}) · ${escape(opts.url)}`;
 
   return page(`
   <h1>${headline}</h1>
   <p>${detail}</p>
-  <code>${escape(opts.url)}</code>
-  <div class="actions"><button onclick="window.__hangar && window.__hangar.retry()">Try again</button></div>`);
+  <code>${code}</code>
+  <div class="actions">
+    <button onclick="window.__hangar && window.__hangar.retry()">${opts.offline ? 'Try now' : 'Try again'}</button>
+    ${opts.offline ? '' : '<button onclick="window.__hangar && window.__hangar.openInBrowser()">Open in browser</button>'}
+  </div>`);
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname || url;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * What a failed load means, for the ones people actually meet. Chromium's net error codes — the
+ * certificate ones are the -200 range.
+ */
+export function explainLoadError(code: number, host: string): string {
+  switch (code) {
+    case -105: // NAME_NOT_RESOLVED
+    case -137: // NAME_RESOLUTION_FAILED
+      return `Couldn't find ${host}. Check the address, or whether this Mac can reach it.`;
+    case -102: // CONNECTION_REFUSED
+      return `${host} refused the connection. It may be down, or not serving on this address.`;
+    case -7: // TIMED_OUT
+    case -118: // CONNECTION_TIMED_OUT
+      return `${host} took too long to answer.`;
+    case -101: // CONNECTION_RESET
+    case -100: // CONNECTION_CLOSED
+      return 'The connection was cut off partway. Trying again usually works.';
+    case -21: // NETWORK_CHANGED
+      return 'The network changed while the page was loading.';
+    case -130: // PROXY_CONNECTION_FAILED
+    case -111: // TUNNEL_CONNECTION_FAILED
+      return "Couldn't get through the proxy. Check it under Settings → Network.";
+    case -109: // ADDRESS_UNREACHABLE
+      return `${host} can't be reached from this network — a VPN it needs may be off.`;
+  }
+  if (code <= -200 && code > -300) {
+    return `${host}'s security certificate isn't trusted, so Hangar won't load it.`;
+  }
+  return 'The page failed to load.';
 }
 
 /**
@@ -180,14 +225,17 @@ export function crashedPageHtml(opts: { serviceName: string; reason: string }): 
 
 /**
  * Shown when a service's catalog entry has vanished — see `isOrphaned`. There is no in-pane fix
- * (the service needs a URL, or removing), so this offers words rather than a button.
+ * (the service needs a URL, or removing), so the button goes to where both are: its settings page.
+ * Not a Remove button: this preload is in every page of the service, and nothing a page can call
+ * should be destructive.
  */
 export function orphanPageHtml(opts: { serviceName: string; catalogId: string }): string {
   return page(`
   <h1>${escape(opts.serviceName)} is no longer in the catalog</h1>
   <p>Hangar doesn't know what to load for it, so this pane has nothing to show.</p>
-  <p>Give it a URL of its own in Settings → Connections, or remove it.</p>
-  <code>${escape(opts.catalogId)}</code>`);
+  <p>Give it a start page of its own, or remove it — both are on its settings page.</p>
+  <code>${escape(opts.catalogId)}</code>
+  <div class="actions"><button onclick="window.__hangar && window.__hangar.openSettings()">Open its settings</button></div>`);
 }
 
 /**

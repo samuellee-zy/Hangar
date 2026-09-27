@@ -46,6 +46,7 @@ import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { expiredQuiet } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
+import { openExternalSafely } from '@main/platform/external';
 import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
 import { railCanExpand } from '@shared/chrome';
 import { accentFor, hexFor } from '@shared/accent';
@@ -586,6 +587,12 @@ export class AppWindow {
   }
 
   /** The error page's Try again button. Resets backoff — this is a deliberate human retry. */
+  /** The error page's "Open in browser": the address that failed, in the system browser. */
+  openFailedInBrowser(serviceId: string): void {
+    const url = this.services.get(serviceId)?.lastFailedUrl;
+    if (url) openExternalSafely(url, 'error page');
+  }
+
   retryService(serviceId: string): void {
     const runtime = this.services.get(serviceId);
     const svc = loadConfig().services.find((s) => s.id === serviceId);

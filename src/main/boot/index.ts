@@ -307,6 +307,20 @@ function registerIpc(): void {
     if (serviceId) shell?.allowBlockedHost(serviceId);
   });
 
+  // Only from our own pages, like the two above, and only ever the address that just failed for
+  // this sender's service — never one the page names.
+  ipcMain.on('service:open-in-browser', (event) => {
+    if (!fromRecoveryPage(event)) return;
+    const serviceId = shell?.serviceIdForContents(event.sender);
+    if (serviceId) shell?.openFailedInBrowser(serviceId);
+  });
+
+  ipcMain.on('service:open-settings', (event) => {
+    if (!fromRecoveryPage(event)) return;
+    const serviceId = shell?.serviceIdForContents(event.sender);
+    if (serviceId) shell?.dispatch({ type: 'open-settings', serviceId });
+  });
+
   ipcMain.on('service:blank', (event) => {
     const serviceId = shell?.serviceIdForContents(event.sender);
     if (serviceId) shell?.reloadIfStillBlank(serviceId);

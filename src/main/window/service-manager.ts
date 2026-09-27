@@ -34,6 +34,8 @@ export interface ServiceRuntime {
   lastFailureAt: number | null;
   /** Epoch ms of the last finished load — Chromium's own error pages included. */
   lastLoadedAt: number | null;
+  /** The address the last failed load was for — what the error page's "Open in browser" opens. */
+  lastFailedUrl?: string;
   /** The poll waiting for the network to come back, while the offline page is up. */
   networkWait?: ReturnType<typeof setInterval>;
   /** Epoch ms of the last time this service was on screen. Drives hibernation. */
@@ -183,6 +185,7 @@ export class ServiceManager {
 
       runtime.failures = attempts + 1;
       runtime.lastFailureAt = now;
+      runtime.lastFailedUrl = url || resolveUrl(svc);
       if (action.waitForNetwork) this.reloadWhenOnline(svc, runtime, url || resolveUrl(svc));
       if (action.retryAfterMs !== null) {
         setTimeout(() => {
