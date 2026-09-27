@@ -340,10 +340,14 @@ export function Rail() {
     >
       {/* Clear of the traffic lights, and the window's drag handle — present exactly when main put
           them in this rail, decided by the same function main used. Guessing from `compactRail`
-          alone is what drew them over a compact top rail's first two tiles. */}
+          alone is what drew them over a compact top rail's first two tiles. Not in full screen,
+          where macOS hides them: the space they'd been given was left empty. */}
       <div
         className="rail-drag"
-        hidden={!railHostsWindowButtons(railPosition, smallestRailSize(state.preferences.appearance))}
+        hidden={
+          state.fullScreen === true ||
+          !railHostsWindowButtons(railPosition, smallestRailSize(state.preferences.appearance))
+        }
       />
 
       {switcher && (

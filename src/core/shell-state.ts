@@ -76,6 +76,7 @@ export interface ProjectionInput {
   downloads?: ShellState['downloads'];
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
+  fullScreen?: boolean;
   /** Bumped each time a service's favicon is cached, so the renderer refetches it. */
   iconVersions?: ReadonlyMap<string, number>;
   /** Services by most recent use, newest first. */
@@ -131,6 +132,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     focusedPaneId: input.focusedPaneId,
     activeWorkspaceId: config.activeWorkspaceId,
     railExpanded: input.railExpanded,
+    fullScreen: input.fullScreen ?? false,
     recentServiceIds: input.recentServiceIds ?? [],
     maximisedPaneId: input.maximisedPaneId ?? null,
     layoutShape: input.layoutShape ?? 'columns',
