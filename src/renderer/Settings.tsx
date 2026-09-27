@@ -114,7 +114,13 @@ const GROUPS: Group[] = [
  * DOM is the only complete list of that. Field values count too, so a proxy host or a service name
  * typed into an input is findable.
  */
-function useSectionFilter(root: React.RefObject<HTMLElement | null>, query: string, deps: unknown[]) {
+function useSectionFilter(
+  root: React.RefObject<HTMLElement | null>,
+  query: string,
+  // What changes the sections on screen, so the filter re-runs over the new ones.
+  groupId: string,
+  state: unknown,
+) {
   const [matches, setMatches] = useState(0);
   useEffect(() => {
     const sections = [...(root.current?.querySelectorAll<HTMLElement>('section') ?? [])];
@@ -128,7 +134,7 @@ function useSectionFilter(root: React.RefObject<HTMLElement | null>, query: stri
       if (hit) shown++;
     }
     setMatches(shown);
-  }, [query, ...deps]);
+  }, [root, query, groupId, state]);
   return matches;
 }
 
@@ -140,7 +146,7 @@ export function Settings() {
   const [query, setQuery] = useState('');
   const content = useRef<HTMLDivElement>(null);
   const searching = query.trim() !== '';
-  const matches = useSectionFilter(content, query, [groupId, state]);
+  const matches = useSectionFilter(content, query, groupId, state);
 
   if (!state) return null;
   const groups = searching ? GROUPS : GROUPS.filter((g) => g.id === groupId);

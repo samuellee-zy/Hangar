@@ -64,8 +64,8 @@ export function Palette() {
   // The arrows moved the highlight past the bottom of the list and it stayed out of sight.
   // `scrollIntoView` is optional-called because jsdom doesn't implement it.
   useEffect(() => {
-    document.getElementById(optionId(index))?.scrollIntoView?.({ block: 'nearest' });
-  }, [index]);
+    document.getElementById(`${listId}-${index}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [listId, index]);
 
   const run = (i: number, newPane: boolean) => {
     const item = results[i];

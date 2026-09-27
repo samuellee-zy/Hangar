@@ -200,7 +200,10 @@ app.whenReady().then(() => {
     shell.openMailto(pendingMailto);
     pendingMailto = null;
   }
-});
+})
+  // Logged by name. Unhandled, a throw anywhere in startup was a bare "unhandled rejection" line
+  // with nothing to say it was the app failing to come up.
+  .catch((err: unknown) => console.error('[boot] startup failed:', err));
 
 /**
  * The app's own channels answer only the app's own screens.
