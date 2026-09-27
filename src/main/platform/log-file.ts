@@ -114,3 +114,11 @@ export function setUpLogFile(): void {
     if (rotateIfLarge(LOG_FILE)) console.log(`[log] rotated to ${path.basename(LOG_FILE)}.1`);
   }, ROTATE_CHECK_MS).unref();
 }
+
+/**
+ * Milliseconds since the process started, for the `[boot]` marks. Startup had one timing line —
+ * the ad blocker's — so "is it slow to open" had no answer beyond a stopwatch.
+ */
+export function sinceLaunch(): number {
+  return Math.round(performance.now());
+}

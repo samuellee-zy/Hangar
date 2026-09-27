@@ -1,7 +1,7 @@
 import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
 import { persistAll, startMaintenance } from '@main/boot/maintenance';
-import { setUpLogFile } from '@main/platform/log-file';
+import { setUpLogFile, sinceLaunch } from '@main/platform/log-file';
 import { flushConfig, loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
 import { installMenu } from '@main/boot/menu';
@@ -158,6 +158,7 @@ app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
 });
 
 app.whenReady().then(() => {
+  console.log(`[boot] ready at ${sinceLaunch()}ms`);
   // First, before any session or view exists. See ua.ts for why this is the whole UA story.
   applyUserAgent();
   const config = loadConfig();
@@ -181,6 +182,7 @@ app.whenReady().then(() => {
   });
 
   shell = new AppWindow();
+  console.log(`[boot] window built at ${sinceLaunch()}ms`);
   trackWindow(shell);
   publishTestHandle();
   // The bindings are read on every rebuild rather than captured, so `refreshMenu` after a rebind

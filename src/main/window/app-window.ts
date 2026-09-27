@@ -86,7 +86,7 @@ import { EndpointPoller } from '@main/features/endpoint-poll';
 import { firebaseConfigStatus, pushEligible } from '@core/push/policy';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import { resolveRepoPath } from '@core/config/sync';
-import { LOG_FILE } from '@main/platform/log-file';
+import { LOG_FILE, sinceLaunch } from '@main/platform/log-file';
 import type {
   Command,
   DomUnreadRule,
@@ -122,6 +122,9 @@ function restoreBounds(saved: WindowBounds | undefined): WindowBounds {
     screen.getPrimaryDisplay().workArea,
   );
 }
+
+/** The `[boot]` mark for the first service page: once per process, not once per rebuilt window. */
+let firstPaneTimed = false;
 
 /** The Settings window, the one renderer that edits a service's custom CSS and JavaScript. */
 const isSettingsView = (wc: WebContents): boolean => !wc.isDestroyed() && wc.getURL().includes('#settings');
@@ -228,7 +231,13 @@ export class AppWindow {
       () => this.sync(),
       (c) => this.dispatch(c),
       (serviceId) => this.keyContextFor(serviceId),
-      (wc) => installWebContextMenu(wc, this.win),
+      (wc) => {
+        installWebContextMenu(wc, this.win);
+        if (!firstPaneTimed) {
+          firstPaneTimed = true;
+          wc.once('did-finish-load', () => console.log(`[boot] first pane loaded at ${sinceLaunch()}ms`));
+        }
+      },
       (active, total) => {
         const contents = this.findBar.contents;
         if (contents) safeSend(contents, 'find:result', { active, total });
@@ -249,6 +258,9 @@ export class AppWindow {
     });
     this.win.contentView.addChildView(this.rail);
     loadRoute(this.rail.webContents, 'rail');
+    this.rail.webContents.once('did-finish-load', () =>
+      console.log(`[boot] rail loaded at ${sinceLaunch()}ms`),
+    );
     this.adoptSurface(this.rail.webContents);
 
     this.win.on('resize', () => {
