@@ -19,8 +19,10 @@ describe('colour tokens', () => {
   it('defines every token it uses', () => {
     const defined = new Set([
       ...[...css.matchAll(/(--[\w-]+)\s*:/g)].map(([, name]) => name),
-      // Set per element from script, as an inline style: a service's own colour.
-      '--accent',
+      // Set per element from script, as an inline style: a service's own colour for each theme,
+      // between which the stylesheet chooses `--accent` (renderer/accent.ts).
+      '--accent-dark',
+      '--accent-light',
     ]);
     const used = [...css.matchAll(/var\((--[\w-]+)\s*\)/g)].map(([, name]) => name);
     expect([...new Set(used.filter((name) => !defined.has(name)))]).toEqual([]);
