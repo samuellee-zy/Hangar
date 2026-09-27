@@ -2394,3 +2394,23 @@ can produce is a mute.
   with a pane in flight instead of a service, and a drop that moves the pane.
   - "A new pane" is always offered, even with four open, because moving a pane doesn't add one.
   - Dropping a pane on itself, or beside itself, does nothing and draws nothing.
+
+## 112. The tile you're looking at is the one colours were never checked against
+
+Service colours and `--muted` were both tuned against `--tile`. The tile you're actually looking
+at is `--tile-focused`, which is also what a hovered picker tile uses. It is the extreme of the
+ramp: lighter in the dark theme, darker in the light. There, Slack's initials made 4.03:1, and the
+picker's sub-text 4.26:1 (dark) and 4.02:1 (light).
+
+Only CI's axe run caught it, and it caught it every time. Locally it depended on where the real
+pointer happened to be over the window.
+
+- `accentFor` now clears every tile state, not just the plain one.
+- It also judges contrast after rounding to whole channels. Before rounding, a colour could clear
+  4.5:1 by a hair and come out of `toHex` just under it; Google Slides did.
+- `--muted` moved to #9c9ca4 (dark) and #54545d (light).
+- Tests hold every catalog colour, and `--muted`, to 4.5:1 on each tile shade in both themes.
+
+The same run's drag failures were a race of their own. Main sends a drag's first highlight as
+soon as the layer's view exists, which on a slow machine is before its page is listening. Now the
+layer asks for the current highlight once it is listening.
