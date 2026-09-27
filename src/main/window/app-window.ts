@@ -291,6 +291,10 @@ export class AppWindow {
       this.relayout();
       this.saveWindowBounds();
     });
+    // The traffic lights hide in full screen, and the rail stops keeping room for them (`fullScreen`
+    // in state). A resize fires during the transition too, but before `isFullScreen()` says so.
+    this.win.on('enter-full-screen', () => this.relayout());
+    this.win.on('leave-full-screen', () => this.relayout());
     this.win.on('move', () => this.saveWindowBounds());
     this.win.on('focus', () => (this.defaultMailApp = null));
     this.win.on('show', () => this.attention.acknowledgePanes());
@@ -541,6 +545,7 @@ export class AppWindow {
       flashServiceId: this.flashServiceId,
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
+      fullScreen: this.win.isFullScreen(),
       iconVersions: iconVersions(),
       // Only while it means something: with one pane, maximised and not are the same picture.
       maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
@@ -862,8 +867,9 @@ export class AppWindow {
     });
     const focused = bars.find((bar) => bar.focused) ?? null;
     const metrics = windowButtonMetrics();
-    // Clear of the traffic lights, which the strip holds whenever there is one.
-    const inset = windowButtonPosition(this.chrome(), metrics).x + metrics.span + 16;
+    // Clear of the traffic lights, which the strip holds whenever there is one — except full screen,
+    // where they're hidden until the pointer reaches the top edge, and the gap was just a gap.
+    const inset = this.win.isFullScreen() ? 12 : windowButtonPosition(this.chrome(), metrics).x + metrics.span + 16;
     this.paneChrome.update(bars, focused, inset);
   }
 

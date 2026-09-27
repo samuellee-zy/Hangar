@@ -197,3 +197,20 @@ test('CLOSING A WINDOW WITH HEADERS AND OPENING IT AGAIN WORKS — teardown deta
   expect(h.log()).not.toContain('Object has been destroyed');
 });
 
+test("IN FULL SCREEN THE TITLE BAR STARTS AT THE EDGE — the traffic lights it cleared are hidden there", async () => {
+  h = await launch((origin) => seedConfig(origin, { preferences: { appearance: { railPosition: 'right' } } }));
+  await h.rail();
+  const titlebar = await routePage('titlebar');
+  const inset = () => titlebar.locator('.pane-bar').evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
+  await expect.poll(inset, 'past the traffic lights').toBeGreaterThan(60);
+
+  const fullScreen = (on: boolean) =>
+    h.app.evaluate((_electron, on) => {
+      (globalThis as never as { __hangarShell: Shell }).__hangarShell.win.setFullScreen(on);
+    }, on);
+  await fullScreen(true);
+  await expect.poll(inset, { timeout: 10_000 }).toBe(12);
+  await fullScreen(false);
+  await expect.poll(inset, { timeout: 10_000 }).toBeGreaterThan(60);
+});
+

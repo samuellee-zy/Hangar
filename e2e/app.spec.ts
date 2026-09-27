@@ -1093,3 +1093,22 @@ test('MAXIMISING A PANE TAKES THE OTHER OFF THE WINDOW — and the focus ring ma
   expect(result.ringWithTwo, 'two panes: the focused one is marked').toBe(true);
   expect(result.ringWithOne, 'one pane drawn: nothing to tell apart').toBe(false);
 });
+
+test('IN FULL SCREEN THE RAIL KEEPS NO ROOM FOR THE TRAFFIC LIGHTS — macOS hides them there', async () => {
+  // A top rail, which holds the lights at its left end. In full screen they're gone until the
+  // pointer reaches the top edge, and the 80px kept for them was an empty gap before the first tile.
+  h = await launch((origin) => seedConfig(origin, { preferences: { appearance: { railPosition: 'top' } } }));
+  const rail = await h.rail();
+  const spacer = rail.locator('.rail-drag');
+  await expect(spacer).toBeVisible();
+
+  const fullScreen = (on: boolean) =>
+    h.app.evaluate((_electron, on) => {
+      (globalThis as never as { __hangarShell: { win: Electron.BaseWindow } }).__hangarShell.win.setFullScreen(on);
+    }, on);
+  await fullScreen(true);
+  await expect(spacer).toBeHidden({ timeout: 10_000 });
+  await fullScreen(false);
+  await expect(spacer).toBeVisible({ timeout: 10_000 });
+});
+

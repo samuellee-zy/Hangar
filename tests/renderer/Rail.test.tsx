@@ -242,6 +242,14 @@ describe('room for the traffic lights', () => {
     r.unmount();
   });
 
+  it('FULL SCREEN CLEARS NOTHING — macOS hides them there, and the space was left empty', async () => {
+    for (const pos of ['top', 'left'] as const) {
+      const { unmount } = await renderRail({ ...at(pos, false), fullScreen: true });
+      expect(spacer().hidden, pos).toBe(true);
+      unmount();
+    }
+  });
+
   it('right and bottom rails never hold them', async () => {
     for (const pos of ['right', 'bottom'] as const) {
       const { unmount } = await renderRail(at(pos, false));

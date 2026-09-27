@@ -567,6 +567,11 @@ export interface ShellState {
    */
   railExpanded: boolean;
   /**
+   * The window is full screen, where macOS hides the traffic lights until the pointer reaches the
+   * top edge. Nothing then needs to be kept clear for them.
+   */
+  fullScreen?: boolean;
+  /**
    * Services by most recent use, newest first — what the palette lists before anything is typed,
    * and what ⌃Tab goes back through. In memory only: a restart starts a fresh history.
    */
