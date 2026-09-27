@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { displayChord } from '@shared/keyboard';
 import { useFocusTrap } from './useFocusTrap';
 import { useShellState } from './useShellState';
+import { Icon } from './Icon';
 
 /**
  * Every keyboard shortcut, on one sheet (⌘/).
@@ -41,7 +42,7 @@ export function ShortcutSheet() {
         <header className="shortcut-head">
           <h2>Keyboard shortcuts</h2>
           <button ref={closeRef} className="shortcut-close" aria-label="Close" onClick={close}>
-            <span aria-hidden="true">✕</span>
+            <Icon name="close" size={14} />
           </button>
         </header>
         <dl className="shortcut-list">

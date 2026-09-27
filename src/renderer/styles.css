@@ -425,10 +425,10 @@ body[data-route='drag'] {
   color: var(--fg);
 }
 
-.rail-plus {
-  font-size: 20px;
-  font-weight: 400;
-  line-height: 1;
+/* One size and one baseline, now that both are the same drawing rather than two text glyphs. */
+.icon {
+  display: block;
+  flex: none;
 }
 
 /* --- add connection sheet ---------------------------------------------------------------- */
@@ -987,10 +987,7 @@ kbd {
   white-space: nowrap;
 }
 
-.rail-gear {
-  font-size: 17px;
-  line-height: 1;
-}
+
 
 /* --- settings: preference controls -------------------------------------------------------- */
 
@@ -1139,23 +1136,31 @@ kbd {
   color: var(--muted);
 }
 
-/* A mark as well as the dimming, because 50% opacity alone reads as "disabled" — and clicking a
-   sleeping tile is exactly what wakes it. A small crescent in the corner the badge doesn't use. */
-.rail-item.is-sleeping::after {
-  content: '☾';
+/* Marks for what a colour can't say, each in a corner the unread badge doesn't use: a crescent for
+   asleep — dimming alone reads as "disabled", when clicking is exactly what wakes it — and a
+   struck-through bell for muted. */
+.rail-mark {
   position: absolute;
-  left: 4px;
-  bottom: 2px;
-  font-size: 10px;
-  line-height: 1;
+  bottom: 3px;
   color: var(--muted);
   pointer-events: none;
 }
 
-.rail.is-panel .rail-item.is-sleeping::after {
+.rail-sleep-mark {
+  left: 4px;
+}
+
+.rail-mute-mark {
+  right: 4px;
+}
+
+.rail.is-panel .rail-mark {
   position: static;
+  flex: none;
+}
+
+.rail.is-panel .rail-sleep-mark {
   margin-left: auto;
-  order: 2;
 }
 
 .rail-item.is-sleeping:hover .rail-icon,
@@ -1827,4 +1832,25 @@ kbd {
 
 .service-row-icon .rail-initials {
   font-size: 10px;
+}
+
+.settings button.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* On while Do Not Disturb is: the accent colour, so it reads as a state rather than a button. */
+.rail-add.rail-dnd {
+  border-style: solid;
+  border-color: transparent;
+  color: var(--focus);
+}
+
+/* A hovered or focused tile is lighter, and the muted grey under its name dropped below 4.5:1 on it. */
+.grid-tile:hover .grid-sub,
+.grid-tile:hover .grid-caveat,
+.grid-tile:focus-visible .grid-sub,
+.grid-tile:focus-visible .grid-caveat {
+  color: var(--text);
 }

@@ -78,7 +78,7 @@ export interface EligibilityContext {
   /** The service's own notification toggle. */
   serviceNotifications: boolean;
   /** `muted` opts a service out of everything, push included. */
-  level: 'all' | 'muted';
+  level: 'all' | 'badge' | 'muted';
 }
 
 /**

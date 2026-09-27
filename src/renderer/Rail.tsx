@@ -4,6 +4,7 @@ import { badgeText } from './badge';
 import { withChord } from './chords';
 import { CommitOnBlur } from './CommitOnBlur';
 import { FolderTile } from './FolderTile';
+import { Icon, type IconName } from './Icon';
 import { ServiceIcon } from './ServiceIcon';
 import { SortableRailList, SortableTile } from './SortableRail';
 import { useShellState } from './useShellState';
@@ -22,13 +23,21 @@ import type { RailItem, ServiceView } from '@shared/types';
  * Opening a compact rail is the chevron's click, *reported* rather than acted on: whether it may
  * open right now is main's to decide, and comes back as `railExpanded`.
  */
+/** "muted", "muted until 14:30", or null — for a tile's name and tooltip. */
+function muteNote(svc: ServiceView): string | null {
+  if (svc.notificationLevel !== 'muted') return null;
+  if (!svc.mutedUntil) return 'muted';
+  const at = new Date(svc.mutedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `muted until ${at}`;
+}
+
 /**
  * Points the way the rail will move: outward to open, back toward its edge to close. Left and right
  * only — a horizontal rail has no chevron (`railCanExpand`).
  */
-function chevronGlyph(position: string, collapsed: boolean): string {
-  const outward = position === 'right' ? '‹' : '›';
-  const inward = position === 'right' ? '›' : '‹';
+function chevronIcon(position: string, collapsed: boolean): IconName {
+  const outward = position === 'right' ? 'chevron-left' : 'chevron-right';
+  const inward = position === 'right' ? 'chevron-right' : 'chevron-left';
   return collapsed ? outward : inward;
 }
 
@@ -112,6 +121,10 @@ export function Rail() {
     .filter((s) => !here.has(s.id))
     .reduce((sum, s) => sum + s.unread, 0);
   const switcher = state.workspaces.length > 1 && workspace;
+  const { dnd, dndUntil } = state.preferences.notifications;
+  const dndUntilNote = dndUntil
+    ? ` until ${new Date(dndUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : '';
   const send = window.hangar.send;
 
   // Every draggable row in visual order, open folders' members included. One flat list because
@@ -206,6 +219,7 @@ export function Rail() {
             svc.name,
             svc.sleeping ? 'asleep, click to wake' : null,
             svc.unread > 0 ? `${svc.unread} unread` : null,
+            muteNote(svc),
           ]
             .filter(Boolean)
             .join(', ')}
@@ -221,6 +235,7 @@ export function Rail() {
                   panel
                   ? `${svc.name} — double-click to rename`
                   : svc.name,
+            muteNote(svc),
             // The two ways to reach a tile that nothing on screen mentions.
             position.has(svc.id) ? `⌘${position.get(svc.id)}` : null,
             '⌥-click to open beside',
@@ -245,6 +260,12 @@ export function Rail() {
           }}
         >
           <ServiceIcon serviceId={svc.id} initials={svc.initials} name={svc.name} version={svc.iconVersion} />
+          {/* Marks for the states a colour can't carry, each in a corner the badge doesn't use. A
+              muted tile looked exactly like one that would interrupt you. */}
+          {svc.sleeping && <Icon name="moon" size={10} className="rail-mark rail-sleep-mark" />}
+          {svc.notificationLevel === 'muted' && (
+            <Icon name="bell-off" size={10} className="rail-mark rail-mute-mark" />
+          )}
           {/* In a panel the name goes INSIDE the button, so the whole row is the target — the way
               a Chrome tab is clickable across its width. Beside the button it looked clickable and
               was not, which is a worse affordance than no label at all.
@@ -390,9 +411,7 @@ export function Rail() {
                           }}
                           onBlur={() => setRenamingId(null)}
                         >
-                          <span className="rail-rename-folder" aria-hidden="true">
-                            ▦
-                          </span>
+                          <Icon name="folder" size={16} className="rail-rename-folder" />
                           <CommitOnBlur
                             className="rail-rename-field"
                             autoFocus
@@ -464,13 +483,31 @@ export function Rail() {
         reason. The chevron is last: it is the control that changes the shape of everything above it.
       */}
       <div className="rail-footer">
+        {/* Do Not Disturb, while it's on — the one state that silences everything and was visible
+            nowhere in the window, only as a submenu of a tray icon that is off by default. A click
+            turns it off; turning it on is in the palette, the menu and the tray. */}
+        {dnd && (
+          <button
+            className="rail-item rail-add rail-dnd"
+            title={`Do Not Disturb is on${dndUntilNote} — click to turn it off`}
+            aria-label={`Do Not Disturb is on${dndUntilNote}, turn it off`}
+            onClick={() => send({ type: 'set-dnd', on: false, until: null })}
+          >
+            <Icon name="moon" size={16} />
+            {panel && (
+              <span className="rail-label" aria-hidden="true">
+                Do Not Disturb
+              </span>
+            )}
+          </button>
+        )}
         <button
           className="rail-item rail-add"
           title={withChord(state, 'Add a connection', 'add-connection')}
           aria-label="Add a connection"
           onClick={() => send({ type: 'open-connections' })}
         >
-          <span className="rail-plus">+</span>
+          <Icon name="plus" size={18} className="rail-plus" />
           {/* aria-hidden: `aria-label` above is the accessible name; a visible one inside the
               button as well would be read as a stutter. */}
           {panel && (
@@ -486,7 +523,7 @@ export function Rail() {
           aria-label="Settings"
           onClick={() => send({ type: 'open-settings' })}
         >
-          <span className="rail-gear">⚙</span>
+          <Icon name="gear" size={18} className="rail-gear" />
           {panel && (
             <span className="rail-label" aria-hidden="true">
               Settings
@@ -502,7 +539,7 @@ export function Rail() {
             onClick={() => send({ type: 'toggle-rail' })}
           >
             <span className="rail-chevron-glyph" aria-hidden="true">
-              {chevronGlyph(railPosition, compact)}
+              <Icon name={chevronIcon(railPosition, compact)} size={14} />
             </span>
             {panel && <span className="rail-chevron-text">Collapse</span>}
           </button>

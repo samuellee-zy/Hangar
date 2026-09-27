@@ -8,7 +8,11 @@
  * opposite — you asked not to care, so it doesn't count either.
  */
 
-export type NotificationLevel = 'all' | 'muted';
+/**
+ * `badge`: counted, never a banner — for a service you want to see waiting without it interrupting.
+ * Not "mentions only", which would mean guessing a mention from a title (see the type's field doc).
+ */
+export type NotificationLevel = 'all' | 'badge' | 'muted';
 
 export interface NotifyContext {
   /** Global toggle. */
@@ -56,8 +60,9 @@ export function decideNotification(ctx: NotifyContext): NotifyDecision {
   // are required — a pane inside a hidden window is not something you are looking at.
   if (ctx.inVisiblePane && ctx.windowVisible) return { banner: false, count: false };
 
-  // DND silences the interruption but keeps the tally, so nothing is lost while you focus.
-  if (ctx.dnd) return { banner: false, count: true };
+  // DND silences the interruption but keeps the tally, so nothing is lost while you focus. A
+  // badge-only service is that, always.
+  if (ctx.dnd || ctx.level === 'badge') return { banner: false, count: true };
 
   return { banner: true, count: true };
 }

@@ -592,3 +592,33 @@ describe('the workspace switcher', () => {
     expect(screen.queryByRole('button', { name: /^Workspace/ })).not.toBeInTheDocument();
   });
 });
+
+describe('states the rail shows', () => {
+  it('DO NOT DISTURB IS VISIBLE WHILE IT IS ON, and a click turns it off', async () => {
+    await renderRail(
+      state({
+        preferences: {
+          ...DEFAULT_PREFERENCES,
+          notifications: { ...DEFAULT_PREFERENCES.notifications, dnd: true, dndUntil: null },
+        },
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Do Not Disturb is on/ }));
+    expect(sent).toContainEqual({ type: 'set-dnd', on: false, until: null });
+  });
+
+  it('and not there at all while it is off', async () => {
+    await renderRail(state());
+    expect(screen.queryByRole('button', { name: /Do Not Disturb/ })).not.toBeInTheDocument();
+  });
+
+  it('A MUTED TILE SAYS SO — it looked exactly like one that would interrupt you', async () => {
+    const s = state();
+    s.services = s.services.map((svc) => (svc.id === 'gmail' ? { ...svc, notificationLevel: 'muted' } : svc));
+    s.allServices = s.services;
+    await renderRail(s);
+    expect(screen.getByRole('button', { name: /^gmail.*muted/i })).toBeInTheDocument();
+    expect(document.querySelectorAll('.rail-mute-mark')).toHaveLength(1);
+  });
+});
+

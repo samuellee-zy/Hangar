@@ -179,14 +179,27 @@ export function showServiceMenu(
           dispatch({ type: 'mute-service', serviceId: svc.id, until: tomorrowMorning(Date.now()) }),
       },
       {
-        // Far enough away to mean "until I say so" — the same flag Settings' mute checkbox sets,
-        // just reached from here.
+        // Far enough away to mean "until I say so" — the same flag Settings' "Off" sets, just
+        // reached from here.
         label: 'Until I unmute it',
         click: () =>
           dispatch({
             type: 'update-service',
             serviceId: svc.id,
             patch: { notificationLevel: 'muted' },
+          }),
+      },
+      { type: 'separator' },
+      {
+        // The quieter setting between the two: counted, never a banner.
+        label: 'Badge only, no banners',
+        type: 'checkbox',
+        checked: svc.notificationLevel === 'badge',
+        click: () =>
+          dispatch({
+            type: 'update-service',
+            serviceId: svc.id,
+            patch: { notificationLevel: svc.notificationLevel === 'badge' ? 'all' : 'badge' },
           }),
       },
     ],

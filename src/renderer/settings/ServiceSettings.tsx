@@ -3,6 +3,7 @@ import { catalogById } from '@shared/catalog';
 import { NumberField } from '../PreferenceControls';
 import { CommitOnBlur } from '../CommitOnBlur';
 import { ConfirmButton } from '../ConfirmButton';
+import { Icon } from '../Icon';
 import { ServiceIcon } from '../ServiceIcon';
 import type { ServiceInstance, ServiceView, ShellState } from '@shared/types';
 
@@ -68,8 +69,9 @@ export function ServiceSettings({
   return (
     <>
       <p>
-        <button className="secondary" onClick={onBack}>
-          ‹ All connections
+        <button className="secondary with-icon" onClick={onBack}>
+          <Icon name="chevron-left" size={12} />
+          All connections
         </button>
       </p>
 
@@ -116,15 +118,33 @@ export function ServiceSettings({
             disabled={Boolean(svc.keepRunning)}
             onChange={(hibernate) => send({ hibernate })}
           />
-          {/* Muting is per service and stops the badge as well as the banner — the count is pushed
-              back to the page as an empty rule set, so a muted service stops watching for a number
-              it is not allowed to report. */}
-          <Check
-            name="Mute"
-            note="No banners and no unread badge"
-            checked={svc.notificationLevel === 'muted'}
-            onChange={(muted) => send({ notificationLevel: muted ? 'muted' : 'all' })}
-          />
+          {/* One choice, three answers. "Off" is a mute: it stops the badge as well as the banner —
+              the count is pushed back to the page as an empty rule set, so a muted service stops
+              watching for a number it is not allowed to report. */}
+          <li className="pref">
+            <label className="pref-label" htmlFor={`${svc.id}-level`}>
+              <span className="pref-name">Notifications</span>
+              <span className="pref-note">
+                {svc.notificationLevel === 'badge'
+                  ? 'Counted on its tile and the Dock, without banners'
+                  : svc.notificationLevel === 'muted' || !svc.notifications
+                    ? 'No banners and no unread count'
+                    : 'Banners, and a count on its tile and the Dock'}
+              </span>
+            </label>
+            <select
+              id={`${svc.id}-level`}
+              value={!svc.notifications ? 'muted' : (svc.notificationLevel ?? 'all')}
+              onChange={(e) => {
+                const level = e.target.value as 'all' | 'badge' | 'muted';
+                send(level === 'muted' ? { notificationLevel: 'muted' } : { notificationLevel: level, notifications: true });
+              }}
+            >
+              <option value="all">All</option>
+              <option value="badge">Badge only</option>
+              <option value="muted">Off</option>
+            </select>
+          </li>
           {!entry && (
             <Check
               name="Microphone and camera"

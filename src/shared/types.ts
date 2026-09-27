@@ -226,7 +226,7 @@ export interface ServiceInstance {
    * as a mention from a title string, and a filter that silently drops real messages is worse than
    * no filter.
    */
-  notificationLevel?: 'all' | 'muted';
+  notificationLevel?: 'all' | 'badge' | 'muted';
   /**
    * When a timed mute ends, epoch ms. Set together with `notificationLevel: 'muted'`, which is what
    * everything actually reads — this is only the alarm clock that turns it back to `'all'`. So a
