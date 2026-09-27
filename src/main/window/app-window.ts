@@ -460,7 +460,13 @@ export class AppWindow {
     return this.defaultMailApp;
   }
 
-  /** What `shell:get-state` answers a renderer with: the same split as `broadcast`. */
+  /**
+   * What `shell:get-state` answers a renderer with: the same split as `broadcast`.
+   *
+   * Pulled by each renderer on mount. The push in `Overlay.open()` races the view's first load — on
+   * the very first open the renderer hasn't subscribed yet, so the message vanished and the overlay
+   * rendered nothing while still swallowing every click.
+   */
   stateFor(wc: WebContents): ShellState {
     const state = this.state();
     return isSettingsView(wc) ? state : withoutServiceCode(state);
@@ -488,11 +494,6 @@ export class AppWindow {
     });
   }
 
-  /**
-   * Pulled by the overlay renderer on mount. The push in `Overlay.open()` races the view's first
-   * load — on the very first open the renderer hasn't subscribed yet, so the message vanished and
-   * the overlay rendered nothing while still swallowing every click.
-   */
   /** Current on-screen rectangle of a pane, for positioning the find bar. */
   private paneRect(paneId: string) {
     const { width, height } = this.win.getContentBounds();
@@ -544,18 +545,16 @@ export class AppWindow {
   /** User-triggered only. Deleting cookie jars is not something to do automatically at boot. */
   private purgeOrphanPartitions(): void {
     if (!this.orphanPartitions.length) return;
-    const { response } = {
-      response: dialog.showMessageBoxSync(this.win as never, {
-        type: 'warning',
-        buttons: ['Delete', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Delete ${this.orphanPartitions.length} unused session(s)?`,
-        detail:
-          'These belong to connections that were removed. Deleting frees disk space and clears ' +
-          'their cookies. If you re-add one of those services you will need to sign in again.',
-      }),
-    };
+    const response = dialog.showMessageBoxSync(this.win, {
+      type: 'warning',
+      buttons: ['Delete', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Delete ${this.orphanPartitions.length} unused session(s)?`,
+      detail:
+        'These belong to connections that were removed. Deleting frees disk space and clears ' +
+        'their cookies. If you re-add one of those services you will need to sign in again.',
+    });
     if (response !== 0) return;
 
     const base = path.join(app.getPath('userData'), 'Partitions');
@@ -890,10 +889,6 @@ export class AppWindow {
     this.saveLayout();
   }
 
-  /**
-   * Attach exactly the visible views, in pane order, then keep the overlay on top. Detaching
-   * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
-   */
   /** Follows the theme — the system's, or the preference's — as it changes. See `appBackground`. */
   private readonly repaintBackground = (): void => {
     if (!this.win.isDestroyed()) this.win.setBackgroundColor(appBackground());
@@ -977,6 +972,10 @@ export class AppWindow {
     this.emptyView.setBorderRadius(PANE_RADIUS);
   }
 
+  /**
+   * Attach exactly the visible views, in pane order, then keep the overlay on top. Detaching
+   * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
+   */
   private relayout(): void {
     // A drag holds a frozen copy of the pane rectangles, and this is the one thing that invalidates
     // them. Ending it is the honest answer: the alternative is a highlight over a pane that has
@@ -1309,7 +1308,6 @@ export class AppWindow {
     this.services.ensure(replacement);
   }
 
-  /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */
   /**
    * Ends timed Do Not Disturb and timed mutes whose time is up. Runs on the 30-second sweep, so a
    * quiet period ends within half a minute of when it said it would.
@@ -1333,6 +1331,7 @@ export class AppWindow {
     this.sync();
   }
 
+  /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */
   hibernateIdle(): void {
     // First, and whatever the hibernation setting: the sweep is the only clock timed quiet has.
     this.expireQuietPeriods();

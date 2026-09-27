@@ -58,7 +58,6 @@ const SCHEMA = {
   'open-settings': {},
   // `value` is validated against the preference schema by `setPreference`, which knows the types.
   'set-preference': { path: 'string', value: 'any' },
-  'clear-unread': { serviceId: 'string' },
   'create-workspace': { name: 'string' },
   'rename-workspace': { workspaceId: 'string', name: 'string' },
   'delete-workspace': { workspaceId: 'string' },

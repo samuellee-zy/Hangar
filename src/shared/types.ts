@@ -185,7 +185,7 @@ export interface ServiceInstance {
   notifications: boolean;
   hibernate: boolean;
   zoom: number;
-  /** Per-service UA override. Unused so far — Phase 0 found the global scrub sufficient. */
+  /** Per-service user agent, for a service that refuses Electron's. Set on the service's own page. */
   userAgent?: string;
   /**
    * Days to extend session cookies by on quit. Omitted → the default. Set to 0 to opt out entirely,
@@ -583,7 +583,6 @@ export type Command =
   | { type: 'sign-out-account'; accountId: string }
   | { type: 'open-settings' }
   | { type: 'set-preference'; path: string; value: unknown }
-  | { type: 'clear-unread'; serviceId: string }
   | { type: 'create-workspace'; name: string }
   | { type: 'rename-workspace'; workspaceId: string; name: string }
   | { type: 'delete-workspace'; workspaceId: string }

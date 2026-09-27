@@ -19,15 +19,17 @@ import type { RailItem, ServiceView } from '@shared/types';
  * (`SortableRail.tsx`, and `main/features/drag-layer.ts` for why a pane can't simply be a drop
  * target). The right-click `Move to folder ▸` stays for keyboard and precision use.
  *
- * The hover reported here is the other thing this surface knows and main doesn't. It is *reported*
- * rather than acted on: whether a compact rail may open right now is main's to decide, and comes
- * back as `railExpanded`.
+ * Opening a compact rail is the chevron's click, *reported* rather than acted on: whether it may
+ * open right now is main's to decide, and comes back as `railExpanded`.
  */
-/** Points the way the rail will move: outward to open, back toward its edge to close. */
+/**
+ * Points the way the rail will move: outward to open, back toward its edge to close. Left and right
+ * only — a horizontal rail has no chevron (`railCanExpand`).
+ */
 function chevronGlyph(position: string, collapsed: boolean): string {
-  const open = { left: '›', right: '‹', top: '⌄', bottom: '⌃' }[position] ?? '›';
-  const shut = { left: '‹', right: '›', top: '⌃', bottom: '⌄' }[position] ?? '‹';
-  return collapsed ? open : shut;
+  const outward = position === 'right' ? '‹' : '›';
+  const inward = position === 'right' ? '›' : '‹';
+  return collapsed ? outward : inward;
 }
 
 export function Rail() {
@@ -284,13 +286,9 @@ export function Rail() {
         e.preventDefault();
         send({ type: 'show-rail-menu' });
       }}
-      // An opened panel is mostly empty space — six services in a full-height column — and that
-      // space did nothing at all. Clicking it shuts the panel, which is the only thing it could
-      // sensibly mean: it is the "outside" of the list, and dismissing on outside-click is what
-      // every other transient panel does.
-      //
-      // Only when open, and only on the background: `closest('button')` lets every tile, the
-      // footer and the chevron handle their own clicks first.
+      // No click-outside-to-close on the opened panel, deliberately: clicking its empty space is
+      // how an inline rename is committed, and the chevron is the one way in and out (see
+      // Rail.test.tsx, "clicking away commits the edit and leaves the panel open").
     >
       {/* Clear of the traffic lights, and the window's drag handle — present exactly when main put
           them in this rail, decided by the same function main used. Guessing from `compactRail`

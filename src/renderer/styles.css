@@ -290,20 +290,6 @@ body[data-route='drag'] {
   border-right-color: transparent;
 }
 
-.rail.is-horizontal .rail-chevron {
-  width: 36px;
-  height: 36px;
-}
-
-/* A horizontal rail lays its footer out as a row, so the chevron sits beside the other two rather
-   than under them. */
-.rail.is-horizontal .rail-footer {
-  flex-direction: row;
-  margin-top: 0;
-  margin-left: auto;
-  padding: 0 12px 0 8px;
-}
-
 .rail-items {
   display: flex;
   flex-direction: column;
@@ -362,17 +348,6 @@ body[data-route='drag'] {
   background: var(--accent, var(--fg));
 }
 
-.rail-item.is-loading::after {
-  content: '';
-  position: absolute;
-  inset: auto 6px 4px 6px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--fg);
-  opacity: 0.5;
-  animation: pulse 900ms ease-in-out infinite;
-}
-
 /* Waking a service leaves the pane blank for a second or two while the view rebuilds, and a 2px
    bar at the foot of a 42px tile is not something you notice when you are looking at the pane.
    The whole tile pulses instead, so the answer to "did my click do anything" is in peripheral
@@ -385,12 +360,6 @@ body[data-route='drag'] {
   50% {
     background: var(--tile-focused);
     box-shadow: inset 0 0 0 1px var(--accent, var(--fg));
-  }
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.15;
   }
 }
 
@@ -866,11 +835,6 @@ kbd {
   border-style: dashed;
 }
 
-.rows.keys kbd {
-  min-width: 78px;
-  text-align: center;
-}
-
 /* --- settings: rebinding ------------------------------------------------------------------ */
 
 /* A chord is a button that looks like a key, because clicking it is how you change it. */
@@ -1182,10 +1146,14 @@ kbd {
   flex-direction: row;
 }
 
+/* A horizontal rail lays its footer out as a row at the far end. One rule: there were two, with
+   different padding, and which won depended on their order in the file. */
 .rail.is-horizontal .rail-footer {
   display: flex;
   flex-direction: row;
   gap: 6px;
+  margin-top: 0;
+  margin-left: auto;
   padding: 0 10px;
 }
 
@@ -1275,9 +1243,9 @@ kbd {
   gap: 3px;
 }
 
-/* Held open by the pointer, floating over the panes rather than beside them.
-   The edge it draws for itself is all the separation there is: a box-shadow would be clipped at the
-   view's bounds, since the rail is its own WebContentsView and cannot paint a pixel outside them. */
+/* Opened by the chevron. The panes reflow around it, so the edge it draws for itself is all the
+   separation there is: a box-shadow would be clipped at the view's bounds, since the rail is its
+   own WebContentsView and cannot paint a pixel outside them. */
 .rail.is-expanded {
   border-right-color: var(--muted);
 }

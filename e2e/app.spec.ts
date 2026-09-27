@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
- * Sixteen tests covering what unit tests structurally cannot: real windows, real `WebContentsView`
+ * Tests covering what unit tests structurally cannot: real windows, real `WebContentsView`
  * hit-testing and z-order, real layout for drag and for CSS geometry, the preload's main-world
  * patches, and process lifecycle.
  *

@@ -114,11 +114,6 @@ export const serviceCommands: CommandTable = {
     shell.sync();
   },
 
-  'clear-unread': (command, shell) => {
-    shell.clearUnread(command.serviceId);
-    shell.sync();
-  },
-
   'move-to-workspace': (command, shell) => {
     const moved = updateConfigReturning((c) =>
       moveServiceToWorkspace(c, command.serviceId, command.workspaceId),

@@ -23,7 +23,7 @@ const NOTE =
   'to sign in again.';
 
 export async function exportConfig(window: BaseWindow): Promise<void> {
-  const { canceled, filePath } = await dialog.showSaveDialog(window as never, {
+  const { canceled, filePath } = await dialog.showSaveDialog(window, {
     title: 'Export Hangar configuration',
     defaultPath: 'hangar-config.json',
     filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -55,7 +55,7 @@ export async function exportConfig(window: BaseWindow): Promise<void> {
 }
 
 export async function importConfig(window: BaseWindow, onLoaded: () => void): Promise<void> {
-  const { canceled, filePaths } = await dialog.showOpenDialog(window as never, {
+  const { canceled, filePaths } = await dialog.showOpenDialog(window, {
     title: 'Import Hangar configuration',
     properties: ['openFile'],
     filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -67,7 +67,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   try {
     parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<Config>;
   } catch {
-    await dialog.showMessageBox(window as never, {
+    await dialog.showMessageBox(window, {
       type: 'error',
       message: "That file isn't valid JSON.",
     });
@@ -75,7 +75,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   }
 
   if (!Array.isArray(parsed.services) || !Array.isArray(parsed.workspaces)) {
-    await dialog.showMessageBox(window as never, {
+    await dialog.showMessageBox(window, {
       type: 'error',
       message: "That doesn't look like a Hangar configuration.",
       detail: 'It has no services or workspaces.',
@@ -91,7 +91,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
     `This replaces ${loadConfig().services.length} service(s) with ${parsed.services.length} ` +
     'from the file. Existing sessions stay on disk but their services may no longer reference ' +
     'them, so expect to sign in again.';
-  const { response } = await dialog.showMessageBox(window as never, {
+  const { response } = await dialog.showMessageBox(window, {
     type: 'warning',
     buttons: scripted.length
       ? ['Replace, without its scripts', 'Replace, with its scripts', 'Cancel']
@@ -117,7 +117,7 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
   try {
     normalised = migrateConfig(parsed);
   } catch (err) {
-    await dialog.showMessageBox(window as never, {
+    await dialog.showMessageBox(window, {
       type: 'error',
       message: "That configuration can't be imported.",
       detail: String(err instanceof Error ? err.message : err),
