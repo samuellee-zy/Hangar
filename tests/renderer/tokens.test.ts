@@ -10,7 +10,7 @@ describe('colour tokens', () => {
   // outlines, the drop target's border and danger text all quietly lost their colour this way.
   it('never defines a custom property in terms of itself', () => {
     const selfReferences = [...css.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)]
-      .filter(([, name, value]) => value!.includes(`var(${name}`))
+      .filter(([, name, value]) => new RegExp(`var\\(\\s*${name}\\s*[,)]`).test(value!))
       .map(([declaration]) => declaration);
     expect(selfReferences).toEqual([]);
   });
