@@ -2,7 +2,7 @@ import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
 import { persistAll, startMaintenance } from '@main/boot/maintenance';
 import { setUpLogFile, sinceLaunch } from '@main/platform/log-file';
-import { flushConfig, loadConfig } from '@main/platform/config';
+import { flushConfig, loadConfig, updateConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
 import { installMenu, refreshMenu } from '@main/boot/menu';
 import { DEFAULT_BINDINGS } from '@core/keyboard/keymap';
@@ -14,7 +14,10 @@ import { setNotificationClickRoute } from '@main/window/attention';
 import { takeSettingsTarget } from '@main/features/settings-window';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
-import { redactUrl } from '@core/runtime/urls';
+import { createRateLimiter, redactUrl } from '@core/runtime/urls';
+import { muteUntil, setDnd, settleMute, unmute } from '@core/notify/policy';
+import { LINK_SCHEME, isLink, linksFromArgv, resolveLink } from '@core/runtime/deeplink';
+import type { Command } from '@shared/types';
 
 /**
  * Process entry point. Owns boot order, the single-instance lock, the IPC surface and quitting.
@@ -94,9 +97,16 @@ function publishTestHandle(): void {
  */
 const quitRequested = process.argv.includes('--quit');
 
+/**
+ * `--open slack`, `--dnd on` and the rest, as the links they mean (core/runtime/deeplink.ts). Handed
+ * to the running copy the way `--quit` is, when there is one; run here once the window exists, when
+ * there isn't.
+ */
+const launchLinks = linksFromArgv(process.argv.slice(1));
+
 // A second copy fighting over the same partitions would corrupt cookie jars, so hand off to the
 // running instance instead.
-const gotLock = app.requestSingleInstanceLock({ quit: quitRequested });
+const gotLock = app.requestSingleInstanceLock({ quit: quitRequested, links: launchLinks });
 console.log(`[boot] single-instance lock: ${gotLock ? 'acquired' : 'denied — handing off and quitting'}`);
 if (!gotLock || quitRequested) {
   // `app.quit()` before app-ready doesn't stop this module executing — everything below still
@@ -139,11 +149,91 @@ function ensureShell(): void {
 }
 
 /**
- * `mailto:` links, once Hangar is the default email app. macOS can deliver one before the app is
- * ready — clicking an address launches Hangar to handle it — so it waits for a window.
+ * `hangar://` links and their command-line spellings. A link is resolved into commands by
+ * `resolveLink` and nothing else — it is never a command itself, since any page can open one.
+ *
+ * Only what asks to be seen brings the window forward: `open` and `workspace` do; a Focus
+ * automation turning Do Not Disturb on in the background doesn't — not even after ⌘W, when there is
+ * no window: then the setting is changed where it's kept, and no window is built to change it.
+ */
+function runLinks(links: readonly string[]): void {
+  // Mid-quit, a link would dispatch into a window being torn down, or build a new one.
+  if (isQuitting()) return;
+  for (const link of links) {
+    // A page or a script can open links in a loop, and each `open` pulls the window forward.
+    if (!allowLink('link')) {
+      console.warn('[link] ignored: too many in a short time');
+      return;
+    }
+    const result = resolveLink(link, loadConfig(), Date.now());
+    if (!result.ok) {
+      console.warn(`[link] ignored: ${result.error}`);
+      continue;
+    }
+    const { commands, show } = result.value;
+    // Caught like `shell:command`: a throw here reached the fatal handler's modal dialog, and the
+    // rest of the batch was dropped.
+    try {
+      if (show) ensureShell();
+      for (const command of commands) {
+        if (shell) shell.dispatch(command);
+        else applyWithoutWindow(command);
+      }
+      console.log(`[link] ${commands.map((c) => c.type).join(', ') || 'show'}`);
+    } catch (err) {
+      console.error('[link] failed:', err);
+    }
+  }
+}
+
+/** Ten links in ten seconds: a Shortcut that runs a few in a row, not a page that runs a thousand. */
+const allowLink = createRateLimiter({ max: 10, windowMs: 10_000 });
+
+/**
+ * A background link with no window: Do Not Disturb and mutes are settings, so they're written where
+ * they're kept, through the same helpers the commands use. Marking read needs nothing — with no
+ * window no service is running, and there is nothing unread to clear.
+ */
+function applyWithoutWindow(command: Command): void {
+  updateConfig((c) => {
+    if (command.type === 'set-dnd') setDnd(c.preferences.notifications, command.on, command.until);
+    if (command.type !== 'mute-service' && command.type !== 'update-service') return;
+    const svc = c.services.find((s) => s.id === command.serviceId);
+    if (!svc) return;
+    if (command.type === 'mute-service') {
+      if (command.until === null) unmute(svc);
+      else muteUntil(svc, command.until);
+    } else if (command.patch['notificationLevel'] === 'muted') {
+      // The one patch a link makes — until unmuted — and nothing else of any patch.
+      const before = svc.notificationLevel;
+      svc.notificationLevel = 'muted';
+      delete svc.mutedUntil;
+      settleMute(svc, before);
+    }
+  });
+}
+
+/**
+ * Links that arrived before the first window was built — at launch, or from macOS before ready.
+ * Capped: before `booted`, nothing drains it.
+ */
+let pendingLinks: string[] = [...launchLinks];
+const MAX_PENDING_LINKS = 20;
+let booted = false;
+
+/**
+ * `mailto:` links, once Hangar is the default email app, and `hangar://` links. macOS can deliver
+ * either before the app is ready — clicking one launches Hangar to handle it — so both wait for a
+ * window.
  */
 let pendingMailto: string | null = null;
 app.on('open-url', (event, url) => {
+  if (isLink(url)) {
+    event.preventDefault();
+    if (booted) runLinks([url]);
+    else if (pendingLinks.length < MAX_PENDING_LINKS) pendingLinks.push(url);
+    return;
+  }
   if (!/^mailto:/i.test(url)) return;
   event.preventDefault();
   if (shell && app.isReady()) shell.openMailto(url);
@@ -151,14 +241,21 @@ app.on('open-url', (event, url) => {
 });
 
 app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
-  if ((additionalData as { quit?: unknown } | null)?.quit === true) {
+  const data = additionalData as { quit?: unknown; links?: unknown } | null;
+  if (data?.quit === true) {
     console.log('[boot] --quit from a second instance');
     quitGracefully({ confirm: false });
     return;
   }
+  // Another process's say-so, so checked for shape; each is then parsed like any link.
+  const links = Array.isArray(data?.links)
+    ? data.links.filter((link): link is string => typeof link === 'string').slice(0, 20)
+    : [];
   // Before ready there is nothing to show and nothing safe to build; the window is about to appear
   // anyway, since nothing hides it at boot any more.
-  if (app.isReady()) ensureShell();
+  if (!booted) pendingLinks.push(...links.slice(0, Math.max(0, MAX_PENDING_LINKS - pendingLinks.length)));
+  else if (links.length) runLinks(links);
+  else ensureShell();
 });
 
 app.whenReady().then(() => {
@@ -210,10 +307,22 @@ app.whenReady().then(() => {
     shell.openMailto(pendingMailto);
     pendingMailto = null;
   }
+  // The packaged app declares the scheme (electron-builder.yml); this makes it the one macOS asks,
+  // over an older copy in a DMG. Never unpackaged: that would hand `hangar://` to Electron itself.
+  if (app.isPackaged && !app.isDefaultProtocolClient(LINK_SCHEME)) app.setAsDefaultProtocolClient(LINK_SCHEME);
 })
   // Logged by name. Unhandled, a throw anywhere in startup was a bare "unhandled rejection" line
   // with nothing to say it was the app failing to come up.
-  .catch((err: unknown) => console.error('[boot] startup failed:', err));
+  .catch((err: unknown) => console.error('[boot] startup failed:', err))
+  // Whether startup finished or threw part-way. Set only at the end of it, a throw left links queued
+  // for good, and a second launch with none no longer built a window — the recovery the rest of
+  // startup is arranged to keep. `runLinks` builds a window if one is needed and there is none.
+  .finally(() => {
+    booted = true;
+    const queued = pendingLinks;
+    pendingLinks = [];
+    runLinks(queued);
+  });
 
 /**
  * The app's own channels answer only the app's own screens.

@@ -118,7 +118,11 @@ export async function launch(
    * The restart tests need this: relaunching against a *fresh* userData proves nothing about
    * whether state survives, which is the whole question.
    */
-  options: { reuseUserData?: string } = {}
+  options: {
+    reuseUserData?: string;
+    /** More command-line arguments for the app, after its entry point — `--open two`. */
+    args?: string[];
+  } = {}
 ): Promise<Harness> {
   const fixture = await startFixtureServer();
   const reusing = Boolean(options.reuseUserData);
@@ -144,7 +148,7 @@ export async function launch(
   const { ELECTRON_RUN_AS_NODE: _asNode, ...inherited } = process.env;
 
   const app = await electron.launch({
-    args: [path.join(__dirname, '..', 'out', 'main', 'index.js')],
+    args: [path.join(__dirname, '..', 'out', 'main', 'index.js'), ...(options.args ?? [])],
     env: {
       ...inherited,
       HANGAR_USER_DATA: userData,

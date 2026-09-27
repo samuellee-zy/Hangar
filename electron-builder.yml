@@ -66,6 +66,10 @@ protocols:
   - name: Email
     schemes: [mailto]
     role: Viewer
+  # `hangar://open/slack` and the rest — see docs/automation.md.
+  - name: Hangar
+    schemes: [hangar]
+    role: Viewer
 
 dmg:
   # The conventional drag-to-install layout. Anything else makes people hunt for the target.
