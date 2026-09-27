@@ -174,6 +174,7 @@ that has never opened Gmail.
 | [preferences.md](docs/preferences.md) | Every setting, what it does, and what isn't wired yet |
 | [icons.md](docs/icons.md) | Icon sourcing, protocols, CSP |
 | [keyboard.md](docs/keyboard.md) | Shortcut map, context menus, and why it works the way it does |
+| [automation.md](docs/automation.md) | `hangar://` links and command-line flags, for Shortcuts, Raycast and Focus |
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |

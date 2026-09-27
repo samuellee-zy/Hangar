@@ -15,6 +15,7 @@ import { takeSettingsTarget } from '@main/features/settings-window';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
 import { redactUrl } from '@core/runtime/urls';
+import { LINK_SCHEME, isLink, linksFromArgv, resolveLink } from '@core/runtime/deeplink';
 
 /**
  * Process entry point. Owns boot order, the single-instance lock, the IPC surface and quitting.
@@ -91,9 +92,16 @@ function publishTestHandle(): void {
  */
 const quitRequested = process.argv.includes('--quit');
 
+/**
+ * `--open slack`, `--dnd on` and the rest, as the links they mean (core/runtime/deeplink.ts). Handed
+ * to the running copy the way `--quit` is, when there is one; run here once the window exists, when
+ * there isn't.
+ */
+const launchLinks = linksFromArgv(process.argv.slice(1));
+
 // A second copy fighting over the same partitions would corrupt cookie jars, so hand off to the
 // running instance instead.
-const gotLock = app.requestSingleInstanceLock({ quit: quitRequested });
+const gotLock = app.requestSingleInstanceLock({ quit: quitRequested, links: launchLinks });
 console.log(`[boot] single-instance lock: ${gotLock ? 'acquired' : 'denied — handing off and quitting'}`);
 if (!gotLock || quitRequested) {
   // `app.quit()` before app-ready doesn't stop this module executing — everything below still
@@ -136,11 +144,43 @@ function ensureShell(): void {
 }
 
 /**
- * `mailto:` links, once Hangar is the default email app. macOS can deliver one before the app is
- * ready — clicking an address launches Hangar to handle it — so it waits for a window.
+ * `hangar://` links and their command-line spellings. A link is resolved into commands by
+ * `resolveLink` and nothing else — it is never a command itself, since any page can open one.
+ *
+ * Only what asks to be seen brings the window forward: `open` and `workspace` do; a Focus
+ * automation turning Do Not Disturb on in the background doesn't. Without a window, one is built.
+ */
+function runLinks(links: readonly string[]): void {
+  for (const link of links) {
+    const result = resolveLink(link, loadConfig(), Date.now());
+    if (!result.ok) {
+      console.warn(`[link] ignored: ${result.error}`);
+      continue;
+    }
+    const { commands, show } = result.value;
+    if (show || !shell) ensureShell();
+    for (const command of commands) shell?.dispatch(command);
+    console.log(`[link] ${commands.map((c) => c.type).join(', ') || 'show'}`);
+  }
+}
+
+/** Links that arrived before the first window was built — at launch, or from macOS before ready. */
+let pendingLinks: string[] = [...launchLinks];
+let booted = false;
+
+/**
+ * `mailto:` links, once Hangar is the default email app, and `hangar://` links. macOS can deliver
+ * either before the app is ready — clicking one launches Hangar to handle it — so both wait for a
+ * window.
  */
 let pendingMailto: string | null = null;
 app.on('open-url', (event, url) => {
+  if (isLink(url)) {
+    event.preventDefault();
+    if (booted) runLinks([url]);
+    else pendingLinks.push(url);
+    return;
+  }
   if (!/^mailto:/i.test(url)) return;
   event.preventDefault();
   if (shell && app.isReady()) shell.openMailto(url);
@@ -148,14 +188,21 @@ app.on('open-url', (event, url) => {
 });
 
 app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
-  if ((additionalData as { quit?: unknown } | null)?.quit === true) {
+  const data = additionalData as { quit?: unknown; links?: unknown } | null;
+  if (data?.quit === true) {
     console.log('[boot] --quit from a second instance');
     quitGracefully({ confirm: false });
     return;
   }
+  // Another process's say-so, so checked for shape; each is then parsed like any link.
+  const links = Array.isArray(data?.links)
+    ? data.links.filter((link): link is string => typeof link === 'string').slice(0, 20)
+    : [];
   // Before ready there is nothing to show and nothing safe to build; the window is about to appear
   // anyway, since nothing hides it at boot any more.
-  if (app.isReady()) ensureShell();
+  if (!booted) pendingLinks.push(...links);
+  else if (links.length) runLinks(links);
+  else ensureShell();
 });
 
 app.whenReady().then(() => {
@@ -205,6 +252,12 @@ app.whenReady().then(() => {
     shell.openMailto(pendingMailto);
     pendingMailto = null;
   }
+  // The packaged app declares the scheme (electron-builder.yml); this makes it the one macOS asks,
+  // over an older copy in a DMG. Never unpackaged: that would hand `hangar://` to Electron itself.
+  if (app.isPackaged && !app.isDefaultProtocolClient(LINK_SCHEME)) app.setAsDefaultProtocolClient(LINK_SCHEME);
+  booted = true;
+  runLinks(pendingLinks);
+  pendingLinks = [];
 })
   // Logged by name. Unhandled, a throw anywhere in startup was a bare "unhandled rejection" line
   // with nothing to say it was the app failing to come up.
