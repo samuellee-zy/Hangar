@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('hangar', {
    * What the drag layer should draw, in its own coordinates, or null for nothing. Main decides —
    * see `main/features/drag-layer.ts` for why the deciding can't happen in a renderer.
    */
+  /** What the drag layer should be drawing now — for a layer that has only just started listening. */
+  getDragHighlight: (): Promise<DropHighlight | null> => ipcRenderer.invoke('drag:get-highlight'),
   onDragHighlight: (fn: (highlight: DropHighlight | null) => void): (() => void) => {
     const handler = (_e: unknown, highlight: DropHighlight | null) => fn(highlight);
     ipcRenderer.on('drag:highlight', handler);

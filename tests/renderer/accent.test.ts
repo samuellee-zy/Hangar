@@ -6,6 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { accentFor, brightenForDark, hexFor } from '@shared/accent';
+import { catalog } from '@shared/catalog';
+import { THEME } from '@shared/theme';
 
 /** What the module is ultimately for: readable against the tile background. */
 const TILE_BG = '#26262c';
@@ -114,6 +116,19 @@ describe('the light theme', () => {
     const [hi, lo] = [lum(parse(hex)), lum(parse(bg))].sort((a, b) => b - a) as [number, number];
     return (hi + 0.05) / (lo + 0.05);
   };
+
+  // The tile you're looking at is the focused one, lighter than the rest in the dark theme and
+  // darker in the light. Adjusted against the plain tile alone, Slack's purple made 4.03:1 there.
+  it('EVERY CATALOG COLOUR READS ON THE FOCUSED TILE TOO — in both themes', () => {
+    for (const scheme of ['dark', 'light'] as const) {
+      for (const entry of catalog) {
+        const accent = hexFor(accentFor(entry.color, scheme))!;
+        for (const bg of [THEME[scheme].tile, THEME[scheme].tileFocused]) {
+          expect(contrastOn(accent, bg), `${entry.id} ${scheme} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
 
   it('LEAVES A COLOUR MADE FOR WHITE ALONE — it used to be washed out to 2.5:1', () => {
     // Slack's purple is 11:1 on the light tile as published. Lifted for the dark theme it became
