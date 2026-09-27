@@ -1020,11 +1020,20 @@ export class AppWindow {
    *
    * `removeChildView` then `addChildView`, matching `Overlay.raise()`: re-adding an existing child
    * is not documented to reorder it.
+   *
+   * Only when something is actually above it, though. Every relayout — each resize event, the
+   * 30-second sweep — detached and re-attached the rail's view, and a rail mid-gesture being taken
+   * off the window and put back is exactly the kind of thing that ends a drag in its renderer.
    */
   private raiseChrome(width: number, height: number): void {
     this.rail.setBounds(this.railRect(width, height));
-    this.win.contentView.removeChildView(this.rail);
-    this.win.contentView.addChildView(this.rail);
+    const children = this.win.contentView.children;
+    const railAt = children.indexOf(this.rail);
+    const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
+    if (railAt < 0 || children.slice(railAt + 1).some((child) => panes.has(child))) {
+      this.win.contentView.removeChildView(this.rail);
+      this.win.contentView.addChildView(this.rail);
+    }
     // Both sit above the rail. The drag layer does too, and needs no raise here: the rail can't be
     // resized during a drag, and `relayout` ends one before it reaches this.
     this.overlay.raise();
