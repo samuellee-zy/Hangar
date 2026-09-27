@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { migrateConfig } from '@core/config/migrate';
 import { catalogById } from '@shared/catalog';
+import type { Config } from '@shared/types';
 
 /** A v1 config: no version, no accounts, partitions implied by `sessionGroup`. */
 const v1 = () => ({
@@ -232,5 +233,41 @@ describe('services must be able to resolve their account', () => {
     const accountIds = new Set(config.accounts.map((a) => a.id));
     expect(config.services.some((s) => !accountIds.has(s.accountId))).toBe(true);
     expect(() => migrateConfig(config)).toThrow();
+  });
+});
+
+describe('nothing is dropped on the way through', () => {
+  // Every top-level key, as a type: a key added to `Config` and not listed here is a compile error,
+  // which is the point. `migrateConfig` rebuilds the object from a list of its own, and a key it
+  // didn't know about was silently gone after the next launch.
+  const KEYS: Record<keyof Config, true> = {
+    version: true,
+    preferences: true,
+    accounts: true,
+    services: true,
+    workspaces: true,
+    activeWorkspaceId: true,
+    layouts: true,
+    pushRegistrations: true,
+    window: true,
+  };
+
+  it('A CURRENT CONFIG ROUND-TRIPS WITH EVERY KEY, AND EVERY VALUE, INTACT', () => {
+    const full = migrateConfig({
+      version: 5,
+      accounts: [{ id: 'a1', label: 'X', provider: 'custom', partition: 'persist:x' }],
+      services: [
+        { id: 's1', catalogId: '__custom', name: 'X', accountId: 'a1', url: 'https://x.example', notifications: true, hibernate: true, zoom: 1 },
+      ],
+      workspaces: [{ id: 'w1', name: 'All', items: [{ kind: 'service', id: 's1' }] }],
+      activeWorkspaceId: 'w1',
+      layouts: { w1: { panes: [{ id: 'p1', serviceId: 's1' }], focusedPaneId: 'p1' } },
+      pushRegistrations: [{ serviceId: 's1', vapidKey: 'k', credentials: null, seenIds: ['x'] }],
+      window: { x: 1, y: 2, width: 900, height: 700 },
+    });
+    for (const key of Object.keys(KEYS) as (keyof Config)[]) {
+      expect(full[key], `${key} survives`).toBeDefined();
+    }
+    expect(migrateConfig(full)).toEqual(full);
   });
 });

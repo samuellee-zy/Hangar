@@ -8,7 +8,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { findQuarantined, pathsFor, readWithRecovery, writeAtomic } from '@core/config/store';
+import {
+  findQuarantined,
+  pathsFor,
+  readWithRecovery,
+  snapshotForLaunch,
+  writeAtomic,
+} from '@core/config/store';
 
 
 /** A fresh directory per case, so nothing leaks between them. */
@@ -209,5 +215,27 @@ describe("surfacing quarantined copies", () => {
     writeAtomic(paths, GOOD);
     writeAtomic(paths, GOOD2); // creates config.backup.json
     assert.deepEqual(findQuarantined(paths), []);
+  });
+});
+
+describe('the copy as of this launch', () => {
+  it('KEEPS THE STARTING STATE WHILE THE BACKUP ROLLS ON — a bad write replaced both within a second', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hangar-launch-'));
+    const paths = pathsFor(dir);
+    writeAtomic(paths, '{"state":"as launched"}');
+    snapshotForLaunch(paths);
+
+    // Two quick writes, the second of them wrong. The rolling backup now holds the first.
+    writeAtomic(paths, '{"state":"edited"}');
+    writeAtomic(paths, '{"state":"wrong"}');
+
+    assert.equal(fs.readFileSync(paths.backup, 'utf8'), '{"state":"edited"}');
+    assert.equal(fs.readFileSync(paths.launch, 'utf8'), '{"state":"as launched"}');
+  });
+
+  it('is a no-op with no config yet — a first launch has nothing to keep', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hangar-launch-'));
+    snapshotForLaunch(pathsFor(dir));
+    assert.equal(fs.existsSync(pathsFor(dir).launch), false);
   });
 });
