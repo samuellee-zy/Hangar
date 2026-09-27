@@ -22,7 +22,11 @@ export function Splitter({ index }: { index: number }) {
   );
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    // Not a drag, but the press still focused this view: send the keyboard back to the page.
+    if (event.button !== 0) {
+      window.hangar.send({ type: 'end-split' });
+      return;
+    }
     event.preventDefault();
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);

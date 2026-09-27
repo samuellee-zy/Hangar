@@ -254,7 +254,10 @@ export class AppWindow {
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
     this.dragLayer = new DragLayer(this.win);
-    this.splitters = new Splitters(this.win);
+    // Shortcuts: a press focuses the splitter's view, and a chord pressed then used to go nowhere.
+    this.splitters = new Splitters(this.win, (wc) =>
+      attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
+    );
 
     this.rail = new WebContentsView({
       webPreferences: {
@@ -395,11 +398,6 @@ export class AppWindow {
     const focusedServiceId =
       stored?.panes.find((p) => p.id === stored.focusedPaneId)?.serviceId ?? null;
     this.layout.shape = stored?.shape === 'main-stack' ? 'main-stack' : 'columns';
-    // Weights are for a number of columns; `columnWidths` ignores any that don't match what's
-    // restored, so a deleted service can't leave three widths applied to two panes.
-    this.layout.weights = Array.isArray(stored?.weights)
-      ? stored.weights.filter((w) => typeof w === 'number' && w > 0)
-      : [];
 
     if (serviceIds.length === 0) {
       const first = this.activeServices(workspaceId)[0];
@@ -419,6 +417,16 @@ export class AppWindow {
     const focusedIndex = focusedServiceId ? serviceIds.indexOf(focusedServiceId) : -1;
     const restoredFocus = this.layout.panes[focusedIndex >= 0 ? focusedIndex : 0];
     if (restoredFocus) this.layout.focusedPaneId = restoredFocus.id;
+    // After the panes, since opening each lets go of the widths. Only when every pane came back —
+    // widths saved for three mean nothing for the two left after a service was removed — and only a
+    // list that is all finite, positive numbers: `Infinity` from a hand-edited file made every
+    // rectangle NaN, on every launch. Whole or not at all, so one bad entry can't shift the rest.
+    const weights = stored?.weights;
+    const sound =
+      Array.isArray(weights) &&
+      weights.every((w) => typeof w === 'number' && Number.isFinite(w) && w > 0) &&
+      Number.isFinite(weights.reduce((a, b) => a + b, 0));
+    this.layout.weights = sound && serviceIds.length === stored!.panes.length ? [...weights] : [];
     this.saveLayout();
     this.startBackgroundServices();
   }
@@ -1127,8 +1135,9 @@ export class AppWindow {
   private raiseChrome(width: number, height: number): void {
     this.rail.setBounds(this.railRect(width, height));
     const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
-    // Beneath the rail and everything above it, which they never overlap.
-    this.splitters.raiseAbove(panes);
+    // Beneath the rail and everything above it, which they never overlap. Not while one is being
+    // dragged: re-attaching the view under a press can end the press. `endSplit` raises it after.
+    if (!this.splitDragging) this.splitters.raiseAbove(panes);
     const children = this.win.contentView.children;
     const railAt = children.indexOf(this.rail);
     if (railAt < 0 || children.slice(railAt + 1).some((child) => panes.has(child))) {
@@ -1169,6 +1178,9 @@ export class AppWindow {
     if (this.splitDragging) {
       this.splitDragging = false;
       this.saveLayout();
+      // The drag set bounds and nothing else. A full pass now puts the splitters back above panes a
+      // relayout re-attached meanwhile, and tells everyone the widths.
+      this.relayout();
     }
     this.focusActivePane();
   }
@@ -1293,6 +1305,9 @@ export class AppWindow {
     this.layout.panes = [];
     this.layout.focusedPaneId = null;
     this.layout.maximisedPaneId = null;
+    // ⇧⌘T reopens what was closed *here*. Carried across, a pane closed in one workspace was put
+    // back in another at the first one's index.
+    this.layout.closed = [];
     this.restoreLayout();
   }
 

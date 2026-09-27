@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { WebContentsView, type BaseWindow, type View } from 'electron';
+import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
 import type { Boundary } from '@core/workspace/layout';
 import type { Rect } from '@shared/types';
@@ -34,7 +34,10 @@ export class Splitters {
   private pool: WebContentsView[] = [];
   private attached = 0;
 
-  constructor(private readonly win: BaseWindow) {}
+  constructor(
+    private readonly win: BaseWindow,
+    private readonly onViewCreated: (wc: WebContents) => void,
+  ) {}
 
   /** One view per boundary, placed on it. */
   sync(boundaries: readonly Boundary[]): void {
@@ -65,14 +68,15 @@ export class Splitters {
     });
     view.setBackgroundColor('#00000000');
     loadRoute(view.webContents, `splitter-${index}`);
+    this.onViewCreated(view.webContents);
     this.pool[index] = view;
     return view;
   }
 
   /**
-   * Back above the panes, which a relayout re-adds on top — but only if one of them is above a
-   * splitter now, so the relayouts that move nothing (the 30-second sweep, a state change) leave a
-   * splitter mid-drag where it is. `addChildView` on an existing child moves it to the top.
+   * Back above the panes — which a relayout re-adds on top of everything, every time, so after one
+   * this always has something to do. It's the caller that keeps a splitter mid-drag where it is, by
+   * not asking. `addChildView` on an existing child moves it to the top.
    */
   raiseAbove(panes: ReadonlySet<View>): void {
     if (!this.attached) return;
@@ -84,9 +88,16 @@ export class Splitters {
     }
   }
 
-  /** Teardown: the views are kept between uses, so they have to be closed here. */
+  /**
+   * Teardown: the views are kept between uses, so they have to be closed here.
+   *
+   * This runs on `closed`, when the window is already destroyed and has let go of its children —
+   * and asking a destroyed window to detach one throws. It did, with two panes open: `dispose` stopped
+   * at the throw, the window's handle was never cleared, and no window could be shown again.
+   */
   destroy(): void {
-    this.sync([]);
+    if (!this.win.isDestroyed()) this.sync([]);
+    this.attached = 0;
     for (const view of this.pool) if (!view.webContents.isDestroyed()) view.webContents.close();
     this.pool = [];
   }

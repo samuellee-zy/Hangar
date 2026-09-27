@@ -205,8 +205,9 @@ export class Layout {
   shape: LayoutShape = 'columns';
   /**
    * Column widths as weights, one per column, or empty for equal. Set by dragging a splitter and
-   * saved with the layout. Weights for a different number of columns than are drawn are ignored
-   * (`columnWidths`) — widths for three mean nothing for two — so opening a pane gives equal columns.
+   * saved with the layout. Let go of whenever the number of panes changes: widths dragged for two
+   * mean nothing for three — and nothing for four either, though a 2×2 grid is two columns again,
+   * which is how widths from two panes used to come back when a fourth was opened.
    */
   weights: number[] = [];
   /** Recently closed panes, newest last — what ⌘⇧T reopens, at the place each was. */
@@ -297,6 +298,7 @@ export class Layout {
     if (at === -1) this.panes.push(pane);
     else this.panes.splice(beside!.side === 'before' ? at : at + 1, 0, pane);
     this.focusedPaneId = pane.id;
+    this.weights = [];
     return pane;
   }
 
@@ -307,6 +309,7 @@ export class Layout {
     if (this.panes.length === 1) return;
     const [gone] = this.panes.splice(index, 1);
     if (gone) this.closed = [...this.closed, { serviceId: gone.serviceId, index }].slice(-10);
+    this.weights = [];
     this.refocusAfter(index, paneId);
   }
 
@@ -321,6 +324,7 @@ export class Layout {
       const pane: Pane = { id: randomUUID(), serviceId: last.serviceId };
       this.panes.splice(Math.min(last.index, this.panes.length), 0, pane);
       this.focusedPaneId = pane.id;
+      this.weights = [];
       return pane;
     }
     return null;
@@ -355,6 +359,7 @@ export class Layout {
     const index = this.panes.findIndex((p) => p.id === paneId);
     if (index === -1) return;
     this.panes.splice(index, 1);
+    this.weights = [];
     this.refocusAfter(index, paneId);
   }
 
@@ -467,7 +472,8 @@ export class Layout {
     const pair = widths[index]! + widths[index + 1]!;
     // Half the pair was the fallback, which in a narrow window pinned the boundary in the middle:
     // three columns in 820px are 240px each, under the minimum already, and couldn't be resized at all.
-    const floor = Math.min(MIN_PANE_WIDTH, Math.round(pair / 3));
+    // Only then, though: a pair with room for two minimums keeps them.
+    const floor = pair >= 2 * MIN_PANE_WIDTH ? MIN_PANE_WIDTH : Math.round(pair / 3);
     const left = Math.max(floor, Math.min(pair - floor, Math.round(at - start - gutter / 2)));
     widths[index] = left;
     widths[index + 1] = pair - left;
@@ -486,7 +492,11 @@ export class Layout {
  */
 export function columnWidths(total: number, cols: number, weights: readonly number[]): number[] {
   if (cols <= 0) return [];
-  const w = weights.length === cols && weights.every((v) => v > 0) ? weights : Array(cols).fill(1);
+  const usable =
+    weights.length === cols &&
+    weights.every((v) => Number.isFinite(v) && v > 0) &&
+    Number.isFinite(weights.reduce((a, b) => a + b, 0));
+  const w = usable ? weights : Array(cols).fill(1);
   const sum = w.reduce((a, b) => a + b, 0);
   const out = w.map((v) => Math.floor((total * v) / sum));
   out[cols - 1] = total - out.slice(0, -1).reduce((a, b) => a + b, 0);
