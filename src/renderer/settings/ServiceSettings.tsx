@@ -98,6 +98,17 @@ export function ServiceSettings({
               </span>
             </span>
             <span className="meta">{account?.label ?? 'unknown'}</span>
+            {/* A service misbehaving after an update is usually a stale cache, and the only fix on
+                offer was Sign out, which cleared everything. */}
+            {account && (
+              <button
+                className="secondary"
+                title="Clears cached files and service workers — not cookies, so it stays signed in"
+                onClick={() => window.hangar.send({ type: 'clear-account-cache', accountId: account.id })}
+              >
+                Clear cache
+              </button>
+            )}
           </li>
         </ul>
       </section>

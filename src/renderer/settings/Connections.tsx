@@ -126,6 +126,30 @@ export function Accounts({ state }: { state: ShellState }) {
               <span className="meta">
                 {users.length ? users.map((s) => s.name).join(', ') : 'unused'}
               </span>
+              {/* Per account because blocking is per session. Settings → Network used to be the
+                  only switch, so a service that broke under it had it turned off everywhere. */}
+              <select
+                aria-label={`Ad blocking for ${account.label}`}
+                value={account.blockAds === undefined ? 'default' : account.blockAds ? 'on' : 'off'}
+                onChange={(e) =>
+                  window.hangar.send({
+                    type: 'set-account-adblock',
+                    accountId: account.id,
+                    on: e.target.value === 'default' ? null : e.target.value === 'on',
+                  })
+                }
+              >
+                <option value="default">Ads: as in Network</option>
+                <option value="on">Ads: blocked</option>
+                <option value="off">Ads: allowed</option>
+              </select>
+              <button
+                className="secondary"
+                title="Clears cached files and service workers — not cookies, so it stays signed in"
+                onClick={() => window.hangar.send({ type: 'clear-account-cache', accountId: account.id })}
+              >
+                Clear cache
+              </button>
               <ConfirmButton
                 title={`Clear cookies for ${account.label}`}
                 confirmLabel={users.length > 1 ? `Sign out of all ${users.length}?` : 'Sign out?'}

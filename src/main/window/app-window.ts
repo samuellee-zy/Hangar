@@ -1194,6 +1194,7 @@ export class AppWindow {
       removeService: (id) => this.removeService(id),
       sleep: (id) => this.sleep(id),
       signOut: (id) => this.signOut(id),
+      clearAccountCache: (partition) => this.clearAccountCache(partition),
       purgeOrphanPartitions: () => this.purgeOrphanPartitions(),
       registerConsumer: (wc) => this.registerConsumer(wc),
       unreadOf: (id) => this.unread.get(id),
@@ -1662,6 +1663,23 @@ export class AppWindow {
       this.services.get(svc.id)?.view.webContents.reload();
     }
     this.sync();
+  }
+
+  /**
+   * The HTTP cache and service-worker caches for one account, then a reload of its services: what
+   * Slack and Teams mean by "clear cache and restart". Not cookies, local storage or IndexedDB, so
+   * nobody is signed out — the one option there was, Sign out, cleared everything.
+   */
+  private async clearAccountCache(partition: string): Promise<void> {
+    const ses = session.fromPartition(partition);
+    await ses.clearCache();
+    await ses.clearStorageData({ storages: ['cachestorage', 'serviceworkers', 'shadercache'] });
+    const account = loadConfig().accounts.find((a) => a.partition === partition);
+    for (const svc of loadConfig().services.filter((s) => s.accountId === account?.id)) {
+      const wc = this.services.get(svc.id)?.view.webContents;
+      if (wc && !wc.isDestroyed()) wc.reloadIgnoringCache();
+    }
+    console.log(`[account] cleared the cache for ${account?.label ?? partition}`);
   }
 
   private focusActivePane(): void {

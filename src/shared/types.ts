@@ -166,6 +166,12 @@ export interface Account {
    * `persist:grp-*` names for exactly this reason.
    */
   partition: string;
+  /**
+   * Ad and tracker blocking for this account's services: on, off, or — unset — whatever Settings →
+   * Network says. Per account because blocking is per session, and a session is an account. "Turn
+   * it off if a service misbehaves" used to mean turning it off everywhere.
+   */
+  blockAds?: boolean;
 }
 
 /** A configured instance. Two Gmail accounts are two of these, pointing at two Accounts. */
@@ -580,6 +586,10 @@ export type Command =
   | { type: 'mark-all-read' }
   /** The sheet of recent notifications and downloads. */
   | { type: 'open-activity' }
+  /** `on: null` returns the account to the global setting. */
+  | { type: 'set-account-adblock'; accountId: string; on: boolean | null }
+  /** The HTTP cache and service-worker caches, not cookies or storage — so it stays signed in. */
+  | { type: 'clear-account-cache'; accountId: string }
   /** The next service after the focused one, in rail order, with something unread. */
   | { type: 'focus-next-unread' }
   /** Back to the service used before this one (⌃Tab). */

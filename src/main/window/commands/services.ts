@@ -10,6 +10,7 @@ import { normalisePassthrough } from '@core/keyboard/keymap';
 import { isWebUrl } from '@core/runtime/urls';
 import { sanitiseServicePatch } from '@core/services/patch';
 import { moveServiceToWorkspace } from '@core/workspace/workspaces';
+import { applyAdBlockingEverywhere } from '@main/platform/session';
 import type { CommandTable } from '@main/window/commands/context';
 
 /** Adding, changing and removing services and accounts, and their unread and mute state. */
@@ -152,6 +153,25 @@ export const serviceCommands: CommandTable = {
   'sign-out-account': (command, shell) => {
     shell.signOut(command.accountId).catch((err: unknown) =>
       console.error(`[account] sign out of ${command.accountId} failed:`, err),
+    );
+  },
+
+  'set-account-adblock': (command, shell) => {
+    updateConfig((c) => {
+      const account = c.accounts.find((a) => a.id === command.accountId);
+      if (!account) return;
+      if (command.on === null) delete account.blockAds;
+      else account.blockAds = command.on;
+    });
+    applyAdBlockingEverywhere();
+    shell.sync();
+  },
+
+  'clear-account-cache': (command, shell) => {
+    const account = loadConfig().accounts.find((a) => a.id === command.accountId);
+    if (!account) return;
+    shell.clearAccountCache(account.partition).catch((err: unknown) =>
+      console.error(`[account] clearing the cache of ${account.label} failed:`, err),
     );
   },
 };

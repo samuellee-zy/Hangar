@@ -18,6 +18,7 @@ type Field =
   | 'boolean?'
   | 'string|null'
   | 'number|null'
+  | 'boolean|null'
   | 'string[]'
   | 'string[]?'
   | 'object'
@@ -40,6 +41,8 @@ const SCHEMA = {
   'mark-read': { serviceId: 'string' },
   'mark-all-read': {},
   'open-activity': {},
+  'set-account-adblock': { accountId: 'string', on: 'boolean|null' },
+  'clear-account-cache': { accountId: 'string' },
   'focus-next-unread': {},
   'focus-previous-service': {},
   reveal: { what: ['config', 'log'] },
@@ -122,6 +125,8 @@ function fits(value: unknown, field: Field): boolean {
       return value === null || typeof value === 'string';
     case 'number|null':
       return value === null || (typeof value === 'number' && Number.isFinite(value));
+    case 'boolean|null':
+      return value === null || typeof value === 'boolean';
     case 'string[]':
       return Array.isArray(value) && value.every((v) => typeof v === 'string');
     case 'string[]?':

@@ -141,6 +141,40 @@ test('⌃TAB GOES BACK TO THE LAST SERVICE, AND ⇧⌘U TO THE NEXT ONE WITH UNR
   await expect.poll(focused, { message: 'to the service with something waiting' }).toBe('two');
 });
 
+test('AN ACCOUNT CAN CLEAR ITS CACHE WITHOUT SIGNING OUT, and have ad blocking of its own', async () => {
+  h = await launch();
+  await h.rail();
+  const run = (command: unknown) =>
+    h.app.evaluate((_electron, c) => {
+      (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch(c);
+    }, command);
+  const accountOne = () =>
+    (JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8')) as {
+      accounts: Array<{ id: string; blockAds?: boolean }>;
+    }).accounts.find((a) => a.id === 'acct-one');
+
+  // A cookie the page set, which a cache clear must leave alone.
+  await h.app.evaluate(async ({ session }) => {
+    await session.fromPartition('persist:acct-one').cookies.set({
+      url: 'http://127.0.0.1/',
+      name: 'signed_in',
+      value: 'yes',
+      expirationDate: Date.now() / 1000 + 3600,
+    });
+  });
+  await run({ type: 'clear-account-cache', accountId: 'acct-one' });
+  await expect.poll(() => h.log()).toContain('[account] cleared the cache for One');
+  const cookies = await h.app.evaluate(({ session }) =>
+    session.fromPartition('persist:acct-one').cookies.get({ name: 'signed_in' }),
+  );
+  expect(cookies, 'still signed in').toHaveLength(1);
+
+  await run({ type: 'set-account-adblock', accountId: 'acct-one', on: false });
+  await expect.poll(() => accountOne()?.blockAds).toBe(false);
+  await run({ type: 'set-account-adblock', accountId: 'acct-one', on: null });
+  await expect.poll(() => accountOne() && 'blockAds' in accountOne()!).toBe(false);
+});
+
 test('the overlay stops eating clicks once closed', async () => {
   // The overlay is a transparent full-window view. Hiding rather than *removing* it leaves it
   // hit-testing across its whole bounds, so every click meant for a pane lands on nothing and the

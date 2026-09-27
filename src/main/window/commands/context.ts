@@ -42,6 +42,7 @@ export interface ShellContext {
   removeService(serviceId: string): void;
   sleep(serviceId: string): void;
   signOut(accountId: string): Promise<void>;
+  clearAccountCache(partition: string): Promise<void>;
   purgeOrphanPartitions(): void;
   registerConsumer(wc: WebContents): void;
 
