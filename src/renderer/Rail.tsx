@@ -91,7 +91,10 @@ export function Rail() {
 
   if (!state) return null;
 
-  const visible = new Set(state.panes.map((p) => p.serviceId));
+  // Drawn, not merely in a pane: behind a maximised pane the others are off the window, and their
+  // tiles looked as on-screen as the one filling it.
+  const maximised = state.maximisedPaneId ? state.panes.find((p) => p.id === state.maximisedPaneId) : undefined;
+  const visible = new Set((maximised ? [maximised] : state.panes).map((p) => p.serviceId));
   const focusedServiceId = state.panes.find((p) => p.id === state.focusedPaneId)?.serviceId;
   const { railPosition, showLabels, density, compactRail } = state.preferences.appearance;
   // A compact rail on a side opens into a labelled panel; one along the top or bottom has no room
@@ -482,6 +485,25 @@ export function Rail() {
         reason. The chevron is last: it is the control that changes the shape of everything above it.
       */}
       <div className="rail-footer">
+        {/* Maximised: says so, and how many panes are waiting, with the way back. Nothing did —
+            the other panes simply vanished, and the menu kept offering "Maximise pane". */}
+        {maximised && (
+          <button
+            className="rail-item rail-add rail-maximised"
+            title={withChord(state, `1 of ${state.panes.length} panes — restore the others`, 'maximise-pane')}
+            aria-label={`Maximised, 1 of ${state.panes.length} panes. Restore the others`}
+            onClick={() => send({ type: 'toggle-maximise-pane' })}
+          >
+            <span className="rail-maximised-count" aria-hidden="true">
+              1/{state.panes.length}
+            </span>
+            {panel && (
+              <span className="rail-label" aria-hidden="true">
+                Restore panes
+              </span>
+            )}
+          </button>
+        )}
         {/* Do Not Disturb, while it's on — the one state that silences everything and was visible
             nowhere in the window, only as a submenu of a tray icon that is off by default. A click
             turns it off; turning it on is in the palette, the menu and the tray. */}

@@ -80,6 +80,7 @@ export interface ProjectionInput {
   iconVersions?: ReadonlyMap<string, number>;
   /** Services by most recent use, newest first. */
   recentServiceIds?: string[];
+  maximisedPaneId?: string | null;
 }
 
 /**
@@ -130,6 +131,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     activeWorkspaceId: config.activeWorkspaceId,
     railExpanded: input.railExpanded,
     recentServiceIds: input.recentServiceIds ?? [],
+    maximisedPaneId: input.maximisedPaneId ?? null,
     keyboard: keyboardMapOf(config),
   };
 }

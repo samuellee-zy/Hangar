@@ -74,7 +74,8 @@ function build(): void {
     KEY_ACTIONS.filter((action) => action.menu === menu).flatMap((action) => {
       const accelerator = toAccelerator(current[action.id] ?? '');
       const item: MenuItemConstructorOptions = {
-        label: action.label,
+        // The one label that depends on state: it said "Maximise pane" while a pane was maximised.
+        label: action.id === 'maximise-pane' && state?.maximisedPaneId ? 'Restore panes' : action.label,
         click: send(action.command),
         // Shown, not bound. See the module comment — this is the whole reason rebinding works.
         ...(accelerator ? { accelerator, registerAccelerator: false } : {}),

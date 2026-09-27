@@ -523,6 +523,8 @@ export interface ShellState {
    * and what ⌃Tab goes back through. In memory only: a restart starts a fresh history.
    */
   recentServiceIds?: string[];
+  /** The pane filling the content area on its own, while the others wait behind it. */
+  maximisedPaneId?: string | null;
   /** The shortcut table, resolved against the stored bindings. See `KeyboardMap`. */
   keyboard: KeyboardMap;
 }

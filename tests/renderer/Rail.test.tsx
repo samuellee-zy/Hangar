@@ -622,3 +622,33 @@ describe('states the rail shows', () => {
   });
 });
 
+
+describe('a maximised pane', () => {
+  const twoPanes = (maximisedPaneId: string | null) =>
+    state({
+      panes: [
+        { id: 'p1', serviceId: 'gmail' },
+        { id: 'p2', serviceId: 'slack' },
+      ],
+      focusedPaneId: 'p1',
+      maximisedPaneId,
+    });
+
+  it('SAYS SO, WITH THE WAY BACK — the other panes simply vanished', async () => {
+    await renderRail(twoPanes('p1'));
+    await userEvent.click(screen.getByRole('button', { name: /Maximised, 1 of 2 panes/ }));
+    expect(sent).toContainEqual({ type: 'toggle-maximise-pane' });
+  });
+
+  it("the pane waiting behind it no longer looks on screen", async () => {
+    await renderRail(twoPanes('p1'));
+    const slack = screen.getByRole('button', { name: /^slack/i });
+    expect(slack.classList.contains('is-visible')).toBe(false);
+  });
+
+  it('and with nothing maximised there is no indicator, and both tiles show', async () => {
+    await renderRail(twoPanes(null));
+    expect(screen.queryByRole('button', { name: /Maximised/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^slack/i }).classList.contains('is-visible')).toBe(true);
+  });
+});

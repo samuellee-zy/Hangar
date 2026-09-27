@@ -235,7 +235,8 @@ body[data-route='drag'] {
 
 /* The 3px accent bar hangs off the left of a centred 52px tile. A full-width row has no margin for
    it to hang in, so it moves inside the row's padding. */
-.rail.is-panel .rail-item.is-focused::before {
+.rail.is-panel .rail-item.is-focused::before,
+.rail.is-panel .rail-item.is-visible::before {
   left: 3px;
   height: 18px;
 }
@@ -350,7 +351,8 @@ body[data-route='drag'] {
   background: var(--tile-focused);
 }
 
-.rail-item.is-focused::before {
+.rail-item.is-focused::before,
+.rail-item.is-visible::before {
   content: '';
   position: absolute;
   /* The tile is 52px centred in a 72px rail, so there are only 10px of margin to sit in.
@@ -1250,12 +1252,14 @@ kbd {
 }
 
 /* The focus bar sits on whichever edge faces the content. */
-.rail.is-right .rail-item.is-focused::before {
+.rail.is-right .rail-item.is-focused::before,
+.rail.is-right .rail-item.is-visible::before {
   left: auto;
   right: -7px;
 }
 
-.rail.is-horizontal .rail-item.is-focused::before {
+.rail.is-horizontal .rail-item.is-focused::before,
+.rail.is-horizontal .rail-item.is-visible::before {
   left: 50%;
   top: auto;
   bottom: -7px;
@@ -1264,28 +1268,33 @@ kbd {
   height: 3px;
 }
 
-.rail.is-bottom .rail-item.is-focused::before {
+.rail.is-bottom .rail-item.is-focused::before,
+.rail.is-bottom .rail-item.is-visible::before {
   top: -7px;
   bottom: auto;
 }
 
 /* A 36px tile in a 48px rail has 6px either side, so the -7px above hung a pixel off the window.
    -5px puts the 3px bar 2–5px from the edge, the same inside-the-margin placement as a full rail. */
-.rail.is-compact .rail-item.is-focused::before {
+.rail.is-compact .rail-item.is-focused::before,
+.rail.is-compact .rail-item.is-visible::before {
   left: -5px;
 }
 
-.rail.is-compact.is-right .rail-item.is-focused::before {
+.rail.is-compact.is-right .rail-item.is-focused::before,
+.rail.is-compact.is-right .rail-item.is-visible::before {
   left: auto;
   right: -5px;
 }
 
-.rail.is-compact.is-top .rail-item.is-focused::before {
+.rail.is-compact.is-top .rail-item.is-focused::before,
+.rail.is-compact.is-top .rail-item.is-visible::before {
   left: 50%;
   bottom: -5px;
 }
 
-.rail.is-compact.is-bottom .rail-item.is-focused::before {
+.rail.is-compact.is-bottom .rail-item.is-focused::before,
+.rail.is-compact.is-bottom .rail-item.is-visible::before {
   left: 50%;
   top: -5px;
 }
@@ -1961,3 +1970,32 @@ kbd {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* On screen in a pane, but not the focused one: the same bar, shorter and grey. With two to four
+   panes the tile colours alone (1.1:1 apart) couldn't say which services were showing. */
+.rail-item.is-visible:not(.is-focused)::before {
+  height: 10px;
+  background: var(--muted);
+}
+
+.rail.is-horizontal .rail-item.is-visible:not(.is-focused)::before {
+  width: 10px;
+  height: 3px;
+}
+
+.rail.is-panel .rail-item.is-visible:not(.is-focused)::before {
+  height: 8px;
+}
+
+/* Maximised: the count of panes, in the accent, like Do Not Disturb — a state, not an action. */
+.rail-add.rail-maximised {
+  border-style: solid;
+  border-color: transparent;
+  color: var(--focus);
+}
+
+.rail-maximised-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+

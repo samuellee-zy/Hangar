@@ -500,6 +500,8 @@ export class AppWindow {
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
       iconVersions: iconVersions(),
+      // Only while it means something: with one pane, maximised and not are the same picture.
+      maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
       recentServiceIds: this.recentServiceIds.filter((id) => loadConfig().services.some((s) => s.id === id)),
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
@@ -791,6 +793,7 @@ export class AppWindow {
       state.activeWorkspaceId,
       state.preferences.notifications.dnd,
       state.preferences.notifications.dndUntil,
+      state.maximisedPaneId,
     ]);
     if (signature === this.lastMenuSignature) return;
     this.lastMenuSignature = signature;
