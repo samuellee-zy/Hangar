@@ -56,8 +56,29 @@ describe('a pane header', () => {
   it("can't go where the page can't", async () => {
     setPaneChrome(header({ canGoBack: false, canGoForward: false }));
     render(<PaneBar kind="header" />);
-    expect(await screen.findByRole('button', { name: 'Back' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
+    const back = await screen.findByRole('button', { name: 'Back' });
+    expect(back).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Forward' })).toHaveAttribute('aria-disabled', 'true');
+    // Pressed anyway, it goes nowhere — but hands the keyboard back to the page, which a disabled
+    // button's swallowed click didn't.
+    await userEvent.click(back);
+    expect(sent).toEqual([{ type: 'focus-pane', paneId: 'p2' }]);
+  });
+
+  it("A CLICK ON THE FOCUSED PANE'S HEADER STILL SENDS THE KEYBOARD BACK — it stayed in the header", async () => {
+    setPaneChrome(header({ focused: true }));
+    render(<PaneBar kind="header" />);
+    await userEvent.click(await screen.findByRole('toolbar'));
+    expect(sent).toEqual([{ type: 'focus-pane', paneId: 'p2' }]);
+  });
+
+  it('a maximised pane is not dragged — the others are hidden', async () => {
+    setPaneChrome(header({ maximised: true }));
+    render(<PaneBar kind="header" />);
+    const toolbar = await screen.findByRole('toolbar');
+    fireEvent.pointerDown(toolbar, { button: 0, clientX: 100, clientY: 15, pointerId: 1 });
+    fireEvent.pointerMove(toolbar, { clientX: 200, clientY: 15, pointerId: 1 });
+    expect(sent).toEqual([]);
   });
 
   it('a click on the bar picks the pane; a double-click maximises it', async () => {
@@ -109,6 +130,8 @@ describe('dragging a pane by its header', () => {
       { type: 'begin-pane-drag', paneId: 'p2' },
       { type: 'drag-tile-to', from: 'header', x: 140, y: 60 },
       { type: 'drop-tile', from: 'header', x: 400, y: 200 },
+      // What the swallowed click would have done.
+      { type: 'focus-pane', paneId: 'p2' },
     ]);
   });
 

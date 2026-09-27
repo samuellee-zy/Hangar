@@ -47,16 +47,20 @@ export function PaneBar({ kind }: { kind: 'titlebar' | 'header' }) {
     window.hangar.send({ type: 'focus-pane', paneId: bar.paneId });
     for (const command of commands) window.hangar.send(command);
   };
+  // `aria-disabled` rather than `disabled`: a disabled button swallows the click, so pressing Back
+  // with nowhere to go left the keyboard in this view. It still says it's unavailable, and the
+  // click still hands the keyboard back to the page.
   const button = (icon: IconName, label: string, onClick: () => void, disabled = false) => (
     <button
       type="button"
       className="pane-bar-button"
       aria-label={label}
       title={label}
-      disabled={disabled}
+      aria-disabled={disabled || undefined}
       onClick={(event) => {
         event.stopPropagation();
-        onClick();
+        if (disabled) send();
+        else onClick();
       }}
       onDoubleClick={(event) => event.stopPropagation()}
     >
@@ -64,8 +68,9 @@ export function PaneBar({ kind }: { kind: 'titlebar' | 'header' }) {
     </button>
   );
 
-  // Only a header, and only with somewhere to move to.
-  const draggable = kind === 'header' && bar.maximised !== null;
+  // Only a header, only with somewhere to move to, and not while maximised — the others are hidden,
+  // and the only target left was the gutter, reordering panes nobody could see.
+  const draggable = kind === 'header' && bar.maximised === false;
   const drag = draggable
     ? {
         onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
@@ -89,6 +94,9 @@ export function PaneBar({ kind }: { kind: 'titlebar' | 'header' }) {
           if (!current?.lifted) return;
           swallowClick.current = true;
           window.hangar.send({ type: 'drop-tile', from: 'header', x: event.clientX, y: event.clientY });
+          // The click this swallows would have chosen the pane. A shaky one that became a drag
+          // should still do that — and a drag that did move the pane has chosen it already.
+          window.hangar.send({ type: 'focus-pane', paneId: bar.paneId });
         },
         // Taken away mid-drag — a system gesture, the window losing the pointer — is a cancel.
         onPointerCancel: () => {
@@ -107,11 +115,13 @@ export function PaneBar({ kind }: { kind: 'titlebar' | 'header' }) {
       {...drag}
       // A click on the bar itself picks its pane; a double-click maximises it, the way a double-click
       // on a title bar zooms a window.
+      // Focused already or not, a click sends the keyboard back to the page: clicking the header
+      // focused this view, and typing afterwards went nowhere.
       onClick={
         kind === 'header'
           ? () => {
               if (swallowClick.current) swallowClick.current = false;
-              else if (!bar.focused) send();
+              else send();
             }
           : undefined
       }

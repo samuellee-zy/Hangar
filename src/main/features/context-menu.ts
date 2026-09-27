@@ -313,6 +313,8 @@ export function showFolderMenu(
   window: BaseWindow,
   folder: { id: string; name: string; serviceIds: string[]; collapsed: boolean },
   dispatch: Dispatch,
+  /** What's on screen, and how many more members fit: the focused pane, plus the free ones. */
+  panes: { visible: ReadonlySet<string>; room: number },
 ): void {
   const members = folder.serviceIds;
   const each = (command: (serviceId: string) => Command) => () => {
@@ -326,14 +328,19 @@ export function showFolderMenu(
       },
       { type: 'separator' },
       // What a folder is for: acting on the group. Open all fills panes up to the limit — the first
-      // replaces the focused pane, the rest open beside it.
+      // replaces the focused pane, the rest open beside it. Only as many as fit: past the limit each
+      // "new" pane replaced the one just opened, so the last member overwrote the one before it.
+      // Members already on screen stay where they are and take no room.
       {
         label: 'Open all',
         enabled: members.length > 0,
         click: () =>
-          members.forEach((serviceId, i) =>
-            dispatch(i === 0 ? { type: 'focus-service', serviceId } : { type: 'open-in-new-pane', serviceId }),
-          ),
+          members
+            .filter((serviceId) => !panes.visible.has(serviceId))
+            .slice(0, panes.room)
+            .forEach((serviceId, i) =>
+              dispatch(i === 0 ? { type: 'focus-service', serviceId } : { type: 'open-in-new-pane', serviceId }),
+            ),
       },
       { label: 'Mark all as read', enabled: members.length > 0, click: each((serviceId) => ({ type: 'mark-read', serviceId })) },
       {

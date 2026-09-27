@@ -106,6 +106,22 @@ describe('what a link says', () => {
 });
 
 describe('finding what a link names', () => {
+  it('A TIE GOES TO THE ONE HIGHER IN THE RAIL — not the one added first', () => {
+    const reordered = {
+      ...config,
+      services: [
+        { id: 'svc-1', catalogId: 'gmail', name: 'Personal mail' },
+        { id: 'svc-2', catalogId: 'gmail', name: 'Work mail' },
+      ],
+      workspaces: [
+        { id: 'w-a', name: 'Personal', items: [{ kind: 'service', id: 'svc-2' }, { kind: 'service', id: 'svc-1' }] },
+        { id: 'w-b', name: 'Work', items: [] },
+      ],
+    } as unknown as Config;
+    assert.equal(findService(reordered, 'gmail')?.id, 'svc-2');
+    assert.equal(findService(reordered, 'SVC-1')?.id, 'svc-1', 'ids, like names, in any case');
+  });
+
   it('a service by id, then name, then catalog entry — the name is the one the user chose', () => {
     assert.equal(findService(config, 'svc-2')?.id, 'svc-2');
     assert.equal(findService(config, 'work MAIL')?.id, 'svc-2');
@@ -145,6 +161,8 @@ describe('the command line', () => {
         'hangar://read/all',
         '--for',
         '30',
+        'constructor',
+        'x',
       ]),
       ['hangar://read/all'],
       'a flag with no value is dropped, and a stray --for qualifies nothing',

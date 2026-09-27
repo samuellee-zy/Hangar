@@ -188,12 +188,12 @@ body[data-route^='header-'] {
   -webkit-app-region: no-drag;
 }
 
-.pane-bar-button:hover:not(:disabled) {
+.pane-bar-button:hover:not([aria-disabled='true']) {
   background: var(--surface-hover);
   color: var(--fg);
 }
 
-.pane-bar-button:disabled {
+.pane-bar-button[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
 }

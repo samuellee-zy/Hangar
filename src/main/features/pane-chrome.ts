@@ -2,6 +2,7 @@ import path from 'node:path';
 import { WebContentsView, type BaseWindow, type WebContents } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
 import { safeSend } from '@main/platform/safe-send';
+import { PANE_RADIUS } from '@core/workspace/layout';
 import type { PaneBar, PaneChromeState, Rect } from '@shared/types';
 
 /**
@@ -24,6 +25,8 @@ export class PaneChrome {
   private attachedHeaders = 0;
   /** What each view is showing now, for a view that asks on load and for the change check. */
   private states = new Map<WebContents, PaneChromeState>();
+  /** The last bar for each pane, so a pooled header moved to another pane shows it at once. */
+  private lastBars = new Map<string, PaneBar>();
   private sent = new Map<WebContents, string>();
 
   constructor(
@@ -63,7 +66,13 @@ export class PaneChrome {
       const view = this.headers[i] ?? (this.headers[i] = this.create(`header-${i}`));
       if (i >= this.attachedHeaders || reorder) this.win.contentView.addChildView(view);
       view.setBounds(rect);
-      this.headerPanes[i] = paneId;
+      // Pooled by position, so after a swap or a close the view at this place is another pane's.
+      // Until the next broadcast — a frame later — it went on showing the old one, and a click on
+      // its Reload in that frame reloaded the wrong service.
+      if (this.headerPanes[i] !== paneId) {
+        this.headerPanes[i] = paneId;
+        this.show(view.webContents, { kind: 'header', bar: this.lastBars.get(paneId) ?? null, inset: 0 });
+      }
     });
     this.attachedHeaders = headers.length;
     this.headerPanes.length = headers.length;
@@ -73,6 +82,7 @@ export class PaneChrome {
   update(bars: readonly PaneBar[], focused: PaneBar | null, inset: number): void {
     if (this.titlebar) this.show(this.titlebar.webContents, { kind: 'titlebar', bar: focused, inset });
     const byPane = new Map(bars.map((bar) => [bar.paneId, bar]));
+    this.lastBars = byPane;
     this.headers.slice(0, this.attachedHeaders).forEach((view, i) => {
       this.show(view.webContents, { kind: 'header', bar: byPane.get(this.headerPanes[i]!) ?? null, inset: 0 });
     });
@@ -102,6 +112,9 @@ export class PaneChrome {
     });
     // Until its stylesheet paints: the window's own colour shows through, not a white bar.
     view.setBackgroundColor('#00000000');
+    // A header's top corners match its page's and the focus ring's; square, they stuck out of the
+    // ring. The title bar spans the window's edge, where square is right.
+    if (route !== 'titlebar') view.setBorderRadius(PANE_RADIUS);
     loadRoute(view.webContents, route);
     this.onViewCreated(view.webContents);
     // A reload — the crash recovery `loadRoute` installs — starts with nothing sent.
@@ -109,9 +122,15 @@ export class PaneChrome {
     return view;
   }
 
+  /**
+   * Teardown, on `closed`: the window is destroyed and has let go of its children already, and
+   * asking it to detach one throws — which stopped `dispose` and left no window ever showable again.
+   */
   destroy(): void {
-    this.placeTitlebar(null);
-    this.placeHeaders([]);
+    if (!this.win.isDestroyed()) {
+      this.placeTitlebar(null);
+      this.placeHeaders([]);
+    }
     for (const view of [this.titlebar, ...this.headers]) {
       if (view && !view.webContents.isDestroyed()) view.webContents.close();
     }

@@ -1,12 +1,13 @@
 import { tomorrowMorning } from '@shared/time';
+import { flattenServiceIds } from '@core/workspace/folders';
 import type { Command, Config, ServiceInstance, Workspace } from '@shared/types';
 
 /**
  * `hangar://` links and the command-line flags that mean the same things — what Shortcuts, Raycast,
  * a Focus automation or a shell script uses to drive the app. See docs/automation.md.
  *
- * **Any page can open a link.** A `hangar://` URL can be clicked in a browser, in a mail, in one of
- * the services Hangar itself is showing. So a link is never a `Command`: it is parsed into one of a
+ * **Any page can open a link.** A `hangar://` URL can be clicked in a browser tab, in a mail, in a
+ * note — anywhere but the services Hangar shows, which can't hand the OS a scheme like ours. So a link is never a `Command`: it is parsed into one of a
  * handful of verbs below, and only this module turns a verb into commands, from templates written
  * here. Nothing a link carries reaches `dispatch` except a name to look up. Removing a service,
  * importing a config, signing out, running a script — none has a verb, and adding one would be a
@@ -150,7 +151,7 @@ export function linksFromArgv(argv: readonly string[]): string[] {
     const arg = args[i]!;
     const next = args[i + 1];
     const value = next !== undefined && !next.startsWith('--') ? next : null;
-    const verb = VERB_FLAGS[arg];
+    const verb = Object.hasOwn(VERB_FLAGS, arg) ? VERB_FLAGS[arg] : undefined;
     if (isLink(arg)) {
       flush();
       links.push(arg);
@@ -182,15 +183,23 @@ const VERB_FLAGS: Readonly<Record<string, string>> = {
  * A service by what someone would type: its id, then its name, then which catalog entry it is.
  *
  * The name before the catalog id, because the name is the one the user chose: with two Gmails,
- * "gmail" is either, and "Work mail" is the one they renamed. Case doesn't matter; the first in the
- * list wins a tie, which is the rail's order.
+ * "gmail" is either, and "Work mail" is the one they renamed. Case doesn't matter. A tie goes to the
+ * one higher in the rail — this workspace's first, then the others' — not to whichever was added
+ * first, which is what the order of `services` is.
  */
 export function findService(config: Config, name: string): ServiceInstance | undefined {
   const lower = name.toLowerCase();
+  const byId = new Map(config.services.map((s) => [s.id, s]));
+  const workspaces = [
+    ...config.workspaces.filter((w) => w.id === config.activeWorkspaceId),
+    ...config.workspaces.filter((w) => w.id !== config.activeWorkspaceId),
+  ];
+  const inRail = workspaces.flatMap((w) => flattenServiceIds(w)).flatMap((id) => byId.get(id) ?? []);
+  const ordered = [...new Set([...inRail, ...config.services])];
   return (
-    config.services.find((s) => s.id === name) ??
-    config.services.find((s) => s.name.toLowerCase() === lower) ??
-    config.services.find((s) => s.catalogId.toLowerCase() === lower)
+    ordered.find((s) => s.id.toLowerCase() === lower) ??
+    ordered.find((s) => s.name.toLowerCase() === lower) ??
+    ordered.find((s) => s.catalogId.toLowerCase() === lower)
   );
 }
 

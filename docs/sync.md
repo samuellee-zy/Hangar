@@ -65,6 +65,15 @@ And a handful of preference *leaves* are held back even though `preferences` as 
 `notifications.push` does travel. Without credentials the second machine shows the toggle as pending
 with "Fill in the Firebase project below first", which is honest.
 
+A service travels without its **custom JavaScript** (`LOCAL_SERVICE_FIELDS`). It is code that runs
+inside a signed-in page, so anyone who could push to the repo could run it in your Gmail. It's
+written by hand, on the machine that needs it.
+
+**Upgrade the Macs you sync between together.** Builds before Phase 8 synced custom JavaScript and
+took a service from the repo whole. If one Mac upgrades and another doesn't, the upgraded Mac pushes
+services without their scripts. The old one then adopts them and loses its own. After it upgrades,
+nothing brings the scripts back, so copy them out of Settings first if you rely on them.
+
 ## How a reconcile works
 
 One pass, not a pull and a push. Splitting them was the original design and the mistake

@@ -661,5 +661,7 @@ describe('workspaceMark', () => {
     expect(workspaceMark('Side projects')).toBe('SP');
     expect(workspaceMark('Workspace')).toBe('W');
     expect(workspaceMark('   ')).toBe('··');
+    // The second word's first grapheme, not its first UTF-16 unit — half an emoji.
+    expect(workspaceMark('Side 🚀')).toBe('S🚀');
   });
 });

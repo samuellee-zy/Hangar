@@ -560,6 +560,34 @@ describe('shapes and splitters', () => {
     assert.ok(Math.abs(r[0]!.width - r[1]!.width) <= 1 && Math.abs(r[1]!.width - r[2]!.width) <= 1);
   });
 
+  it('A PAIR WITH ROOM FOR TWO MINIMUMS KEEPS THEM — the third was the floor below 840px', () => {
+    // Three panes in about 1100px: a pair of ~670, which fits two 280s.
+    const wide = 1100;
+    const l = layout(['a', 'b', 'c']);
+    const before = [...l.bounds(chrome('left'), wide, H).values()];
+    const pair = before[0]!.width + before[1]!.width;
+    assert.ok(pair >= 2 * MIN_PANE_WIDTH && pair < 840);
+    l.resizeAt(0, 0, chrome('left'), wide, H);
+    assert.equal([...l.bounds(chrome('left'), wide, H).values()][0]!.width, MIN_PANE_WIDTH);
+  });
+
+  it('WIDTHS DRAGGED FOR TWO PANES DON\'T COME BACK AT FOUR — a 2×2 grid is two columns again', () => {
+    const l = layout(['a', 'b']);
+    l.resizeAt(0, 400, chrome('left'), W, H);
+    assert.equal(l.weights.length, 2);
+    l.add('c');
+    l.add('d');
+    const r = rects(l);
+    assert.ok(Math.abs(r[0]!.width - r[1]!.width) <= 1, 'equal columns');
+  });
+
+  it('weights that are not all finite and positive are ignored — Infinity made every rect NaN', () => {
+    for (const bad of [[Infinity, 1], [1e308, 1e308], [NaN, 1], [-1, 2], [0, 1]]) {
+      const widths = columnWidths(1000, 2, bad);
+      assert.deepEqual(widths, [500, 500], JSON.stringify(bad));
+    }
+  });
+
   it('columnWidths always sums to the space it was given', () => {
     for (const weights of [[], [1, 2], [3, 1, 1], [0.2, 0.8]]) {
       const cols = weights.length || 3;
@@ -624,10 +652,45 @@ describe('dragging a pane by its header', () => {
   });
 
   it('NOTHING, SAID SO, WHEN NOTHING MOVES — onto itself, or beside a neighbour it is already beside', () => {
-    const { l, a, b } = three();
+    const { l, a, b, c } = three();
+    const focused = l.focusedPaneId;
     assert.equal(l.movePane(a.id, { swapWith: a.id }), false);
     assert.equal(l.movePane(a.id, { beside: { paneId: b.id, side: 'before' } }), false);
     assert.equal(l.movePane(a.id, { beside: { paneId: 'gone', side: 'after' } }), false);
+    assert.equal(l.movePane(c.id, { toEnd: true }), false, 'last already');
     assert.equal(order(l), 'abc');
+    // Focus too: it moved on these, with nothing redrawn, and the next ⌘W closed the wrong pane.
+    assert.equal(l.focusedPaneId, focused);
+    assert.equal(l.wouldMove(a.id, { beside: { paneId: b.id, side: 'before' } }), false);
+    assert.equal(l.wouldMove(a.id, { toEnd: true }), true);
+  });
+});
+
+describe('a service is in one pane at most', () => {
+  it('SHOWING A SERVICE THAT IS ALREADY IN A PANE FOCUSES IT THERE — it was drawn twice, one blank', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b'); // focused
+    const pane = l.show('a');
+    assert.equal(pane.id, a.id);
+    assert.equal(l.focusedPaneId, a.id);
+    assert.deepEqual(l.panes.map((p) => p.serviceId), ['a', 'b']);
+  });
+
+  it('opening one beside that is already on screen adds nothing', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b');
+    assert.equal(l.add('a').id, a.id);
+    assert.equal(l.panes.length, 2);
+  });
+
+  it('a maximised view follows it', () => {
+    const l = new Layout();
+    const a = l.add('a');
+    l.add('b');
+    l.toggleMaximise();
+    l.show('a');
+    assert.equal(l.maximisedPaneId, a.id);
   });
 });

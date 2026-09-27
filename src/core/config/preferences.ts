@@ -91,8 +91,30 @@ function merge<T>(defaults: T, stored: unknown): T {
   return out as T;
 }
 
-export const withDefaults = (stored: unknown): Preferences =>
-  merge(DEFAULT_PREFERENCES, stored);
+export const withDefaults = (stored: unknown): Preferences => {
+  const merged = merge(DEFAULT_PREFERENCES, stored);
+  const keyboard = isPlainObject(stored) ? stored['keyboard'] : undefined;
+  const bindings = isPlainObject(keyboard) ? keyboard['bindings'] : undefined;
+  if (isPlainObject(bindings)) merged.keyboard.bindings = yieldToStored(merged.keyboard.bindings, bindings);
+  return merged;
+};
+
+/**
+ * An action added since these bindings were stored takes its default chord only if nobody has it.
+ *
+ * `merge` fills in every action the stored map doesn't list, at its default — right for an action
+ * that is new. But a chord you bound to something yourself may be that new action's default, and
+ * the first action in `KEY_ACTIONS` order wins a shared chord: an upgrade that added ⇧⌘U quietly
+ * took it from the `sleep-others` you'd put there. The new action starts unbound instead.
+ */
+function yieldToStored(merged: Record<string, string>, stored: Json): Record<string, string> {
+  const taken = new Set(Object.values(stored).filter((chord): chord is string => typeof chord === 'string' && chord !== ''));
+  const out = { ...merged };
+  for (const [actionId, chord] of Object.entries(out)) {
+    if (stored[actionId] === undefined && chord && taken.has(chord)) out[actionId] = '';
+  }
+  return out;
+}
 
 /**
  * Applies `appearance.theme = 'dark'` style paths. Returns false when the path is unknown or the

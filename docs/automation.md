@@ -18,12 +18,12 @@ open "hangar://open/Slack"
 | `hangar://dnd/on` · `hangar://dnd/off` | Do Not Disturb, until it's turned off |
 | `hangar://dnd/on?for=45` | For 45 minutes. `?for=tomorrow` is until 9 tomorrow morning |
 | `hangar://mute/<service>` | Mutes a service until it's unmuted. `?for=` works here too |
-| `hangar://unmute/<service>` | Unmutes it |
+| `hangar://unmute/<service>` | Unmutes it: back to what it was before the mute, badge only included. A service that isn't muted is left alone |
 | `hangar://read/<service>` · `hangar://read/all` | Marks one service, or every one, as read |
 
 **Naming a service.** A service is looked up by its id, then by its name, then by which catalog
 entry it is. Case doesn't matter.
-- With two Gmails, `gmail` is the first in the rail.
+- With two Gmails, `gmail` is the one higher in the rail (this workspace's first).
 - If you renamed one "Work mail", that name finds it.
 - Spaces are written `%20`: `hangar://open/Work%20mail`. Shortcuts' URL action does this for you.
 
@@ -31,15 +31,17 @@ entry it is. Case doesn't matter.
 `hangar://workspace/2` is the second.
 
 **The window only comes forward when you're asking to see something:** `open`, `workspace` and
-`show`. A Focus automation turning Do Not Disturb on leaves it where it is.
+`show`. A Focus automation turning Do Not Disturb on leaves it where it is — and with the window
+closed, changes the setting without opening one.
 
 **Links that do nothing.** A link that doesn't name anything, or that isn't one of the above, does
-nothing. The reason goes in the log (`[link] ignored: …`).
+nothing. The reason goes in the log (`[link] ignored: …`). So do links past ten in ten seconds.
 
 ## Why a link can't do more
 
-Any page can open a `hangar://` link: a browser tab, an email, a service Hangar is showing. So the
-list above is the whole of it.
+Any page can open a `hangar://` link: a browser tab, an email, a note. (Not the services Hangar
+shows: they can't hand the operating system a scheme like this one.) So the list above is the whole
+of it.
 - A link never becomes an arbitrary command. It is parsed into one of these verbs, and each verb is
   turned into commands from fixed templates (`src/core/runtime/deeplink.ts`).
 - Nothing from the link reaches the app except a name to look up.
@@ -47,12 +49,14 @@ list above is the whole of it.
   would be a decision about who may do that, not a feature.
 
 The worst a hostile page can do with a link is:
-- mute a service;
-- turn on Do Not Disturb;
+- mute a service, or unmute one — including one you'd set to Off in Settings, since that's a mute;
+- turn Do Not Disturb on, or off;
 - mark something read;
-- switch what's on screen.
+- switch what's on screen, ten times in ten seconds at most.
 
-All of these are visible, and all are undone the same way they are done.
+All of these are visible, and each is undone the way it was done. A browser asks before it opens
+an app's link for a site, the first time; saying no there is the way to keep a site from sending
+these at all.
 
 ## The command line
 
