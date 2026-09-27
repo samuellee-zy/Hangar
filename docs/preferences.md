@@ -32,6 +32,9 @@ in the matching `renderer/settings/*.tsx` section. No migration needed.
 | Theme | `system` · `light` · `dark` via `nativeTheme.themeSource` |
 | Tile spacing | Comfortable or tight gaps between tiles, on a rail of any size (stored as `density`) |
 | Pane gutter | Space around each pane, 0–24px |
+| Pane headers | A 30px bar above each pane: icon, name and page title, back, forward and reload, pop out, maximise and close. Off by default. A click on it focuses its pane, and a double-click maximises the pane |
+
+Wherever there's a top strip, it holds a title bar for the focused pane, whether or not headers are on. The strip exists whenever the rail doesn't hold the traffic lights: on a right or bottom rail, or a compact left one. The title bar shows back, forward and reload, and the service's name and page. All of it except the buttons still drags the window.
 
 Rail position is constrained by the macOS window buttons, not by the layout maths — see
 [decisions #21](decisions.md). `setWindowButtonPosition()` moves them at runtime, so changing

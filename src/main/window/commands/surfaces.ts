@@ -99,6 +99,7 @@ export const surfaceCommands: CommandTable = {
   },
 
   'begin-tile-drag': (command, shell) => shell.beginTileDrag(command.serviceId),
+  'begin-pane-drag': (command, shell) => shell.beginPaneDrag(command.paneId),
   'drag-tile-to': (command, shell) => shell.moveTileDrag(command.from, command.x, command.y),
   'drop-tile': (command, shell) => shell.dropTile(command.from, command.x, command.y),
   'cancel-tile-drag': (_command, shell) => shell.endTileDrag(),

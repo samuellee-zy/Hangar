@@ -12,9 +12,11 @@ Back to front — the order is the z-order, and `relayout` re-establishes it on 
 ```
 BaseWindow
 ├── View             focus ring                          (index 0: a coloured card behind the focused pane)
+├── WebContentsView  header…    → renderer #header-N    (one per pane, with appearance.paneHeaders; under its page)
 ├── WebContentsView  service…   → persist:<account>     (1–4 panes, inset rounded cards)
 ├── WebContentsView  splitter…  → renderer #splitter-N  (one per gutter between columns; none with one)
 ├── WebContentsView  empty      → renderer #empty       (only when no pane can be filled)
+├── WebContentsView  title bar  → renderer #titlebar    (on the top strip, when there is one: the focused pane's)
 ├── WebContentsView  rail       → renderer #rail        (any edge; frameless, drag handle)
 ├── WebContentsView  find bar   → renderer #find        (attached on demand)
 ├── WebContentsView  overlay    → renderer #overlay     (attached on demand, removed on close)
@@ -36,6 +38,12 @@ coordinates — the view moves with the boundary it's dragging, so a client posi
 stale — and main applies it to the panes' rectangles without a full relayout, which would re-attach
 every pane once a frame. Nothing re-attaches a splitter mid-drag: macOS sends the rest of a press to
 the view that took it, and a view taken off the window loses it.
+
+A pane's header is tucked under its page by `PANE_RADIUS` (`splitCard`): every view's corners
+are rounded alike, so a header exactly its own height would meet the page's rounded corners with
+its own. The headers and the title bar get their contents on a channel of their own
+(`pane-chrome:state`), not in `ShellState`, because a page's title changes whenever a chat app's
+count does.
 
 Anything attached on demand is also *detached*, never hidden: a `WebContentsView` hit-tests across
 its whole bounds whether or not you can see it, so one left attached swallows every click in the

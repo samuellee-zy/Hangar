@@ -23,6 +23,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     gutter: 6,
     showLabels: false,
     showTrayIcon: false,
+    paneHeaders: false,
   },
   behaviour: {
     globalShortcut: null,

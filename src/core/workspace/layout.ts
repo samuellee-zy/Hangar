@@ -24,6 +24,24 @@ export type { Rect };
 
 export const MAX_PANES = 4;
 export const PANE_RADIUS = 10;
+/** A pane's header, when `appearance.paneHeaders` is on. */
+export const PANE_HEADER = 30;
+
+/**
+ * A pane's card, split into its header and the page below it.
+ *
+ * The header runs `PANE_RADIUS` further down, under the page. Every view's corners are rounded
+ * alike — Electron has no per-corner radius — so a header exactly its own height would have rounded
+ * bottom corners meeting the page's rounded top ones, pinched at the join. Tucked under, the page's
+ * top corners show header behind them instead, and the two read as one card.
+ */
+export function splitCard(card: Rect, withHeader: boolean): { header: Rect | null; page: Rect } {
+  if (!withHeader || card.height <= PANE_HEADER * 2) return { header: null, page: card };
+  return {
+    header: { x: card.x, y: card.y, width: card.width, height: PANE_HEADER + PANE_RADIUS },
+    page: { x: card.x, y: card.y + PANE_HEADER, width: card.width, height: card.height - PANE_HEADER },
+  };
+}
 
 // Shared with the rail's renderer, which has to agree with this file about where the traffic
 // lights are. Re-exported because this is where the geometry's callers look for them.
@@ -318,6 +336,36 @@ export class Layout {
     if (i === -1 || j < 0 || j >= this.panes.length) return false;
     [this.panes[i], this.panes[j]] = [this.panes[j]!, this.panes[i]!];
     return true;
+  }
+
+  /**
+   * A pane dragged by its header and let go: swapped with the pane it was dropped on, or moved to
+   * beside one, or to the end. False when that changes nothing — dropped on itself, or beside a
+   * neighbour on the side it's already on.
+   */
+  movePane(
+    paneId: string,
+    to: { swapWith: string } | { beside: { paneId: string; side: 'before' | 'after' } } | { toEnd: true },
+  ): boolean {
+    const from = this.panes.findIndex((p) => p.id === paneId);
+    if (from === -1) return false;
+    const before = this.panes.map((p) => p.id).join();
+    if ('swapWith' in to) {
+      const other = this.panes.findIndex((p) => p.id === to.swapWith);
+      if (other === -1 || other === from) return false;
+      [this.panes[from], this.panes[other]] = [this.panes[other]!, this.panes[from]!];
+    } else {
+      const [pane] = this.panes.splice(from, 1);
+      const anchor = 'beside' in to ? this.panes.findIndex((p) => p.id === to.beside.paneId) : -1;
+      if ('beside' in to && anchor === -1) {
+        this.panes.splice(from, 0, pane!);
+        return false;
+      }
+      const at = anchor === -1 ? this.panes.length : 'beside' in to && to.beside.side === 'after' ? anchor + 1 : anchor;
+      this.panes.splice(at, 0, pane!);
+    }
+    this.focusedPaneId = paneId;
+    return this.panes.map((p) => p.id).join() !== before;
   }
 
   /** How many columns the drawn panes make, for the shape and the count. */

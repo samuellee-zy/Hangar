@@ -597,3 +597,37 @@ describe('closing and reopening, and moving panes', () => {
     assert.equal(l.moveFocused(-1), false, 'already at the start');
   });
 });
+
+describe('dragging a pane by its header', () => {
+  const three = () => {
+    const l = new Layout();
+    const [a, b, c] = ['a', 'b', 'c'].map((id) => l.add(id));
+    return { l, a: a!, b: b!, c: c! };
+  };
+  const order = (l: Layout) => l.panes.map((p) => p.serviceId).join('');
+
+  it('ONTO ANOTHER PANE SWAPS THE TWO — and the one dragged has focus', () => {
+    const { l, a, c } = three();
+    assert.equal(l.movePane(a.id, { swapWith: c.id }), true);
+    assert.equal(order(l), 'cba');
+    assert.equal(l.focusedPaneId, a.id);
+  });
+
+  it('beside a pane moves it there, on that side', () => {
+    const { l, a, b, c } = three();
+    l.movePane(c.id, { beside: { paneId: a.id, side: 'before' } });
+    assert.equal(order(l), 'cab');
+    l.movePane(c.id, { beside: { paneId: b.id, side: 'after' } });
+    assert.equal(order(l), 'abc');
+    l.movePane(a.id, { toEnd: true });
+    assert.equal(order(l), 'bca');
+  });
+
+  it('NOTHING, SAID SO, WHEN NOTHING MOVES — onto itself, or beside a neighbour it is already beside', () => {
+    const { l, a, b } = three();
+    assert.equal(l.movePane(a.id, { swapWith: a.id }), false);
+    assert.equal(l.movePane(a.id, { beside: { paneId: b.id, side: 'before' } }), false);
+    assert.equal(l.movePane(a.id, { beside: { paneId: 'gone', side: 'after' } }), false);
+    assert.equal(order(l), 'abc');
+  });
+});

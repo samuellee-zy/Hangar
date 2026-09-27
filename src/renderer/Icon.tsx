@@ -20,7 +20,11 @@ export type IconName =
   | 'arrow-up'
   | 'arrow-down'
   | 'folder'
-  | 'help';
+  | 'help'
+  | 'reload'
+  | 'pop-out'
+  | 'maximise'
+  | 'restore';
 
 const PATHS: Record<IconName, string> = {
   gear:
@@ -36,6 +40,10 @@ const PATHS: Record<IconName, string> = {
   'arrow-down': 'M8 3v10 M4 9l4 4 4-4',
   folder: 'M2.5 4.5h4l1.5 1.5h5.5v6.5h-11Z',
   help: 'M6.2 6.2a1.9 1.9 0 1 1 2.6 1.75c-.5.2-.8.6-.8 1.1V9.6 M8 11.8v.2 M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Z',
+  reload: 'M13 8a5 5 0 1 1-1.46-3.54 M13 2.5v3h-3',
+  'pop-out': 'M9 3h4v4 M13 3 7.5 8.5 M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3',
+  maximise: 'M3 6V3h3 M10 3h3v3 M13 10v3h-3 M6 13H3v-3',
+  restore: 'M6 3v3H3 M13 6h-3V3 M10 13v-3h3 M3 10h3v3',
 };
 
 export function Icon({ name, size = 16, className }: { name: IconName; size?: number; className?: string }) {

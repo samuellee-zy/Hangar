@@ -294,6 +294,9 @@ function registerIpc(): void {
   ipcMain.handle('overlay:get-mode', (event) =>
     fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
   );
+  ipcMain.handle('pane-chrome:get', (event) =>
+    fromApp(event, 'pane-chrome:get') ? (shell?.paneChromeFor(event.sender) ?? null) : null,
+  );
   ipcMain.handle('settings:get-target', (event) =>
     fromApp(event, 'settings:get-target') ? takeSettingsTarget() : null,
   );

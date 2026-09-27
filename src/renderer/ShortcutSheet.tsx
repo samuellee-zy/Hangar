@@ -18,6 +18,7 @@ const FIXED: Array<[string, string]> = [
   ['Drag a tile onto a pane', 'Open it there — between two panes, beside them'],
   ['Drag a tile onto a folder', 'File it in the folder'],
   ['Drag the gap between panes', 'Resize them — double-click it for equal widths'],
+  ["Drag a pane's header", 'Swap it with another pane, or move it beside one'],
   ['Right-click a tile', 'Everything else it can do'],
   ['⌥↑ ⌥↓ on a tile', 'Move it along the rail (⌥← ⌥→ on a top or bottom rail)'],
   ['⌃Space on a tile', 'Pick it up to move with the arrows'],

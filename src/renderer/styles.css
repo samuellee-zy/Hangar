@@ -120,6 +120,158 @@ body[data-route^='splitter-'] {
   }
 }
 
+/* --- pane bars ---------------------------------------------------------------------------- */
+
+/* The title bar across the top strip and the header above each pane (renderer/PaneBar.tsx). The
+   title bar is the window's colour and its drag handle, as the bare strip was; a header is the
+   tile colour, and runs on under its page's rounded top corners (`splitCard`), so the two read as
+   one card. */
+/* The window's colour exactly (shared/theme.ts), painted rather than left transparent: the same
+   picture, and text on it has a background that can be measured. */
+body[data-route='titlebar'] {
+  background: var(--bg);
+}
+
+body[data-route^='header-'] {
+  background: var(--tile);
+}
+
+.pane-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pane-bar.is-titlebar {
+  height: 100vh;
+  -webkit-app-region: drag;
+}
+
+/* The header's own height: the view runs PANE_RADIUS further, beneath the page. */
+.pane-bar.is-header {
+  height: 30px;
+}
+
+.pane-bar.is-header.is-focused .pane-bar-service {
+  color: var(--fg);
+}
+
+.pane-bar-nav,
+.pane-bar-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.pane-bar-actions {
+  margin-left: auto;
+}
+
+.pane-bar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.pane-bar-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+.pane-bar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pane-bar-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.pane-bar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.pane-bar-icon .rail-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.pane-bar-icon .rail-initials {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, var(--muted));
+}
+
+.pane-bar-service {
+  flex: none;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.pane-bar.is-header:not(.is-focused) .pane-bar-service {
+  color: var(--muted);
+}
+
+.pane-bar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-bar-title::before {
+  content: '—';
+  margin-right: 6px;
+}
+
+/* A small spinner while the page loads. */
+.pane-bar-loading {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: pane-bar-spin 0.8s linear infinite;
+}
+
+@keyframes pane-bar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-bar-loading {
+    animation: none;
+    border-top-color: var(--muted);
+    opacity: 0.6;
+  }
+}
+
 /* --- drop target ------------------------------------------------------------------------ */
 
 /* The answer to "what happens if I let go here?", drawn over the pane it would affect.
@@ -349,14 +501,16 @@ body[data-route^='splitter-'] {
    applies is the stylesheet's business, so it follows the theme without anything listening. */
 .rail-item,
 .rail-rename,
-.grid-tile {
+.grid-tile,
+.pane-bar-icon {
   --accent: var(--accent-dark);
 }
 
 @media (prefers-color-scheme: light) {
   .rail-item,
   .rail-rename,
-  .grid-tile {
+  .grid-tile,
+  .pane-bar-icon {
     --accent: var(--accent-light);
   }
 }

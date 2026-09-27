@@ -17,6 +17,7 @@ import {
 import { attachNavigationGuards, partitionFor, sessionFor } from '@main/platform/session';
 import { attachShortcuts, type CommandSink } from '@main/window/shortcuts';
 import type { KeyContext } from '@core/keyboard/keymap';
+import type { NavState } from '@core/workspace/pane-bars';
 import type { ServiceInstance } from '@shared/types';
 
 /**
@@ -74,7 +75,9 @@ export class ServiceManager {
     /** Search results are reported by the searched contents, but rendered by the find bar. */
     private onFoundInPage: (active: number, total: number) => void,
     /** A service's own title is the most reliable unread signal it gives us. See notify/unread.ts. */
-    private onTitle: (serviceId: string, title: string) => void = () => {}
+    private onTitle: (serviceId: string, title: string) => void = () => {},
+    /** Its page moved, or its title changed: what a pane's bar shows. See `navState`. */
+    private onNavigation: (serviceId: string) => void = () => {},
   ) {}
 
   get(serviceId: string): ServiceRuntime | undefined {
@@ -155,7 +158,14 @@ export class ServiceManager {
 
     // Fires on every SPA title change, not just navigation — which is exactly what a chat app does
     // when a message arrives.
-    view.webContents.on('page-title-updated', (_e, title) => this.onTitle(svc.id, title));
+    view.webContents.on('page-title-updated', (_e, title) => {
+      this.onTitle(svc.id, title);
+      this.onNavigation(svc.id);
+    });
+    // In-page too: a single-page app moves between views without a navigation, and whether it can
+    // go back changes all the same.
+    view.webContents.on('did-navigate', () => this.onNavigation(svc.id));
+    view.webContents.on('did-navigate-in-page', () => this.onNavigation(svc.id));
 
     // One handler, because there was briefly a second one further down doing the zoom half. Both
     // ran, so the effect was right and the cost was a duplicated listener per view; the
@@ -318,6 +328,19 @@ export class ServiceManager {
     for (const runtime of this.runtimes.values()) {
       runtime.lastActiveAt = creditSuspendedTime(runtime.lastActiveAt, suspendedForMs, now);
     }
+  }
+
+  /** Where a service's page is, for its pane's bar. Null while it has no page. */
+  navState(serviceId: string): NavState | null {
+    const runtime = this.runtimes.get(serviceId);
+    const wc = runtime?.view.webContents;
+    if (!runtime || !wc || wc.isDestroyed()) return null;
+    return {
+      title: wc.getTitle(),
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
+      loading: runtime.loading,
+    };
   }
 
   navigate(serviceId: string, direction: 'back' | 'forward'): void {

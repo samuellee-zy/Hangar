@@ -55,6 +55,9 @@ export function Appearance({
                 labels={{ system: 'Match the system', light: 'Light', dark: 'Dark' }} />
         <Num name="Pane gutter" note="Space around each pane" path="appearance.gutter"
              value={appearance.gutter} min={0} max={24} />
+        <Toggle name="Pane headers"
+                note="A bar above each pane: its name and page, back, forward and reload, pop out, maximise and close"
+                path="appearance.paneHeaders" value={appearance.paneHeaders} />
         <Toggle name="Show tray icon"
                 note={closeToTray
                   ? 'Always on while Close to tray is on — otherwise a closed window has no way back'

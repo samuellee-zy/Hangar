@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type Page } from '@playwright/test';
-import { launch, tearDown, type Harness } from './harness';
+import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
  * Automated accessibility checks on the app's own screens, in both themes.
@@ -69,5 +69,18 @@ for (const scheme of ['light', 'dark'] as const) {
     await h.app.evaluate(() => (globalThis as never as Shell).__hangarShell.dispatch({ type: 'open-activity' }));
     await expect(overlay.getByRole('dialog', { name: /Recent notifications/ })).toBeVisible();
     expect(await violations(overlay, scheme)).toEqual([]);
+  });
+
+  test(`the title bar and a pane header pass axe — ${scheme}`, async () => {
+    h = await launch((origin) =>
+      seedConfig(origin, { preferences: { appearance: { railPosition: 'right', paneHeaders: true } } }),
+    );
+    await h.rail();
+    const header = await surface('header-0', { type: 'split' });
+    await expect(header.getByRole('toolbar')).toBeVisible();
+    expect(await violations(header, scheme)).toEqual([]);
+    const titlebar = await surface('titlebar', { type: 'show-window' });
+    await expect(titlebar.getByRole('toolbar')).toBeVisible();
+    expect(await violations(titlebar, scheme)).toEqual([]);
   });
 }

@@ -25,6 +25,7 @@ import {
 import {
   Layout,
   PANE_RADIUS,
+  splitCard,
   chromeFor,
   contentArea,
   railBounds,
@@ -34,6 +35,8 @@ import {
 import { Overlay } from '@main/window/overlay';
 import { DragLayer } from '@main/features/drag-layer';
 import { Splitters } from '@main/features/splitters';
+import { PaneChrome } from '@main/features/pane-chrome';
+import { paneBars } from '@core/workspace/pane-bars';
 import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
@@ -155,6 +158,8 @@ export class AppWindow {
   private splitters: Splitters;
   /** A splitter is being dragged: its moves are applied without a full relayout. */
   private splitDragging = false;
+  /** The title bar on the top strip, and a header per pane. See features/pane-chrome.ts. */
+  private paneChrome: PaneChrome;
   /**
    * A compact rail opened by the chevron. Meaningless unless `compactRail` is on, which `railSizes`
    * enforces so no reader has to check both.
@@ -249,11 +254,16 @@ export class AppWindow {
         if (contents) safeSend(contents, 'find:result', { active, total });
       },
       (serviceId, title) => this.attention.handleTitle(serviceId, title),
+      // Through the broadcast, which is what refreshes the bars — once a frame at most.
+      () => this.sync(),
     );
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
     this.dragLayer = new DragLayer(this.win);
     this.splitters = new Splitters(this.win);
+    this.paneChrome = new PaneChrome(this.win, (wc) =>
+      attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
+    );
 
     this.rail = new WebContentsView({
       webPreferences: {
@@ -528,9 +538,40 @@ export class AppWindow {
   }
 
   /** Current on-screen rectangle of a pane, for positioning the find bar. */
+  /** Where a pane's page is: its card, less its header when there is one. */
   private paneRect(paneId: string) {
     const { width, height } = this.win.getContentBounds();
-    return this.layout.bounds(this.chrome(), width, height).get(paneId) ?? null;
+    const card = this.layout.bounds(this.chrome(), width, height).get(paneId);
+    return card ? splitCard(card, this.paneHeadersOn()).page : null;
+  }
+
+  private paneHeadersOn(): boolean {
+    return loadConfig().preferences.appearance.paneHeaders === true;
+  }
+
+  /**
+   * The headers, and the pages below them, for these cards. `reorder` false leaves every view where
+   * it is in the stack — a splitter drag moves them and must not re-attach anything.
+   */
+  private placePanes(bounds: Map<string, Rect>, { reorder = true } = {}): void {
+    const withHeaders = this.paneHeadersOn();
+    const split = this.layout.drawn().map((pane) => {
+      const card = bounds.get(pane.id);
+      return { pane, parts: card ? splitCard(card, withHeaders) : null };
+    });
+    // Headers first: re-adding a page afterwards puts it above the part of its header tucked under.
+    this.paneChrome.placeHeaders(
+      split.flatMap(({ pane, parts }) =>
+        parts?.header && this.services.has(pane.serviceId) ? [{ paneId: pane.id, rect: parts.header }] : [],
+      ),
+      { reorder },
+    );
+    for (const { pane, parts } of split) {
+      const runtime = this.services.get(pane.serviceId);
+      if (!runtime || !parts) continue;
+      if (reorder) this.win.contentView.addChildView(runtime.view);
+      runtime.view.setBounds(parts.page);
+    }
   }
 
   /**
@@ -784,6 +825,29 @@ export class AppWindow {
     }
     refreshTray(state, (c) => this.dispatch(c));
     this.refreshMenuIfChanged(state);
+    this.refreshPaneChrome(state);
+  }
+
+  /** What the title bar and the headers show — sent to each only when it changed. */
+  private refreshPaneChrome(state: ShellState): void {
+    const bars = paneBars({
+      drawn: this.layout.drawn(),
+      paneCount: this.layout.panes.length,
+      focusedPaneId: this.layout.focusedPaneId,
+      maximisedPaneId: this.layout.maximisedPaneId,
+      services: state.allServices,
+      nav: (serviceId) => this.services.navState(serviceId),
+    });
+    const focused = bars.find((bar) => bar.focused) ?? null;
+    const metrics = windowButtonMetrics();
+    // Clear of the traffic lights, which the strip holds whenever there is one.
+    const inset = windowButtonPosition(this.chrome(), metrics).x + metrics.span + 16;
+    this.paneChrome.update(bars, focused, inset);
+  }
+
+  /** For a pane bar that has just loaded. */
+  paneChromeFor(wc: WebContents) {
+    return this.paneChrome.stateFor(wc);
   }
 
   /**
@@ -1065,17 +1129,16 @@ export class AppWindow {
     const onScreen = this.windowOnScreen();
     for (const pane of this.layout.drawn()) {
       const runtime = this.services.get(pane.serviceId);
-      const rect = bounds.get(pane.id);
-      if (!runtime || !rect) continue;
+      if (!runtime || !bounds.has(pane.id)) continue;
       // Idle time is measured as time off screen, so refresh the stamp while visible.
       this.services.markActive(pane.serviceId);
       if (onScreen) this.attention.acknowledge(pane.serviceId);
-      this.win.contentView.addChildView(runtime.view);
-      runtime.view.setBounds(rect);
       // Rounded card. Note Electron's caveat: the cut-out corners still capture clicks — harmless
-      // here since nothing sits underneath them but the rail background.
+      // here since nothing sits underneath them but the rail background, or the pane's own header.
       runtime.view.setBorderRadius(PANE_RADIUS);
     }
+    this.placePanes(bounds);
+    this.paneChrome.placeTitlebar(chrome.topStrip > 0 ? { x: 0, y: 0, width, height: chrome.topStrip } : null);
     this.drawFocusRing(bounds, chrome.gutter);
     this.splitters.sync(this.layout.boundaries(chrome, width, height));
 
@@ -1138,10 +1201,7 @@ export class AppWindow {
     this.layout.resizeAt(index, screenX - content.x, chrome, content.width, content.height);
     this.splitDragging = true;
     const bounds = this.layout.bounds(chrome, content.width, content.height);
-    for (const pane of this.layout.drawn()) {
-      const rect = bounds.get(pane.id);
-      if (rect) this.services.get(pane.serviceId)?.view.setBounds(rect);
-    }
+    this.placePanes(bounds, { reorder: false });
     this.splitters.sync(this.layout.boundaries(chrome, content.width, content.height));
     this.drawFocusRing(bounds, chrome.gutter);
     if (this.layout.focusedPaneId) this.findBar.raise(this.paneRect(this.layout.focusedPaneId));
@@ -1266,6 +1326,7 @@ export class AppWindow {
       toggleRail: () => this.toggleRail(),
       beginRename: (id) => this.beginRename(id),
       beginTileDrag: (id) => this.tileDrag.begin(id),
+      beginPaneDrag: (id) => this.tileDrag.beginPane(id),
       moveTileDrag: (from, x, y) => this.tileDrag.move(from, x, y),
       dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
       endTileDrag: () => void this.tileDrag.end('cancel'),
@@ -1314,6 +1375,16 @@ export class AppWindow {
       railContents: () => this.rail.webContents,
       openService: (id, options) => this.openService(id, options),
       flash: (id) => this.flash(id),
+      headerRect: (paneId) => {
+        const { width, height } = this.win.getContentBounds();
+        const card = this.layout.bounds(this.chrome(), width, height).get(paneId);
+        return card ? splitCard(card, this.paneHeadersOn()).header : null;
+      },
+      panesMoved: () => {
+        this.relayout();
+        this.saveLayout();
+        this.focusActivePane();
+      },
     });
   })();
 
@@ -1581,6 +1652,7 @@ export class AppWindow {
     this.overlay.destroy();
     this.dragLayer.destroy();
     this.splitters.destroy();
+    this.paneChrome.destroy();
     // The rail and the empty view too. They were thought to go with the window as attached children;
     // they don't — a view's webContents lives until it is closed — so each ⌘W and reopen left one
     // more rail renderer running, receiving every broadcast, with nothing on screen.

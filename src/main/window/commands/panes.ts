@@ -92,6 +92,9 @@ export const paneCommands: CommandTable = {
     shell.layout.close(command.paneId);
     shell.relayout();
     shell.saveLayout();
+    // Into the pane that took its place. The keyboard was left in a page no longer on the window —
+    // or in the header whose close button was clicked.
+    shell.focusActivePane();
   },
 
   'reopen-pane': (_command, shell) => {
@@ -137,8 +140,8 @@ export const paneCommands: CommandTable = {
   },
 
   navigate: (command, shell) => {
-    const pane = shell.layout.focused();
-    if (pane) shell.services.navigate(pane.serviceId, command.direction);
+    const serviceId = command.serviceId ?? shell.layout.focused()?.serviceId;
+    if (serviceId) shell.services.navigate(serviceId, command.direction);
   },
 
   zoom: (command, shell) => {
