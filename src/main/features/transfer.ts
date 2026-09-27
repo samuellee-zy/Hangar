@@ -31,12 +31,25 @@ export async function exportConfig(window: BaseWindow): Promise<void> {
   if (canceled || !filePath) return;
 
   const config = loadConfig();
+  const { notifications } = config.preferences;
   fs.writeFileSync(
     filePath,
     // Not `pushRegistrations`: each holds the private keys that decrypt this machine's pushes, and
     // is bound to this one receiver — useless on another Mac, and not something to leave in a file
-    // in Downloads.
-    JSON.stringify({ _note: NOTE, ...config, window: undefined, pushRegistrations: undefined }, null, 2)
+    // in Downloads. Not the Firebase credential either, for the second of those reasons; sync keeps
+    // it local too. Custom scripts *are* kept: this is your own backup, and they are your own code —
+    // it's the importing side that has to be careful with them.
+    JSON.stringify(
+      {
+        _note: NOTE,
+        ...config,
+        window: undefined,
+        pushRegistrations: undefined,
+        preferences: { ...config.preferences, notifications: { ...notifications, firebase: undefined } },
+      },
+      null,
+      2
+    )
   );
   console.log(`[transfer] exported to ${filePath}`);
 }
@@ -70,18 +83,29 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
     return;
   }
 
+  // Custom JavaScript runs inside a signed-in page with everything that page can do. From a file,
+  // it is someone else's code in your Gmail unless you wrote it — so it is its own decision, and
+  // the default leaves it out.
+  const scripted = parsed.services.filter((svc) => typeof svc?.customJs === 'string' && svc.customJs.trim());
+  const replaced =
+    `This replaces ${loadConfig().services.length} service(s) with ${parsed.services.length} ` +
+    'from the file. Existing sessions stay on disk but their services may no longer reference ' +
+    'them, so expect to sign in again.';
   const { response } = await dialog.showMessageBox(window as never, {
     type: 'warning',
-    buttons: ['Replace', 'Cancel'],
-    defaultId: 1,
-    cancelId: 1,
+    buttons: scripted.length
+      ? ['Replace, without its scripts', 'Replace, with its scripts', 'Cancel']
+      : ['Replace', 'Cancel'],
+    defaultId: 0,
+    cancelId: scripted.length ? 2 : 1,
     message: 'Replace your current configuration?',
-    detail:
-      `This replaces ${loadConfig().services.length} service(s) with ${parsed.services.length} ` +
-      'from the file. Existing sessions stay on disk but their services may no longer reference ' +
-      'them, so expect to sign in again.',
+    detail: scripted.length
+      ? `${replaced}\n\nIt also adds JavaScript to ${scripted.map((s) => s.name).join(', ')} — code ` +
+        'that runs inside those pages, signed in as you. Keep it only if you wrote it.'
+      : replaced,
   });
-  if (response !== 0) return;
+  const keepScripts = scripted.length > 0 && response === 1;
+  if (response === (scripted.length ? 2 : 1)) return;
 
   // Through the SAME normalisation loadConfig uses. This previously did
   // `saveConfig({ ...parsed })` with no defaults, no migration and no version handling, so
@@ -99,6 +123,13 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
       detail: String(err instanceof Error ? err.message : err),
     });
     return;
+  }
+
+  if (!keepScripts) {
+    normalised = {
+      ...normalised,
+      services: normalised.services.map(({ customJs: _script, ...svc }) => svc),
+    };
   }
 
   // Keep the current window bounds: they describe this machine's display, not the config.

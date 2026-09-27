@@ -14,6 +14,7 @@ import {
   projectShellState,
   removeServiceFromConfig,
   resolveCommand,
+  withoutServiceCode,
 } from '@core/shell-state';
 import { DEFAULT_BINDINGS, KEY_ACTIONS, primaryChord } from '@core/keyboard/keymap';
 import { DEFAULT_PREFERENCES } from '@core/config/preferences';
@@ -117,6 +118,24 @@ describe('projectShellState', () => {
     syncStatus: { state: 'off' as const },
     railExpanded: false,
   };
+
+  it('THE SCREENS THAT DON\'T EDIT SCRIPTS DON\'T GET THEM — only Settings does', () => {
+    const c = config({
+      services: [svc('a', { customJs: 'alert(1)', customCss: 'body{}' })],
+      workspaces: [ws('w', ['a'])],
+      activeWorkspaceId: 'w',
+    });
+    const full = projectShellState({ ...base, config: c });
+    expect(full.services[0]!.customJs).toBe('alert(1)');
+
+    const lean = withoutServiceCode(full);
+    for (const view of [...lean.services, ...lean.allServices]) {
+      expect(view).not.toHaveProperty('customJs');
+      expect(view).not.toHaveProperty('customCss');
+    }
+    // Everything else is the same object graph's values.
+    expect(lean.services[0]!.name).toBe(full.services[0]!.name);
+  });
 
   it('a service with no runtime is reported asleep', () => {
     const c = config({ services: [svc('a')], workspaces: [ws('w', ['a'])], activeWorkspaceId: 'w' });

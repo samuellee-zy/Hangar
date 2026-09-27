@@ -232,7 +232,7 @@ const fromRecoveryPage = (event: Electron.IpcMainEvent): boolean =>
 
 function registerIpc(): void {
   ipcMain.handle('shell:get-state', (event) =>
-    fromApp(event, 'shell:get-state') ? (shell?.state() ?? null) : null,
+    fromApp(event, 'shell:get-state') ? (shell?.stateFor(event.sender) ?? null) : null,
   );
   ipcMain.handle('overlay:get-mode', (event) =>
     fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,

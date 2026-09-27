@@ -77,6 +77,7 @@ import {
   projectShellState,
   removeServiceFromConfig,
   resolveCommand,
+  withoutServiceCode,
 } from '@core/shell-state';
 import { ConfigSync } from '@main/features/sync';
 import { readSyncBase, writeSyncBase } from '@main/platform/sync-base';
@@ -121,6 +122,9 @@ function restoreBounds(saved: WindowBounds | undefined): WindowBounds {
     screen.getPrimaryDisplay().workArea,
   );
 }
+
+/** The Settings window, the one renderer that edits a service's custom CSS and JavaScript. */
+const isSettingsView = (wc: WebContents): boolean => !wc.isDestroyed() && wc.getURL().includes('#settings');
 
 /** How often config sync asks the remote for changes made on another machine. */
 const SYNC_POLL_MS = 5 * 60_000;
@@ -442,6 +446,12 @@ export class AppWindow {
     return this.defaultMailApp;
   }
 
+  /** What `shell:get-state` answers a renderer with: the same split as `broadcast`. */
+  stateFor(wc: WebContents): ShellState {
+    const state = this.state();
+    return isSettingsView(wc) ? state : withoutServiceCode(state);
+  }
+
   state(): ShellState {
     return projectShellState({
       config: loadConfig(),
@@ -707,11 +717,18 @@ export class AppWindow {
   private broadcast(): void {
     if (this.win.isDestroyed()) return;
     const state = this.state();
-    const signature = JSON.stringify(state);
+    // Scripts and stylesheets only to Settings, which edits them — see `withoutServiceCode`.
+    const lean = withoutServiceCode(state);
+    const signatures = new Map([
+      [state, JSON.stringify(state)],
+      [lean, JSON.stringify(lean)],
+    ]);
     for (const wc of this.consumers) {
+      const payload = isSettingsView(wc) ? state : lean;
+      const signature = signatures.get(payload)!;
       if (this.lastSent.get(wc) === signature) continue;
       this.lastSent.set(wc, signature);
-      safeSend(wc, 'shell:state', state);
+      safeSend(wc, 'shell:state', payload);
     }
     refreshTray(state, (c) => this.dispatch(c));
     this.refreshMenuIfRebound(state.preferences.keyboard?.bindings);

@@ -227,3 +227,17 @@ export function removeServiceFromConfig(config: Config, serviceId: string): void
   const used = new Set(config.services.map((s) => s.accountId));
   config.accounts = config.accounts.filter((a) => used.has(a.id));
 }
+
+/**
+ * The state as the app's other screens get it: without each service's custom CSS and JavaScript.
+ *
+ * `view` spreads the whole service record, so every broadcast carried every script body to the
+ * rail, the overlay, the find bar, the drag layer and the empty view — none of which reads them.
+ * Only Settings edits them. Code that runs in signed-in pages is worth keeping in as few processes
+ * as it can be, and the bodies can run to kilobytes a service, sent on every sync.
+ */
+export function withoutServiceCode(state: ShellState): ShellState {
+  const strip = ({ customCss: _css, customJs: _js, ...svc }: ServiceView): ServiceView => svc;
+  return { ...state, services: state.services.map(strip), allServices: state.allServices.map(strip) };
+}
+
