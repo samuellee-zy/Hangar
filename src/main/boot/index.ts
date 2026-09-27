@@ -301,6 +301,9 @@ function registerIpc(): void {
     fromApp(event, 'settings:get-target') ? takeSettingsTarget() : null,
   );
   // Memory readout for Settings, so the hibernation setting has a visible consequence.
+  ipcMain.handle('drag:get-highlight', (event) =>
+    fromApp(event, 'drag:get-highlight') ? (shell?.dragHighlight() ?? null) : null,
+  );
   ipcMain.handle('app:metrics', (event) => {
     if (!fromApp(event, 'app:metrics')) return null;
     const metrics = app.getAppMetrics();

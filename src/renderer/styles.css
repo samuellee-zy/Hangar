@@ -6,7 +6,9 @@
 :root {
   --bg: #1b1b1f;
   --fg: #e8e8ea;
-  --muted: #96969e; /* 4.9:1 on a tile; #8a8a92 was 4.4:1 */
+  /* 4.5:1 on every tile, the focused one included — the lightest of them. #96969e cleared the plain
+     tile and made 4.26:1 on a hovered or focused one; #8a8a92 before it was 4.4:1 on the plain one. */
+  --muted: #9c9ca4;
   --line: #2e2e34;
   --radius: 10px;
 
@@ -1542,8 +1544,9 @@ kbd {
   :root {
     --bg: #f4f4f6;
     --fg: #1b1b1f;
-    /* 5:1 on a tile. It was #6b6b74 — 4.3:1, so every note under a Settings row failed. */
-    --muted: #5c5c65;
+    /* 4.5:1 on every tile, the focused one included — the darkest of them. #5c5c65 made 4.02:1 on a
+       hovered one; #6b6b74 before it was 4.3:1 on the plain tile, so every Settings note failed. */
+    --muted: #54545d;
     --line: #d8d8de;
     --tile: #e7e7ec;
     --tile-hover: #dedee4;

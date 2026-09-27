@@ -6,10 +6,11 @@
 // the wrong one; and it must always offer a way out, because while it is attached it is swallowing
 // every click in the window.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DragLayer } from '../../src/renderer/DragLayer';
+import type { DropHighlight } from '../../src/shared/types';
 import { sent, pushHighlight } from './setup';
 
 const RECT = { x: 10, y: 20, width: 300, height: 400 };
@@ -29,6 +30,23 @@ describe('drawing', () => {
     expect(target.style.left).toBe('10px');
     expect(target.style.width).toBe('300px');
     expect(screen.getByText('Open here')).toBeInTheDocument();
+  });
+
+  // Main sends a drag's first highlight the moment this view exists. On a slow machine that is
+  // before this is listening, and it was lost: nothing drawn until the pointer moved again.
+  it('DRAWS A HIGHLIGHT SENT BEFORE IT WAS LISTENING — it asks for the current one on mount', async () => {
+    window.hangar.getDragHighlight = vi.fn(async () => ({ rect: RECT, kind: 'replace' as const }));
+    render(<DragLayer />);
+    expect(await screen.findByText('Open here')).toBeInTheDocument();
+  });
+
+  it("an answer that arrives after a newer highlight doesn't replace it", async () => {
+    let answer: (h: DropHighlight | null) => void = () => {};
+    window.hangar.getDragHighlight = vi.fn(() => new Promise<DropHighlight | null>((resolve) => (answer = resolve)));
+    render(<DragLayer />);
+    await act(async () => pushHighlight({ rect: RECT, kind: 'new-pane' }));
+    await act(async () => answer({ rect: RECT, kind: 'replace' }));
+    expect(screen.getByText('Open alongside')).toBeInTheDocument();
   });
 
   it('says "open alongside", and looks different, when the drop would add a pane', async () => {

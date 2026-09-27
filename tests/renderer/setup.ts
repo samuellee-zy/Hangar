@@ -101,6 +101,7 @@ beforeEach(() => {
     onFindOpened: vi.fn(() => () => {}),
     onFindResult: vi.fn(() => () => {}),
     onOverlayOpen: vi.fn(() => () => {}),
+    getDragHighlight: vi.fn(async () => null),
     onDragHighlight: vi.fn((fn: (h: DropHighlight | null) => void) => {
       highlightSubscribers.add(fn);
       return () => highlightSubscribers.delete(fn);
