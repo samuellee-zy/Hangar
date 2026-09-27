@@ -394,7 +394,7 @@ export type SyncStatus =
   | { state: 'error'; detail: string };
 
 export interface Config {
-  version: 4;
+  version: 5;
   preferences: Preferences;
   accounts: Account[];
   services: ServiceInstance[];

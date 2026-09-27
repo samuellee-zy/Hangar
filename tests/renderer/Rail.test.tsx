@@ -300,7 +300,7 @@ describe('compact rail chevron', () => {
     // The whole reason to collapse rather than hide: switching service stays ONE click. Hiding the
     // tiles made it three (open, click, close), which is worse than the width it bought back.
     await renderRail(compactState());
-    expect(rail().className).toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(true);
     expect(screen.getByLabelText('gmail')).toBeInTheDocument();
     expect(screen.queryByText('gmail')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Show the rail')).toBeInTheDocument();
@@ -327,7 +327,7 @@ describe('compact rail chevron', () => {
     // The labels are the only thing opening it buys, so they are not left to `showLabels` the way
     // an ordinary rail's are. A wider strip of unlabelled icons would be a pointless state.
     await renderRail(compactState({ railExpanded: true }));
-    expect(rail().className).not.toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(false);
     expect(rail().className).toContain('is-panel');
     expect(screen.getByText('gmail')).toBeInTheDocument();
     // INSIDE the tile, not beside it: the whole row is the click target, the way a Chrome tab is
@@ -506,14 +506,29 @@ describe('compact rail chevron', () => {
     expect(sent).not.toContainEqual({ type: 'toggle-rail' });
   });
 
+  it('COMPACT DENSITY IS NOT A COMPACT RAIL — the two used to share a class', async () => {
+    // Density rendered as `is-${density}`, so density "compact" added `is-compact` and a 72px rail
+    // took on every collapsed-rail rule: 36px tiles, no divider, the focus bar adrift.
+    await renderRail(
+      state({
+        preferences: {
+          ...DEFAULT_PREFERENCES,
+          appearance: { ...DEFAULT_PREFERENCES.appearance, density: 'compact' },
+        },
+      })
+    );
+    expect(rail().classList.contains('is-compact')).toBe(false);
+    expect(rail().classList.contains('density-compact')).toBe(true);
+  });
+
   it('follows main rather than its own click: expansion arrives as state', async () => {
     await renderRail(compactState());
-    expect(rail().className).toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(true);
     await userEvent.click(chevron()!);
     // Clicking alone changes nothing on screen — main has not answered yet.
-    expect(rail().className).toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(true);
     await act(async () => pushState(compactState({ railExpanded: true })));
-    expect(rail().className).not.toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(false);
   });
 
   it('sets no width of its own — the view is the rail', async () => {

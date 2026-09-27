@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { launch, type Harness } from './harness';
+import { launch, tearDown, type Harness } from './harness';
 
 /**
  * The app's own screens hold `window.hangar`, which can send any command there is. These check the
@@ -11,8 +11,8 @@ import { launch, type Harness } from './harness';
  */
 
 let h: Harness;
-test.afterEach(async () => {
-  await h?.close();
+test.afterEach(async ({}, testInfo) => {
+  await tearDown(h, testInfo);
 });
 
 test('THE RAIL CANNOT BE NAVIGATED OFF THE APP — a dropped link would hand it the bridge', async () => {

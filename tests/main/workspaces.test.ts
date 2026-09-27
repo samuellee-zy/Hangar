@@ -20,7 +20,7 @@ import {
 const svc = (id) => ({ kind: 'service' as const, id });
 
 const config = (...workspaces) => ({
-  version: 4 as const,
+  version: 5 as const,
   services: [...new Set(workspaces.flatMap((w) => w.items.map((i) => i.id)))].map((id) => ({ id })),
   workspaces,
   activeWorkspaceId: workspaces[0]?.id ?? null,

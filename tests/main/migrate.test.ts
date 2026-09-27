@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { migrateConfig } from '@core/config/migrate';
+import { catalogById } from '@shared/catalog';
 
 /** A v1 config: no version, no accounts, partitions implied by `sessionGroup`. */
 const v1 = () => ({
@@ -112,11 +113,37 @@ describe('idempotence and shape', () => {
     expect(twice).toEqual(once);
   });
 
-  it('catalog-backed services drop a stored url so they follow catalog fixes', () => {
+  it('a config from before v5 drops catalog-copied urls so they follow catalog fixes', () => {
     const c = migrateConfig({
       version: 2,
       accounts: [{ id: 'a1', label: 'G', provider: 'google', partition: 'persist:g' }],
       services: [{ id: 's1', catalogId: 'gmail', name: 'Gmail', accountId: 'a1', url: 'https://stale.example', notifications: true, hibernate: true, zoom: 1 }],
+      workspaces: [],
+    });
+    expect(c.services[0]!.url).toBeUndefined();
+  });
+
+  it('A START PAGE SURVIVES A RELAUNCH — a v5 url on a catalog service is the user\'s choice', () => {
+    // Settings → Connections sets it for a self-hosted GitLab or Jira. Until v5 every load dropped
+    // it, so the service reverted to the catalog address the next time the app started.
+    const stored = {
+      version: 5,
+      accounts: [{ id: 'a1', label: 'G', provider: 'custom', partition: 'persist:g' }],
+      services: [{ id: 's1', catalogId: 'gitlab', name: 'GitLab', accountId: 'a1', url: 'https://git.example.com/', notifications: true, hibernate: true, zoom: 1 }],
+      workspaces: [],
+    };
+    const once = migrateConfig(stored);
+    expect(once.services[0]!.url).toBe('https://git.example.com/');
+    // And again, which is what a relaunch is.
+    expect(migrateConfig(once).services[0]!.url).toBe('https://git.example.com/');
+  });
+
+  it('a v5 url identical to the catalog is still a copy, and goes', () => {
+    const gitlab = catalogById('gitlab')!;
+    const c = migrateConfig({
+      version: 5,
+      accounts: [{ id: 'a1', label: 'G', provider: 'custom', partition: 'persist:g' }],
+      services: [{ id: 's1', catalogId: 'gitlab', name: 'GitLab', accountId: 'a1', url: gitlab.url, notifications: true, hibernate: true, zoom: 1 }],
       workspaces: [],
     });
     expect(c.services[0]!.url).toBeUndefined();

@@ -4,7 +4,7 @@ import { isWebUrl } from '@core/runtime/urls';
 import { catalog, catalogById } from '@shared/catalog';
 import { createAccount, resolveAccount } from '@core/services/accounts';
 import { findQuarantined, pathsFor, quarantine, readWithRecovery, writeAtomic } from '@core/config/store';
-import { migrateConfig } from '@core/config/migrate';
+import { CONFIG_VERSION, migrateConfig } from '@core/config/migrate';
 import { withDefaults } from '@core/config/preferences';
 import type { Config, ServiceInstance } from '@shared/types';
 
@@ -92,7 +92,7 @@ export function addService(config: Config, svc: ServiceInstance): ServiceInstanc
 
 function defaultConfig(): Config {
   const config: Config = {
-    version: 4,
+    version: CONFIG_VERSION,
     preferences: withDefaults(undefined),
     accounts: [],
     services: [],
@@ -155,7 +155,7 @@ export function loadConfig(): Config {
 
   try {
     cached = migrateConfig(raw);
-    if ((raw as { version?: number }).version !== 4) saveConfig(cached, { sync: false });
+    if ((raw as { version?: number }).version !== CONFIG_VERSION) saveConfig(cached, { sync: false });
   } catch (err) {
     // Migration failed on structurally-valid JSON — parseable, but self-inconsistent in a way that
     // would break the app later rather than here (a service naming an account that doesn't exist

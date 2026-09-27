@@ -1158,11 +1158,9 @@ kbd {
   height: 19px;
 }
 
-.rail.is-comfortable .rail-items {
-  gap: 6px;
-}
-
-.rail.is-compact-density .rail-items,
+/* Compact density is spacing only, on a rail of any size. Shrinking the tiles is what a compact
+   rail does, and until the classes were told apart density-compact did that too. */
+.rail.density-compact .rail-items,
 .rail.is-compact .rail-items {
   gap: 3px;
 }

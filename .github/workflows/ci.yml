@@ -67,14 +67,19 @@ jobs:
       # the bundle doesn't depend on one.
       - name: Package, and check the bundle has what the app loads at runtime
         run: |
+          # The app icon is generated, not committed (build/ is gitignored), and electron-builder
+          # swaps in Electron's own icon without failing when it's missing.
+          npm run icon
           npx electron-builder --mac dir --arm64 -c.mac.identity=null
           resources=dist/mac-arm64/Hangar.app/Contents/Resources
+          test -f "$resources/icon.icns"
           # Upstream icon licence, and a brand icon, outside the asar where icons.ts looks.
           test -f "$resources/assets/icons/NOTICE"
           test -f "$resources/assets/icons/gmail.svg"
           # The ad blocker loads its preload from inside the archive; missing, it fails at runtime.
-          npx asar list "$resources/app.asar" | grep -q '@ghostery/adblocker-electron-preload'
-          npx asar list "$resources/app.asar" | grep -q '^/out/main/index.js$'
+          # `--no-install`: our own devDependency, never whatever npx would fetch under that name.
+          npx --no-install asar list "$resources/app.asar" | grep -q '@ghostery/adblocker-electron-preload'
+          npx --no-install asar list "$resources/app.asar" | grep -q '^/out/main/index.js$'
 
       # trace: 'retain-on-failure' means this only has content when something broke, which is the
       # only time anyone wants to download it.

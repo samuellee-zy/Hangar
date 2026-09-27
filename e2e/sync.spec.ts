@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { launch, seedConfig, type Harness } from './harness';
+import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
  * Config sync, driven through the real app against a real git repo.
@@ -39,9 +39,11 @@ const services = (dir: string, file: string) =>
     (s) => s.name
   );
 
-test.afterEach(async () => {
-  await h?.close();
-  if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+test.afterEach(async ({}, testInfo) => {
+  await tearDown(h, testInfo);
+  // Retried: a `git` the app started can still be writing into the clone for a moment after the app
+  // itself has gone — a child process isn't ended with its parent — and the delete races it.
+  if (scratch) fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 test('seeds an empty repo, and never commits the Firebase credential', async () => {

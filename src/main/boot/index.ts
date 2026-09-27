@@ -362,7 +362,14 @@ function quitGracefully({ confirm }: { confirm: boolean }): void {
   void Promise.race([persistAll(), timeout])
     .catch((err) => console.error('[quit] cookie promotion failed:', err))
     .finally(() => {
-      flushConfig();
+      // Guarded, because a throw here skips the line after it: a failed write (a full disk, a
+      // profile deleted underneath us) left `app.quit()` uncalled and the app half-quit for good —
+      // the Force Quit this function exists to prevent. `process.on('exit')` flushes once more.
+      try {
+        flushConfig();
+      } catch (err) {
+        console.error('[quit] could not write pending config changes:', err);
+      }
       app.quit();
     });
 }

@@ -32,7 +32,7 @@ const svc = (id: string, over: Record<string, unknown> = {}) => ({
 
 function config(over: Partial<Config> = {}): Config {
   return {
-    version: 4 as const,
+    version: 5 as const,
     preferences: DEFAULT_PREFERENCES,
     accounts: [],
     services: [],

@@ -25,6 +25,9 @@ export interface DragHost {
   flash(serviceId: string): void;
 }
 
+/** Why a drag stopped. Only a drop is the user finishing it; the rest are reported in the log. */
+export type DragEndReason = 'drop' | 'cancel' | 'relayout' | 'teardown';
+
 export class TileDrag {
   /**
    * The geometry a drag is judged against, frozen at the lift.
@@ -102,11 +105,16 @@ export class TileDrag {
    * the pointer ended up over the layer's renderer, the rail is left holding a lifted tile with no
    * way to put it down.
    */
-  end(): string | null {
+  end(reason: DragEndReason): string | null {
     const serviceId = this.host.dragLayer.draggingServiceId;
     this.host.dragLayer.end();
     this.context = null;
-    if (serviceId) safeSend(this.host.railContents(), 'drag:ended', null);
+    if (serviceId) {
+      // Logged, because an end nobody asked for is otherwise indistinguishable from a mis-aimed
+      // drop: the tile just lands back where it was.
+      if (reason !== 'drop') console.log(`[drag] ended by ${reason}`);
+      safeSend(this.host.railContents(), 'drag:ended', null);
+    }
     return serviceId;
   }
 
@@ -119,7 +127,7 @@ export class TileDrag {
     const point = this.point(from, x, y);
     // A null service means this is the second message for one drag — typically the rail's own
     // drag-end arriving after the layer already handled the release.
-    const serviceId = this.end();
+    const serviceId = this.end('drop');
     if (!serviceId || !context || !point) return;
 
     const target = dropAt(context, point.x, point.y);

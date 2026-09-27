@@ -29,7 +29,7 @@ describe("adding a catalog service", () => {
     assert.ok(config.services.length > 0);
     assert.ok(config.accounts.length > 0);
     assert.ok(config.preferences?.appearance, 'preferences are part of a fresh config');
-    assert.equal(config.version, 4);
+    assert.equal(config.version, 5);
   });
 
   it('adding Drive reuses the existing Google account — no second sign-in', () => {

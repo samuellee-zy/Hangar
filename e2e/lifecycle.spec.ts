@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { launch, seedConfig, type Harness } from './harness';
+import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
  * The application lifecycle: cookie promotion on quit, and hibernation.
@@ -17,8 +17,8 @@ import { launch, seedConfig, type Harness } from './harness';
  */
 
 let h: Harness;
-test.afterEach(async () => {
-  await h?.close().catch(() => {});
+test.afterEach(async ({}, testInfo) => {
+  await tearDown(h, testInfo);
 });
 
 test('QUITTING PROMOTES SESSION COOKIES, so a relaunch is still signed in', async () => {

@@ -253,7 +253,10 @@ export function Rail() {
         'rail',
         `is-${railPosition}`,
         horizontal ? 'is-horizontal' : 'is-vertical',
-        `is-${density}`,
+        // `density-`, not `is-`: density's values are 'comfortable' and 'compact', and `is-compact`
+        // is the collapsed compact rail. Sharing the prefix gave a 72px rail on compact density
+        // every compact-rail rule — 36px tiles, no divider, a focus bar adrift in the margin.
+        `density-${density}`,
         compact ? 'is-compact' : '',
         panel ? 'is-panel' : '',
         state.railExpanded ? 'is-expanded' : '',

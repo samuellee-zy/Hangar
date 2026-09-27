@@ -1,4 +1,4 @@
-import { dialog } from 'electron';
+import { app, dialog } from 'electron';
 
 /**
  * Keeping a missing terminal from killing the app.
@@ -91,6 +91,14 @@ export const outputMuted = (): boolean => guard?.muted() ?? false;
 function reportFatal(error: unknown): void {
   const err = error instanceof Error ? error : new Error(String(error));
   const stack = err.stack ? err.stack : `${err.name}: ${err.message}`;
+  // Under the E2E harness nobody is there to click OK, and this dialog is modal and synchronous:
+  // the main process stopped dead, the test's quit never finished, and CI reported only a hook
+  // timeout. Logged and exited instead, so the test fails where it happened and says why.
+  if (process.env['HANGAR_E2E']) {
+    console.error(`[fatal] ${stack}`);
+    app.exit(70);
+    return;
+  }
   dialog.showErrorBox(
     'A JavaScript error occurred in the main process',
     `Uncaught Exception:\n${stack}`

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { launch, seedConfig, type Harness } from './harness';
+import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
  * Sixteen tests covering what unit tests structurally cannot: real windows, real `WebContentsView`
@@ -13,8 +13,8 @@ import { launch, seedConfig, type Harness } from './harness';
  */
 
 let h: Harness;
-test.afterEach(async () => {
-  await h?.close();
+test.afterEach(async ({}, testInfo) => {
+  await tearDown(h, testInfo);
 });
 
 test('boots, renders the rail, and loads a service into the first pane', async () => {
@@ -323,10 +323,31 @@ test('DRAGGING A TILE ONTO A FOLDER FILES IT THERE, AND DRAGGING IT OUT TAKES IT
       return g.__hangarShell?.state().railItems;
     });
 
+  /**
+   * Where an element is once it has stopped moving. Main's state changes before the rail has
+   * re-rendered and dnd-kit has finished animating the drop, so a box measured the moment the
+   * state poll passes can belong to the layout before — and the next drag then starts on the
+   * wrong tile.
+   */
+  const settledBox = async (selector: string) => {
+    const locator = rail.locator(selector).first();
+    await expect(locator).toBeVisible();
+    let last = JSON.stringify(await locator.boundingBox());
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify(await locator.boundingBox());
+        const still = now === last;
+        last = now;
+        return still;
+      }, { intervals: [100] })
+      .toBe(true);
+    return (await locator.boundingBox())!;
+  };
+
   /** A real pointer drag, in steps — dnd-kit ignores anything under its 5px activation distance. */
   const drag = async (from: string, to: string) => {
-    const start = await rail.locator(from).first().boundingBox();
-    const end = await rail.locator(to).first().boundingBox();
+    const start = await settledBox(from);
+    const end = await settledBox(to);
     if (!start || !end) throw new Error(`no box for ${from} → ${to}`);
     await rail.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
     await rail.mouse.down();

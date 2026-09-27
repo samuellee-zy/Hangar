@@ -80,6 +80,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
 
   return {
     origin: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    // Connections first: `close()` waits for every open one, and a page that is still loading — or
+    // a keep-alive socket from a renderer that has not exited yet — would hold teardown open.
+    close: () =>
+      new Promise((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
   };
 }

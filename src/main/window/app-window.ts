@@ -924,7 +924,7 @@ export class AppWindow {
     // them. Ending it is the honest answer: the alternative is a highlight over a pane that has
     // moved, and a drop that lands somewhere the user didn't aim. The layer is also attached above
     // the panes, and the `addChildView` calls below would bury it.
-    this.endTileDrag();
+    this.tileDrag.end('relayout');
     // Turning compact off while the rail is open would otherwise leave the flag set, and switching
     // it back on later would give a rail that was already expanded before it was ever collapsed.
     // Moving an open rail to the top or bottom is the same: the flag would outlive the only shape
@@ -1110,7 +1110,7 @@ export class AppWindow {
       beginTileDrag: (id) => this.tileDrag.begin(id),
       moveTileDrag: (from, x, y) => this.tileDrag.move(from, x, y),
       dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
-      endTileDrag: () => void this.tileDrag.end(),
+      endTileDrag: () => void this.tileDrag.end('cancel'),
     };
   })();
 
@@ -1156,10 +1156,6 @@ export class AppWindow {
       flash: (id) => this.flash(id),
     });
   })();
-
-  private endTileDrag(): string | null {
-    return this.tileDrag.end();
-  }
 
   /** Removes the service everywhere it's referenced, then tears down its view. */
   private removeService(serviceId: string): void {

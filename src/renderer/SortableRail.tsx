@@ -150,6 +150,17 @@ export function SortableRailList({
   const pointer = useRef<{ x: number; y: number } | null>(null);
   /** Non-null only while a pointer drag that main knows about is in flight. */
   const flight = useRef<string | null>(null);
+  /**
+   * A tile lifted by the pointer that main hasn't been told about, because the pointer is still
+   * inside the rail. Handed over only once it leaves.
+   *
+   * A reorder or a drop onto a folder never leaves the rail, and telling main at the lift made
+   * every one of them depend on main: the drag layer attached and took the keyboard focus, and
+   * anything that relaid the window out mid-gesture — a resize, the hibernation sweep, a late
+   * `activate` — ended the drag from outside. On CI that was an intermittent "the tile never went
+   * into the folder". Now the only drags main can end are the ones that are actually its business.
+   */
+  const lifted = useRef<string | null>(null);
 
   // The release may be one this renderer never sees: whether the pointer events keep coming here
   // after the press or start going to the drag layer is a mouse-capture detail that differs by
@@ -173,9 +184,15 @@ export function SortableRailList({
   // is what keeps it quiet: no lift, no messages.
   useEffect(() => {
     const onMove = (event: PointerEvent) => {
-      if (!flight.current) return;
-      pointer.current = { x: event.clientX, y: event.clientY };
-      window.hangar.send({ type: 'drag-tile-to', from: 'rail', ...pointer.current });
+      const point = { x: event.clientX, y: event.clientY };
+      if (!flight.current) {
+        if (!lifted.current || insideRail(point)) return;
+        flight.current = lifted.current;
+        lifted.current = null;
+        window.hangar.send({ type: 'begin-tile-drag', serviceId: flight.current });
+      }
+      pointer.current = point;
+      window.hangar.send({ type: 'drag-tile-to', from: 'rail', ...point });
     };
     window.addEventListener('pointermove', onMove);
     return () => window.removeEventListener('pointermove', onMove);
@@ -189,11 +206,11 @@ export function SortableRailList({
     if (canDropOnPane && !canDropOnPane(id)) return;
     const event = activatorEvent as PointerEvent;
     pointer.current = { x: event.clientX, y: event.clientY };
-    flight.current = id;
-    window.hangar.send({ type: 'begin-tile-drag', serviceId: id });
+    lifted.current = id;
   };
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
+    lifted.current = null;
     const point = flight.current ? pointer.current : null;
     if (point) {
       flight.current = null;
@@ -208,6 +225,7 @@ export function SortableRailList({
   };
 
   const onDragCancel = () => {
+    lifted.current = null;
     if (!flight.current) return;
     flight.current = null;
     window.hangar.send({ type: 'cancel-tile-drag' });

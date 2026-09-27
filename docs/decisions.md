@@ -2230,3 +2230,31 @@ badge test failed one run in five.
 an endpoint), and passive acknowledgement — relayout, show, restore — leaves those alone. Marking a
 service read by hand, muting it or changing its rules still clears everything, and forgets where the
 count came from so the next report starts afresh.
+
+## 104. Keeping PR #3 honest: a Start page that stays, a quit that can't hang, a drag main can't end
+
+Four things the Phase 8 review found, fixed before the branch merges.
+
+- **Start pages were erased on every launch.** `migrateConfig` dropped `url` from every catalog
+  service — correct when only older builds wrote it, as copies of the catalog's URL that went stale
+  with the next catalog fix (#48's Notion). Settings → Connections now sets it on purpose, and the
+  next launch put a self-hosted GitLab back on gitlab.com. Config v5 makes the strip a migration:
+  a pre-v5 file loses the field, since no earlier build could have written a choice that survived a
+  relaunch, and from v5 only a value identical to the catalog's goes.
+- **A quit could stop halfway.** `quitGracefully` flushes the config and then calls `app.quit()`,
+  both inside a `.finally`; a throw from the flush skipped the quit and left the app half-quit —
+  the Force Quit #96 exists to prevent. The flush is guarded now.
+- **The E2E suite couldn't say why the app wouldn't quit.** CI reported a sync test as a 60-second
+  hook timeout and nothing else. The harness now keeps the app's own output, bounds a quit at 15
+  seconds and kills it, and prints that output when a test fails. Under the harness a fatal error
+  logs and exits rather than raising a modal nobody will click. Scratch directories are deleted with
+  retries, because a `git` the app started can outlive the app for a moment.
+- **A rail drag no longer involves main until it leaves the rail.** Telling main at the lift
+  attached the drag layer for every reorder and every drop onto a folder, and anything that relaid
+  the window out mid-gesture ended the drag from outside: the folder test's intermittent CI failure.
+  Now the rail hands a drag over only when the pointer crosses its edge, and main logs why any drag
+  it ended stopped.
+
+Also: density renders as `density-*`, not `is-*`. Its value `compact` produced `is-compact`, which is
+the collapsed compact rail's class, so a 72px rail on compact density took on every compact-rail
+rule.
