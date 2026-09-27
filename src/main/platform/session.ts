@@ -1,4 +1,5 @@
 import {
+  app,
   desktopCapturer,
   dialog,
   session,
@@ -9,6 +10,7 @@ import {
 } from 'electron';
 import { catalogById } from '@shared/catalog';
 import { accountById } from '@core/services/accounts';
+import { userAgentFor } from '@core/services/user-agent';
 import { decidePermission } from '@core/runtime/permissions';
 import { blockedPageHtml, shouldShowBlockedPage } from '@core/runtime/recovery';
 import { isWebUrl, redactUrl } from '@core/runtime/urls';
@@ -324,7 +326,8 @@ export function attachNavigationGuards(
     // The service's own user agent, which is set per page now rather than on the session: a sign-in
     // popup is often exactly what the user agent was set to get through. From its next request on —
     // the first has already been sent by the time the window exists.
-    const userAgent = current().userAgent;
+    const svcNow = current();
+    const userAgent = userAgentFor(svcNow, catalogById(svcNow.catalogId), app.userAgentFallback, app.getName());
     if (userAgent) child.webContents.setUserAgent(userAgent);
   });
 

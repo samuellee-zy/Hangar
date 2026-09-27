@@ -132,6 +132,11 @@ export interface CatalogEntry {
    */
   caveat?: string;
   /**
+   * Give its page exactly the user agent Chrome sends, without the app's own `Hangar/…` token.
+   * For services that refuse any product token beside `Chrome/…` — see core/services/user-agent.ts.
+   */
+  plainUserAgent?: boolean;
+  /**
    * How to read this service's unread count from its own UI. Opt-in per entry, and deliberately
    * absent for custom connections: a universal title parser produces phantom counts from any page
    * whose title happens to contain a number in brackets. See core/notify/unread.ts.

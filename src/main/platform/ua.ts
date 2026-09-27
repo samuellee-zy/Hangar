@@ -19,6 +19,10 @@ import { app, session } from 'electron';
  * Electron token at the entry point at all. Ferdium's chronic failures are almost certainly its
  * much older Electron rather than anything we need to defend against.
  *
+ * One service disagrees: WhatsApp refuses any product token beside `Chrome/…`, the app name
+ * included, so its page is given the plain Chrome string instead (core/services/user-agent.ts).
+ * Per page, and only for entries that ask — the default stays what Google is known to accept.
+ *
  * Call this first thing inside `app.whenReady()`. It cannot run any earlier — reading
  * `session.defaultSession` before the app is ready throws — but it must run before any session or
  * view is created, or those get the unscrubbed UA.
