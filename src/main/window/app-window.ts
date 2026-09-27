@@ -779,11 +779,17 @@ export class AppWindow {
   }
 
   showWindow(): void {
-    if (this.win.isMinimized()) this.win.restore();
     // Checked again here, not only at construction. A window closed to the tray on an external
     // monitor that is then unplugged comes back from `show()` exactly where it was — macOS only
     // rescues windows that are visible when the display goes — so "show" put it nowhere.
-    if (!this.win.isFullScreen()) {
+    //
+    // Only for a window that *isn't* on screen, which is the case above and the only one. `activate`
+    // lands here on every Dock click and at launch, and correcting a visible window's bounds is a
+    // resize, and a resize is a relayout — which ends any tile drag in progress. On a CI runner whose
+    // display is smaller than the window, a late `activate` did exactly that, mid-drag.
+    const offScreen = !this.win.isVisible() || this.win.isMinimized();
+    if (this.win.isMinimized()) this.win.restore();
+    if (offScreen && !this.win.isFullScreen()) {
       const current = this.win.getBounds();
       const reachable = restoreBounds(current);
       if (!sameBounds(current, reachable)) this.win.setBounds(reachable);
