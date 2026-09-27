@@ -1452,11 +1452,17 @@ export class AppWindow {
     }
 
     // `destroy`, not `close`: both surfaces cache their view for reuse and only detach on close, so
-    // one that the user has opened and closed is a detached renderer the window won't collect. The
-    // rail and the empty state are attached children and go with the window, so they need nothing.
+    // one that the user has opened and closed is a detached renderer the window won't collect.
     this.findBar.destroy();
     this.overlay.destroy();
     this.dragLayer.destroy();
+    // The rail and the empty view too. They were thought to go with the window as attached children;
+    // they don't — a view's webContents lives until it is closed — so each ⌘W and reopen left one
+    // more rail renderer running, receiving every broadcast, with nothing on screen.
+    for (const view of [this.rail, this.emptyView]) {
+      if (view && !view.webContents.isDestroyed()) view.webContents.close();
+    }
+    this.emptyView = null;
     this.consumers.clear();
   }
 
