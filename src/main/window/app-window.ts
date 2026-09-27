@@ -21,6 +21,7 @@ import {
   configFilePath,
   onConfigSaved,
   saveConfig,
+  flushConfig,
 } from '@main/platform/config';
 import {
   Layout,
@@ -311,8 +312,13 @@ export class AppWindow {
       // Defaulting to false is the safe direction — the guard stays on.
       allowPublicRepo: () => loadConfig().preferences.sync?.allowPublicRepo ?? false,
       read: () => loadConfig(),
-      // `sync: false` — this write comes *from* sync, and the default hook would feed it back.
-      write: (next) => saveConfig(next, { sync: false }),
+      // `sync: false` — this write comes *from* sync, and the default hook would feed it back. Flushed
+      // at once, because the base is written straight after: a crash between the two left the old
+      // config on disk beside the new base, and the next launch pushed it back over the other Mac's.
+      write: (next) => {
+        saveConfig(next, { sync: false });
+        flushConfig();
+      },
       readBase: () => readSyncBase(),
       writeBase: (text) => writeSyncBase(text),
       onApplied: (previous) => {

@@ -154,6 +154,37 @@ describe('a connect that is overtaken', () => {
     }
   });
 
+  it('A RETRY STOPPED MID-REGISTRATION DOESN\'T ARM ANOTHER — push off means no socket at all', async () => {
+    // The retry timer's own connect was in `registerIfNeeded` when push was switched off (or the
+    // window closed, which stops it too). It gave up — and its failure scheduled a new retry, which
+    // later opened a socket nothing tracked: notifications with push off, or each one twice.
+    vi.useFakeTimers();
+    const push = manager(['a']);
+    push.start(['a']);
+    await vi.advanceTimersByTimeAsync(0);
+    FakeReceiver.instances[0]!.emit('ON_DISCONNECT'); // a retry is now on its timer
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const original = FakeReceiver.prototype.registerIfNeeded;
+    FakeReceiver.prototype.registerIfNeeded = async function () {
+      await gate;
+      return { token: 't' };
+    };
+    try {
+      await vi.advanceTimersByTimeAsync(10_000); // the retry fires and waits on registration
+      expect(FakeReceiver.instances).toHaveLength(2);
+      push.stopAll();
+      release();
+      await vi.advanceTimersByTimeAsync(10 * 60_000); // every backoff there is
+      expect(FakeReceiver.instances, 'nothing dials after stopAll').toHaveLength(2);
+      expect(FakeReceiver.instances[1]!.destroyed, 'and the one that was registering is closed').toBe(true);
+      expect(push.activeCount).toBe(0);
+    } finally {
+      FakeReceiver.prototype.registerIfNeeded = original;
+    }
+  });
+
   it('A DROP IS ONE RECONNECT — the receiver\'s own retry cancels ours when it lands first', async () => {
     vi.useFakeTimers();
     const push = manager(['a']);

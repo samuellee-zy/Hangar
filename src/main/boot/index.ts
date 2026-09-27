@@ -239,10 +239,10 @@ function registerIpc(): void {
   ipcMain.handle('overlay:get-mode', (event) =>
     fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
   );
-  // Memory readout for Settings, so the hibernation setting has a visible consequence.
   ipcMain.handle('drag:get-highlight', (event) =>
     fromApp(event, 'drag:get-highlight') ? (shell?.dragHighlight() ?? null) : null,
   );
+  // Memory and process counts, for a readout nothing draws yet (backlog §14.2, task manager).
   ipcMain.handle('app:metrics', (event) => {
     if (!fromApp(event, 'app:metrics')) return null;
     const metrics = app.getAppMetrics();

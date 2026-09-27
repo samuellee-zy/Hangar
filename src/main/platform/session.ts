@@ -309,6 +309,11 @@ export function attachNavigationGuards(
   // redirects and any of them can spawn another popup.
   wc.on('did-create-window', (child) => {
     attachNavigationGuards(child.webContents, svc, partition);
+    // The service's own user agent, which is set per page now rather than on the session: a sign-in
+    // popup is often exactly what the user agent was set to get through. From its next request on —
+    // the first has already been sent by the time the window exists.
+    const userAgent = current().userAgent;
+    if (userAgent) child.webContents.setUserAgent(userAgent);
   });
 
   /**

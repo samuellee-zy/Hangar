@@ -96,7 +96,8 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
     buttons: scripted.length
       ? ['Replace, without its scripts', 'Replace, with its scripts', 'Cancel']
       : ['Replace', 'Cancel'],
-    defaultId: 0,
+    // Cancel by default: Return on a dialog that replaces everything should not replace everything.
+    defaultId: scripted.length ? 2 : 1,
     cancelId: scripted.length ? 2 : 1,
     message: 'Replace your current configuration?',
     detail: scripted.length
@@ -132,8 +133,25 @@ export async function importConfig(window: BaseWindow, onLoaded: () => void): Pr
     };
   }
 
-  // Keep the current window bounds: they describe this machine's display, not the config.
-  saveConfig({ ...normalised, window: loadConfig().window });
+  // Keep what describes this machine rather than the setup: the window bounds are this display's,
+  // and the push registrations are this receiver's keys — an export leaves both out, as it leaves
+  // out the Firebase credential, so importing one used to wipe them and push stopped until the
+  // credential was typed in again. The file's own credential still wins, from an older export.
+  const current = loadConfig();
+  const importedFirebase = normalised.preferences.notifications.firebase;
+  const hasCredential = Object.values(importedFirebase ?? {}).some((v) => typeof v === 'string' && v.trim());
+  saveConfig({
+    ...normalised,
+    window: current.window,
+    pushRegistrations: current.pushRegistrations,
+    preferences: {
+      ...normalised.preferences,
+      notifications: {
+        ...normalised.preferences.notifications,
+        firebase: hasCredential ? importedFirebase : current.preferences.notifications.firebase,
+      },
+    },
+  });
   onLoaded();
   console.log(`[transfer] imported from ${file}`);
 }
