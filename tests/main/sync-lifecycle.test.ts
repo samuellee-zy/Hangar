@@ -256,8 +256,10 @@ describe('what schedules a pass', () => {
         reconcile();
         return sync.current();
       };
-      // What the last pass saw.
-      (sync as unknown as { lastLocal: string }).lastLocal = serialise(current);
+      // What the last pass saw: this config, against this repo.
+      const seen = sync as unknown as { lastLocal: string; lastTarget: string; target: () => string };
+      seen.lastLocal = serialise(current);
+      seen.lastTarget = seen.target();
 
       // Machine-local: the window bounds don't travel.
       current = { ...current, window: { x: 10, y: 10, width: 1200, height: 800 } };
@@ -270,6 +272,31 @@ describe('what schedules a pass', () => {
       sync.schedule();
       await vi.advanceTimersByTimeAsync(6_000);
       expect(reconcile).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('A NEW REPO IS A CHANGE — though the repo path is machine-local and never travels', async () => {
+    vi.useFakeTimers();
+    try {
+      const current = config();
+      let target = repo;
+      const reconcile = vi.fn();
+      const sync = makeSync({ read: () => current, repoPath: () => target });
+      (sync as unknown as { reconcile: () => Promise<unknown> }).reconcile = async () => {
+        reconcile();
+        return sync.current();
+      };
+      // The last pass: this config, against this repo.
+      const seen = sync as unknown as { lastLocal: string; lastTarget: string; target: () => string };
+      seen.lastLocal = serialise(current);
+      seen.lastTarget = seen.target();
+
+      target = path.join(scratch, 'another');
+      sync.schedule();
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(reconcile, 'it waited for the five-minute poll').toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
