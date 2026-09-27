@@ -117,6 +117,16 @@ export function normaliseNotification(payload: unknown): NotificationContent {
 
 export { HOUR_MS, tomorrowMorning } from '@shared/time';
 
+/** Do Not Disturb on — until `until`, or until turned off — or off. */
+export function setDnd(
+  notifications: { dnd: boolean; dndUntil: number | null },
+  on: boolean,
+  until: number | null,
+): void {
+  notifications.dnd = on;
+  notifications.dndUntil = on ? until : null;
+}
+
 /** The fields a mute touches. Mutated in place, like the `updateConfig` callbacks they serve. */
 export interface MuteFields {
   notificationLevel?: NotificationLevel;
