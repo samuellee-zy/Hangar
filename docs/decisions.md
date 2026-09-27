@@ -2414,3 +2414,35 @@ pointer happened to be over the window.
 The same run's drag failures were a race of their own. Main sends a drag's first highlight as
 soon as the layer's view exists, which on a slow machine is before its page is listening. Now the
 layer asks for the current highlight once it is listening.
+
+## 113. The review before merging: what five readers of the stack found
+
+Each PR from #5 to #9 was read on its own diff before merging. Every finding was checked
+against the code, and the ones that held were fixed on that PR's branch and merged forward.
+
+The findings worth remembering, because the pattern will come back:
+
+- **Teardown runs on a window that is already destroyed.** `closed` fires after the window has
+  let go of its children, and asking it to detach one throws. The splitters and the pane bars both
+  did, and with two panes open, closing the window left the app unable to show one again. Every
+  teardown now checks `isDestroyed()`, as the find bar and the overlay already did.
+- **A click on one of our views focuses that view.** Splitters, headers, the drag layer: each
+  press moved the keyboard out of the page. Every way out of them has to hand it back, including
+  a drag that moved nothing and a click on a disabled button, which swallows the click.
+- **A service has one view, so it can be in one pane.** Nothing enforced that. Clicking the tile
+  of a service in another pane, dropping it by an edge, or a folder's Open all each drew it twice,
+  with one pane blank. `Layout` refuses now.
+- **"Unmute" and "the mute ran out" meant `all`, whatever was muted.** A badge-only service came
+  back with banners. A mute now remembers what it muted (`mutedFrom`).
+- **A retry scheduled from inside a failure must check whether anyone still wants it.** Stopping
+  push while a retry was registering left a new retry armed, and that one opened a socket nothing
+  tracked.
+- **A background link with no window must not build one.** Doing Do Not Disturb from a Focus
+  automation after ⌘W built a whole window to change one setting.
+- **Machine-local fields are invisible to a "nothing changed" check.** A new sync repo path
+  wasn't in the serialised config, so a repo change waited for the five-minute poll.
+- **An export that leaves something out makes its import wipe it.** Push registrations and the
+  Firebase credential are kept from this machine now.
+- **New default chords can take ones you bound yourself,** because the first action in the table
+  wins a shared chord. A new action starts unbound when its default is already in use.
+

@@ -559,8 +559,8 @@ findings are [decisions #104–111](decisions.md).
 
 **Chosen not to build this round** (8.3). Each is unblocked and roughly sized:
 - **App lock** (M): Touch ID or a password, on screen lock or idle.
-- **Task manager** (S–M): per-service memory and CPU. `app:metrics` exists and only Settings
-  reads it.
+- **Task manager** (S–M): per-service memory and CPU. The `app:metrics` IPC exists, and nothing
+  reads it yet.
 - **Schedules** (M): quiet hours per service and globally, and workspaces on a timetable. They
   would run on the 30-second sweep.
 - **Per-service extras** (S each):
