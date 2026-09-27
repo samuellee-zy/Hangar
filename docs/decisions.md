@@ -2258,3 +2258,30 @@ Four things the Phase 8 review found, fixed before the branch merges.
 Also: density renders as `density-*`, not `is-*`. Its value `compact` produced `is-compact`, which is
 the collapsed compact rail's class, so a 72px rail on compact density took on every compact-rail
 rule.
+
+## 105. Phase 8 polish: one set of colours, and the keyboard goes where you went
+
+The review's small findings, fixed together because most were one cause showing up in several places.
+
+- **Colours are tokens, each with a light value.** The palette's highlight, `kbd`, chord buttons,
+  danger and focus colours were hex literals written for the dark theme; in light they read at
+  1.2–1.4:1. Three variables used throughout (`--text`, `--surface-hover`, `--accent-strong`) had
+  never been defined, which is why the opened panel's names were in brand colours. Native controls
+  now draw in the theme too, via `color-scheme` on the controls and scrollers — not the root, which
+  would paint the canvas of the transparent overlay and find-bar views.
+- **Service colours are adjusted for the tile they're on.** `brightenForDark` only lifted, and
+  every surface used it in both themes, so a colour made for white was washed out on a light tile.
+  `accentFor(colour, scheme)` darkens on light, reads the `hsl()` every custom connection has, and
+  lives in `shared/` so the pane's focus ring — the raw brand hex until now, invisible for GitHub,
+  X, Threads and Slack — uses it as well.
+- **Switching moves the keyboard.** Every route to a service now ends by focusing its pane, except
+  a tile activated from the keyboard, which keeps focus in the rail (`keepFocus`, from a click with
+  `detail` 0). Before, typing after ⌘K↵ or ⌘3 went to whatever had focus last.
+- **⌘R and ⇧⌘R** reload the focused service. A pane isn't a browser tab and nothing had given it
+  the chord.
+- **A wholesale change runs its effects.** Sync and import replace preferences without
+  `set-preference`, so theme, tray, shortcut, ad blocking, push and spellcheck used to wait for a
+  restart. `effectsForChange` diffs the two and returns what to run.
+- **A banner's click is routed by boot**, which can build a window, instead of by the window that
+  raised it — after ⌘W that window was destroyed, and the click threw on it.
+
