@@ -45,7 +45,7 @@ import { closePopOuts } from '@main/features/popout';
 import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { expiredQuiet } from '@core/notify/policy';
+import { expiredQuiet, unmute } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
 import { openExternalSafely } from '@main/platform/external';
 import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
@@ -929,7 +929,10 @@ export class AppWindow {
 
     if (newPane && !this.layout.isFull) this.layout.add(serviceId, beside);
     else this.layout.show(serviceId);
-    this.noteUsed(serviceId);
+    // Not while a saved layout is being put back: that is the app arranging panes, not anyone
+    // using them, and it filled the list — ⌃Tab after switching workspace went to whichever pane
+    // was restored last, not to the service you came from.
+    if (!this.restoring) this.noteUsed(serviceId);
 
     this.relayout();
     this.saveLayout();
@@ -1369,9 +1372,7 @@ export class AppWindow {
         c.preferences.notifications.dndUntil = null;
       }
       for (const svc of c.services) {
-        if (!expired.services.includes(svc.id)) continue;
-        svc.notificationLevel = 'all';
-        delete svc.mutedUntil;
+        if (expired.services.includes(svc.id)) unmute(svc);
       }
     });
     for (const serviceId of expired.services) this.pushUnreadRules(serviceId);

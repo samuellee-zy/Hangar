@@ -217,8 +217,20 @@ export class Layout {
     return this.focusedPaneId ? this.find(this.focusedPaneId) : undefined;
   }
 
-  /** Replaces the focused pane's service — the plain "click a rail icon" case. */
+  /** The pane showing a service, if one is. A service has one view, so it can be in one pane. */
+  paneShowing(serviceId: string): Pane | undefined {
+    return this.panes.find((p) => p.serviceId === serviceId);
+  }
+
+  /**
+   * Replaces the focused pane's service — the plain "click a rail icon" case.
+   *
+   * A service already in a pane is focused there instead. It has one view, which can be in one
+   * place, so showing it in a second pane gave two panes over one view and one of them blank.
+   */
   show(serviceId: string): Pane {
+    const existing = this.paneShowing(serviceId);
+    if (existing) return this.focusPane(existing);
     const focused = this.focused();
     if (focused) {
       focused.serviceId = serviceId;
@@ -244,6 +256,9 @@ export class Layout {
 
   /** A new pane, at the end — or beside a given pane, on the side a drop landed. */
   add(serviceId: string, beside?: { paneId: string; side: 'before' | 'after' }): Pane {
+    // Already on screen: that pane, rather than a second one over the same view. See `show`.
+    const existing = this.paneShowing(serviceId);
+    if (existing) return this.focusPane(existing);
     if (this.isFull) return this.show(serviceId);
     // Opening a pane alongside is asking for the split back.
     this.maximisedPaneId = null;
@@ -277,6 +292,13 @@ export class Layout {
     if (index === -1) return;
     this.panes.splice(index, 1);
     this.refocusAfter(index, paneId);
+  }
+
+  /** Focus moves to `pane`, and a maximised view follows it, as `cycleFocus` does. */
+  private focusPane(pane: Pane): Pane {
+    this.focusedPaneId = pane.id;
+    if (this.maximisedPaneId) this.maximisedPaneId = pane.id;
+    return pane;
   }
 
   /** Keeps `focusedPaneId` naming a pane that exists. Every removal path must end here. */

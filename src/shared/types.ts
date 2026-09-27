@@ -243,6 +243,12 @@ export interface ServiceInstance {
    */
   mutedUntil?: number;
   /**
+   * What a mute goes back to when it ends: `badge` if it muted a badge-only service, absent for
+   * `all`. Without it every unmute, and every timed mute running out, set `all` — a badge-only
+   * service muted for an hour came back with banners.
+   */
+  mutedFrom?: 'badge';
+  /**
    * Lets a custom connection use the microphone, camera and screen share. Catalog services get
    * these by provenance; a URL the user typed has to ask.
    */
