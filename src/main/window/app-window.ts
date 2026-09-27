@@ -33,6 +33,7 @@ import {
 } from '@core/workspace/layout';
 import { Overlay } from '@main/window/overlay';
 import { DragLayer } from '@main/features/drag-layer';
+import { Splitters } from '@main/features/splitters';
 import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
@@ -150,6 +151,10 @@ export class AppWindow {
    * is that a drag can't cross a `webContents` boundary, so the pointer is kept inside one.
    */
   private dragLayer: DragLayer;
+  /** The handles on the gutters between columns. See features/splitters.ts. */
+  private splitters: Splitters;
+  /** A splitter is being dragged: its moves are applied without a full relayout. */
+  private splitDragging = false;
   /**
    * A compact rail opened by the chevron. Meaningless unless `compactRail` is on, which `railSizes`
    * enforces so no reader has to check both.
@@ -248,6 +253,7 @@ export class AppWindow {
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
     this.dragLayer = new DragLayer(this.win);
+    this.splitters = new Splitters(this.win);
 
     this.rail = new WebContentsView({
       webPreferences: {
@@ -382,6 +388,12 @@ export class AppWindow {
     // [Gmail, Notion], and panes[1] is Notion.
     const focusedServiceId =
       stored?.panes.find((p) => p.id === stored.focusedPaneId)?.serviceId ?? null;
+    this.layout.shape = stored?.shape === 'main-stack' ? 'main-stack' : 'columns';
+    // Weights are for a number of columns; `columnWidths` ignores any that don't match what's
+    // restored, so a deleted service can't leave three widths applied to two panes.
+    this.layout.weights = Array.isArray(stored?.weights)
+      ? stored.weights.filter((w) => typeof w === 'number' && w > 0)
+      : [];
 
     if (serviceIds.length === 0) {
       const first = this.activeServices(workspaceId)[0];
@@ -427,6 +439,9 @@ export class AppWindow {
       c.layouts[workspaceId] = {
         panes: this.layout.panes.map((p) => ({ ...p })),
         focusedPaneId: this.layout.focusedPaneId,
+        // Only what differs from the default, so a layout nobody has shaped stays as it was.
+        ...(this.layout.shape !== 'columns' && { shape: this.layout.shape }),
+        ...(this.layout.weights.length && { weights: [...this.layout.weights] }),
       };
     });
   }
@@ -502,6 +517,7 @@ export class AppWindow {
       iconVersions: iconVersions(),
       // Only while it means something: with one pane, maximised and not are the same picture.
       maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
+      layoutShape: this.layout.shape,
       recentServiceIds: this.recentServiceIds.filter((id) => loadConfig().services.some((s) => s.id === id)),
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
@@ -794,6 +810,7 @@ export class AppWindow {
       state.preferences.notifications.dnd,
       state.preferences.notifications.dndUntil,
       state.maximisedPaneId,
+      state.layoutShape,
     ]);
     if (signature === this.lastMenuSignature) return;
     this.lastMenuSignature = signature;
@@ -1060,6 +1077,7 @@ export class AppWindow {
       runtime.view.setBorderRadius(PANE_RADIUS);
     }
     this.drawFocusRing(bounds, chrome.gutter);
+    this.splitters.sync(this.layout.boundaries(chrome, width, height));
 
     // A pane whose service has no runtime renders nothing, so treat that as empty too.
     const hasVisibleContent = this.layout.panes.some((p) => this.services.has(p.serviceId));
@@ -1094,9 +1112,11 @@ export class AppWindow {
    */
   private raiseChrome(width: number, height: number): void {
     this.rail.setBounds(this.railRect(width, height));
+    const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
+    // Beneath the rail and everything above it, which they never overlap.
+    this.splitters.raiseAbove(panes);
     const children = this.win.contentView.children;
     const railAt = children.indexOf(this.rail);
-    const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
     if (railAt < 0 || children.slice(railAt + 1).some((child) => panes.has(child))) {
       this.win.contentView.removeChildView(this.rail);
       this.win.contentView.addChildView(this.rail);
@@ -1105,6 +1125,38 @@ export class AppWindow {
     // resized during a drag, and `relayout` ends one before it reaches this.
     this.overlay.raise();
     this.findBar.raise(this.layout.focusedPaneId ? this.paneRect(this.layout.focusedPaneId) : null);
+  }
+
+  /**
+   * A splitter moved: the pointer is at `screenX`. Only the panes' rectangles, the splitters and the
+   * focus ring change, so only they are touched — a full relayout re-attaches every pane, once a
+   * frame, and broadcasts state that says nothing about widths.
+   */
+  private dragSplit(index: number, screenX: number): void {
+    const content = this.win.getContentBounds();
+    const chrome = this.chrome();
+    this.layout.resizeAt(index, screenX - content.x, chrome, content.width, content.height);
+    this.splitDragging = true;
+    const bounds = this.layout.bounds(chrome, content.width, content.height);
+    for (const pane of this.layout.drawn()) {
+      const rect = bounds.get(pane.id);
+      if (rect) this.services.get(pane.serviceId)?.view.setBounds(rect);
+    }
+    this.splitters.sync(this.layout.boundaries(chrome, content.width, content.height));
+    this.drawFocusRing(bounds, chrome.gutter);
+    if (this.layout.focusedPaneId) this.findBar.raise(this.paneRect(this.layout.focusedPaneId));
+  }
+
+  /**
+   * The splitter let go. Saved once here rather than on every move. Focus goes back to the page
+   * either way: pressing a splitter focused its view, and a click that didn't drag left it there.
+   */
+  private endSplit(): void {
+    if (this.splitDragging) {
+      this.splitDragging = false;
+      this.saveLayout();
+    }
+    this.focusActivePane();
   }
 
   /**
@@ -1217,6 +1269,8 @@ export class AppWindow {
       moveTileDrag: (from, x, y) => this.tileDrag.move(from, x, y),
       dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
       endTileDrag: () => void this.tileDrag.end('cancel'),
+      dragSplit: (index, screenX) => this.dragSplit(index, screenX),
+      endSplit: () => this.endSplit(),
     };
   })();
 
@@ -1526,6 +1580,7 @@ export class AppWindow {
     this.findBar.destroy();
     this.overlay.destroy();
     this.dragLayer.destroy();
+    this.splitters.destroy();
     // The rail and the empty view too. They were thought to go with the window as attached children;
     // they don't — a view's webContents lives until it is closed — so each ⌘W and reopen left one
     // more rail renderer running, receiving every broadcast, with nothing on screen.

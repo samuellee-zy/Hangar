@@ -67,6 +67,10 @@ export interface ShellContext {
   moveTileDrag(from: 'rail' | 'content', x: number, y: number): void;
   dropTile(from: 'rail' | 'content', x: number, y: number): void;
   endTileDrag(): void;
+
+  /** Splitter `index` is being dragged; the pointer is at `screenX`. */
+  dragSplit(index: number, screenX: number): void;
+  endSplit(): void;
 }
 
 export type CommandType = Command['type'];

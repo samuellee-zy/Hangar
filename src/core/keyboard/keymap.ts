@@ -108,6 +108,11 @@ export type ActionId =
   | 'close-pane'
   | 'focus-prev-pane'
   | 'focus-next-pane'
+  | 'move-pane-left'
+  | 'move-pane-right'
+  | 'reopen-pane'
+  | 'layout-shape'
+  | 'equal-widths'
   | 'back'
   | 'forward'
   | 'reload'
@@ -170,6 +175,15 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     menu: 'file',
     group: true,
     defaultChord: primaryChord('w'),
+  },
+  // The browser's "reopen closed tab", and for the same reason: ⌘W is one keystroke from the pane
+  // you meant to keep.
+  {
+    id: 'reopen-pane',
+    label: 'Reopen closed pane',
+    command: { type: 'reopen-pane' },
+    menu: 'file',
+    defaultChord: primaryChord('t', { shift: true }),
   },
   {
     id: 'palette',
@@ -235,6 +249,38 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'cycle-pane', delta: 1 },
     menu: 'view',
     defaultChord: primaryChord('arrowright', { alt: true }),
+  },
+  // Focus moves with ⌘⌥←/→, so the pane itself moves with ⇧ added — the same keys, carrying it.
+  {
+    id: 'move-pane-left',
+    label: 'Move pane left',
+    command: { type: 'move-pane', delta: -1 },
+    menu: 'view',
+    defaultChord: primaryChord('arrowleft', { alt: true, shift: true }),
+  },
+  {
+    id: 'move-pane-right',
+    label: 'Move pane right',
+    command: { type: 'move-pane', delta: 1 },
+    menu: 'view',
+    defaultChord: primaryChord('arrowright', { alt: true, shift: true }),
+  },
+  // No default chords: a layout is set once and left, and these are in the menu and the palette.
+  {
+    id: 'layout-shape',
+    // The menu says which way it will go (boot/menu.ts); this is the name for Settings and the palette.
+    label: 'Switch between side by side and one large pane',
+    command: { type: 'toggle-layout-shape' },
+    menu: 'view',
+    group: true,
+    defaultChord: '',
+  },
+  {
+    id: 'equal-widths',
+    label: 'Make panes equal width',
+    command: { type: 'reset-splits' },
+    menu: 'view',
+    defaultChord: '',
   },
   {
     id: 'back',

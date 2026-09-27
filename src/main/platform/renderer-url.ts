@@ -6,7 +6,7 @@ import { openExternalSafely } from '@main/platform/external';
 // The rail and the overlay are two routes of the same React bundle, selected by hash.
 // electron-vite sets ELECTRON_RENDERER_URL in dev; in production we load the built file.
 
-type Route = 'rail' | 'overlay' | 'settings' | 'empty' | 'find' | 'drag';
+type Route = 'rail' | 'overlay' | 'settings' | 'empty' | 'find' | 'drag' | `splitter-${number}`;
 
 const rendererIndex = () => path.join(__dirname, '../renderer/index.html');
 

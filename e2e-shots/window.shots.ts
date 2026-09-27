@@ -85,6 +85,30 @@ for (const theme of THEMES) {
     await capture(`${theme}-maximised`);
   });
 
+  // A dragged gutter with its handle pointed at, then the one-large shape.
+  test(`${theme}-layouts`, async () => {
+    await open(theme, { railPosition: 'left' });
+    await h!.app.evaluate((_electron, bounds) => {
+      const shell = (globalThis as never as { __hangarShell: Shell }).__hangarShell;
+      shell.dispatch({ type: 'open-in-new-pane', serviceId: 'two' });
+      shell.dispatch({ type: 'open-in-new-pane', serviceId: 's3' });
+      shell.dispatch({ type: 'drag-split', index: 0, screenX: bounds.x + 420 });
+      shell.dispatch({ type: 'end-split' });
+    }, BOUNDS);
+    await new Promise((r) => setTimeout(r, 800));
+    await scheme(theme);
+    const handle = h!.app.windows().find((w) => w.url().includes('#splitter-0'));
+    if (handle) {
+      const size = await handle.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+      await handle.mouse.move(size.w / 2, size.h / 2);
+    }
+    await capture(`${theme}-resized`);
+    await h!.app.evaluate(() =>
+      (globalThis as never as { __hangarShell: Shell }).__hangarShell.dispatch({ type: 'toggle-layout-shape' }),
+    );
+    await capture(`${theme}-main-stack`);
+  });
+
   test(`${theme}-panel`, async () => {
     await open(theme, { railPosition: 'left', compactRail: true });
     await h!.app.evaluate(() => {
