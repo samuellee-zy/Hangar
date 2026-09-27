@@ -7,6 +7,7 @@ import { FolderTile } from './FolderTile';
 import { ServiceIcon } from './ServiceIcon';
 import { SortableRailList, SortableTile } from './SortableRail';
 import { useShellState } from './useShellState';
+import { railCanExpand, railHostsWindowButtons, smallestRailSize } from '@shared/chrome';
 import type { RailItem, ServiceView } from '@shared/types';
 
 /**
@@ -58,8 +59,7 @@ export function Rail() {
     // Only a vertical compact rail has a panel to put the field in. An ordinary 72px rail has no
     // room for a text field and a horizontal one has no room for a name at all, so those send you
     // to Settings — which lists both services and folders — rather than dropping the request.
-    const horizontal = appearance.railPosition === 'top' || appearance.railPosition === 'bottom';
-    if (appearance.compactRail && !horizontal) setRenamingId(request.id);
+    if (railCanExpand(appearance)) setRenamingId(request.id);
     else window.hangar.send({ type: 'open-settings' });
   }, [hasState, request, appearance]);
 
@@ -68,6 +68,9 @@ export function Rail() {
   const visible = new Set(state.panes.map((p) => p.serviceId));
   const focusedServiceId = state.panes.find((p) => p.id === state.focusedPaneId)?.serviceId;
   const { railPosition, showLabels, density, compactRail } = state.preferences.appearance;
+  // A compact rail on a side opens into a labelled panel; one along the top or bottom has no room
+  // for names, so it stays a strip of icons with no chevron to offer anything else.
+  const canExpand = railCanExpand(state.preferences.appearance);
   // Collapsed, a compact rail is the icons and nothing else — every service still one click away.
   const compact = compactRail && !state.railExpanded;
   // Top and bottom lay the rail out as a row; the tile treatment is otherwise identical.
@@ -272,10 +275,13 @@ export function Rail() {
       // Only when open, and only on the background: `closest('button')` lets every tile, the
       // footer and the chevron handle their own clicks first.
     >
-      {/* Clear of the traffic lights, and the window's drag handle. A compact rail never holds the
-          traffic lights — `chromeFor` puts them in the top strip whichever way it is sized — so
-          there is nothing to clear and the strip would only be dead space. */}
-      <div className="rail-drag" hidden={compactRail} />
+      {/* Clear of the traffic lights, and the window's drag handle — present exactly when main put
+          them in this rail, decided by the same function main used. Guessing from `compactRail`
+          alone is what drew them over a compact top rail's first two tiles. */}
+      <div
+        className="rail-drag"
+        hidden={!railHostsWindowButtons(railPosition, smallestRailSize(state.preferences.appearance))}
+      />
 
       {switcher && (
         <button
@@ -457,7 +463,7 @@ export function Rail() {
             </span>
           )}
         </button>
-        {compactRail && (
+        {canExpand && (
           <button
             className="rail-chevron"
             title={compact ? 'Show the rail' : 'Hide the rail'}

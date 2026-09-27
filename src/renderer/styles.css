@@ -1055,8 +1055,15 @@ kbd {
   border-right: 0;
 }
 
+/* The full thickness of the rail, not just the tiles': the focus bar sits in the margin outside a
+   tile, and a box the height of the tile clipped it away — a horizontal rail showed no focus at
+   all. Inset from the ends too, or the first tile sat flush against the window edge, its corner
+   cut off by the window's own rounding. */
 .rail.is-horizontal .rail-items {
   flex-direction: row;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 8px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -1072,16 +1079,15 @@ kbd {
   padding: 0 10px;
 }
 
-/* Only the top rail hosts the window buttons; a bottom rail needs no clearance for them. */
+/* Only the top rail hosts the window buttons along its length; whether this is drawn at all is
+   the `hidden` attribute, which follows the same decision main made. 14px in, macOS 26's 60pt span
+   (52pt before it), and the items' own 8px inset after: the gap to the first tile matches the gap
+   before the lights. */
 .rail.is-top .rail-drag {
-  height: 100%;
-  width: 78px;
+  align-self: stretch;
+  height: auto;
+  width: 80px;
   flex: none;
-}
-
-.rail.is-bottom .rail-drag,
-.rail.is-right .rail-drag {
-  display: none;
 }
 
 .rail.is-right {
@@ -1110,6 +1116,32 @@ kbd {
   translate: -50% 0;
   width: 26px;
   height: 3px;
+}
+
+.rail.is-bottom .rail-item.is-focused::before {
+  top: -7px;
+  bottom: auto;
+}
+
+/* A 36px tile in a 48px rail has 6px either side, so the -7px above hung a pixel off the window.
+   -5px puts the 3px bar 2–5px from the edge, the same inside-the-margin placement as a full rail. */
+.rail.is-compact .rail-item.is-focused::before {
+  left: -5px;
+}
+
+.rail.is-compact.is-right .rail-item.is-focused::before {
+  left: auto;
+  right: -5px;
+}
+
+.rail.is-compact.is-top .rail-item.is-focused::before {
+  left: 50%;
+  bottom: -5px;
+}
+
+.rail.is-compact.is-bottom .rail-item.is-focused::before {
+  left: 50%;
+  top: -5px;
 }
 
 /* --- density and compact ------------------------------------------------------------------ */

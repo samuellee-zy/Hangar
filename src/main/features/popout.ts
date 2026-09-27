@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { attachNavigationGuards, partitionFor } from '@main/platform/session';
+import { appBackground } from '@main/platform/native-chrome';
 import type { ServiceInstance } from '@shared/types';
 
 /**
@@ -29,7 +30,7 @@ export function popOut(svc: ServiceInstance, url: string): void {
     width: 1100,
     height: 800,
     title: svc.name,
-    backgroundColor: '#1b1b1f',
+    backgroundColor: appBackground(),
     webPreferences: {
       partition,
       contextIsolation: true,

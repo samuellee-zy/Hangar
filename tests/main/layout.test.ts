@@ -45,6 +45,28 @@ describe('chrome and window buttons', () => {
     // 72px rail, 52pt span → 10px each side.
     assert.deepEqual(windowButtonPosition(chrome('left')), { x: 10, y: 17 });
   });
+
+  it("CENTRES THE BUTTONS THE OS ACTUALLY DRAWS — macOS 26's are bigger", () => {
+    // Laid out for the 52pt span, macOS 26's 60pt one sat 10pt from the rail's left edge and 2pt
+    // from its right.
+    const tahoe = { span: 60, height: 14 };
+    assert.deepEqual(windowButtonPosition(chrome('left'), tahoe), { x: 6, y: 17 });
+    // And never off the window, however narrow a hand-edited rail gets.
+    assert.ok(windowButtonPosition(chromeFor('left', 56, GUTTER), tahoe).x >= 0);
+    // Centred in a top rail's height by the real height, not the old 12pt.
+    assert.equal(windowButtonPosition(chromeFor('top', 48, GUTTER), tahoe).y, 17);
+  });
+
+  it('A COMPACT TOP RAIL HOLDS THE TRAFFIC LIGHTS ITSELF, centred in its height', () => {
+    // It used to hand them to the top strip, like a compact left rail — but a top rail has no strip
+    // above it, so they were drawn over its first two tiles.
+    const c = chromeFor('top', COMPACT_RAIL_SIZE, GUTTER, COMPACT_RAIL_SIZE);
+    assert.equal(c.topStrip, 0);
+    const { y } = windowButtonPosition(c);
+    const BUTTON_HEIGHT = 12;
+    assert.ok(y > 0 && y + BUTTON_HEIGHT < COMPACT_RAIL_SIZE, `y ${y} sits inside the rail`);
+    assert.equal(Math.round(y + BUTTON_HEIGHT / 2), COMPACT_RAIL_SIZE / 2);
+  });
 });
 
 describe('rail bounds per position', () => {
@@ -104,6 +126,19 @@ describe('the two thicknesses of a compact rail', () => {
         rail: RAIL,
       });
     }
+  });
+
+  it('A COMPACT RAIL ALONG THE TOP OR BOTTOM NEVER OPENS', () => {
+    // Opening puts names beside the icons, and a horizontal rail has no room beside them — it grew
+    // into a 180px band of the same icons. Ignored here rather than left to the caller, so a flag
+    // still set from a side rail can't do it either.
+    for (const railPosition of ['top', 'bottom'] as const) {
+      assert.deepEqual(railSizes({ ...compact(), railPosition }, true), {
+        reserved: COMPACT_RAIL_SIZE,
+        rail: COMPACT_RAIL_SIZE,
+      });
+    }
+    assert.equal(railSizes({ ...compact(), railPosition: 'right' }, true).rail, EXPANDED_RAIL_SIZE);
   });
 
   it('THE PANES RECLAIM THE SPACE the rail gives up', () => {

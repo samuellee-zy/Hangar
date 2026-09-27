@@ -28,7 +28,7 @@ in the matching `renderer/settings/*.tsx` section. No migration needed.
 | Rail position | `left` · `right` · `top` · `bottom`. Repositions the rail and relayouts panes |
 | Rail size | Thickness in px on whichever edge |
 | Show labels | Service names under icons. Suppressed in compact and horizontal rails |
-| Compact rail | A 48px strip that still shows every icon; the chevron opens a 180px panel with names, and the panes reflow around it — see below |
+| Compact rail | A 48px strip that still shows every icon; on a left or right rail the chevron opens a 180px panel with names, and the panes reflow around it — see below. A top or bottom rail has no room for names, so it stays a strip |
 | Theme | `system` · `light` · `dark` via `nativeTheme.themeSource` |
 | Density | Tile spacing |
 | Pane gutter | Space around each pane, 0–24px |
@@ -171,8 +171,9 @@ A string is a scalar, so `''` replaces — and it stays legible in a config peop
 conflicts in. [keyboard.md](keyboard.md) covers what can't be rebound and why.
 
 **Compact rail opens on a click, and the panes make room.** Collapsed it is 48px and still draws every
-tile, so switching service stays one click; the chevron opens a 180px panel with names, and the
-panes are laid out against whichever width it currently is — the rail is never over a pane, so it
+tile, so switching service stays one click; on a left or right rail the chevron opens a 180px panel
+with names (a top or bottom rail has no chevron — there is no room beside its icons for a name), and
+the panes are laid out against whichever width it currently is — the rail is never over a pane, so it
 never swallows a click meant for one. It used to expand over the panes on hover, and could not be
 made to close reliably: the pointer leaves into a different `WebContentsView`, which gets no leave
 event. [decisions #88](decisions.md) and [#95](decisions.md) have the reasoning.

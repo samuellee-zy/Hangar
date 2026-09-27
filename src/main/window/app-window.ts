@@ -7,6 +7,7 @@ import {
   WebContentsView,
   dialog,
   app,
+  nativeTheme,
   screen,
   session,
   type WebContents,
@@ -45,6 +46,8 @@ import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { expiredQuiet } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
+import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
+import { railCanExpand } from '@shared/chrome';
 import {
   releaseGlobalShortcut,
   globalShortcutStatus,
@@ -206,16 +209,12 @@ export class AppWindow {
       // 'hidden' rather than 'hiddenInset' so the traffic-light position is ours to control;
       // hiddenInset adds its own inset and left them straddling the rail's right edge.
       titleBarStyle: 'hidden',
-      // Initial placement only; relayout() repositions these whenever the rail moves.
-      trafficLightPosition: windowButtonPosition(
-        chromeFor(
-          loadConfig().preferences.appearance.railPosition,
-          loadConfig().preferences.appearance.railSize,
-          loadConfig().preferences.appearance.gutter,
-        ),
-      ),
-      backgroundColor: '#1b1b1f',
+      // Initial placement only; relayout() repositions these whenever the rail moves. The same
+      // chrome relayout uses, compact included, so they don't open in the rail and jump out of it.
+      trafficLightPosition: windowButtonPosition(this.chrome(), windowButtonMetrics()),
+      backgroundColor: appBackground(),
     });
+    nativeTheme.on('updated', this.repaintBackground);
 
     this.services = new ServiceManager(
       () => this.sync(),
@@ -839,6 +838,11 @@ export class AppWindow {
    * Attach exactly the visible views, in pane order, then keep the overlay on top. Detaching
    * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
    */
+  /** Follows the theme — the system's, or the preference's — as it changes. See `appBackground`. */
+  private readonly repaintBackground = (): void => {
+    if (!this.win.isDestroyed()) this.win.setBackgroundColor(appBackground());
+  };
+
   /** What the *panes* have to work around. */
   private chrome() {
     const appearance = loadConfig().preferences.appearance;
@@ -923,7 +927,9 @@ export class AppWindow {
     this.endTileDrag();
     // Turning compact off while the rail is open would otherwise leave the flag set, and switching
     // it back on later would give a rail that was already expanded before it was ever collapsed.
-    if (!loadConfig().preferences.appearance.compactRail) this.railExpanded = false;
+    // Moving an open rail to the top or bottom is the same: the flag would outlive the only shape
+    // it means anything for, and the rail would draw full-size tiles in a strip sized for icons.
+    if (!railCanExpand(loadConfig().preferences.appearance)) this.railExpanded = false;
     // The find bar's target is set once on open, but focus can move underneath it — relayout then
     // moved the bar over the newly focused pane while it was still searching the old one. Closing
     // is the honest answer: the alternative is silently retargeting a search the user is mid-way
@@ -970,7 +976,7 @@ export class AppWindow {
     // Runtime reposition rather than recreating the window, which `titleBarStyle` would otherwise
     // require — see docs/decisions.md.
     try {
-      this.win.setWindowButtonPosition(windowButtonPosition(chrome));
+      this.win.setWindowButtonPosition(windowButtonPosition(chrome, windowButtonMetrics()));
     } catch {
       // Older Electron, or a platform without window buttons. Placement just stays as-is.
     }
@@ -1009,11 +1015,12 @@ export class AppWindow {
    */
   private toggleRail(): void {
     if (this.dragLayer.draggingServiceId) return;
-    if (!loadConfig().preferences.appearance.compactRail) return;
     this.setRailExpanded(!this.railExpanded);
   }
 
   private setRailExpanded(expanded: boolean): void {
+    // Only a compact rail on a side opens; see `railCanExpand`.
+    if (expanded && !railCanExpand(loadConfig().preferences.appearance)) return;
     if (this.railExpanded === expanded) return;
     this.railExpanded = expanded;
     // A full relayout, because the panes reflow around the rail rather than sitting under it.
@@ -1121,7 +1128,7 @@ export class AppWindow {
    * opened first, or the request would land somewhere invisible.
    */
   private beginRename(id: string): void {
-    if (loadConfig().preferences.appearance.compactRail && !this.railExpanded) {
+    if (railCanExpand(loadConfig().preferences.appearance) && !this.railExpanded) {
       this.setRailExpanded(true);
     }
     this.renameRequest = { id, nonce: this.renameRequest.nonce + 1 };
@@ -1371,6 +1378,7 @@ export class AppWindow {
    * leaks. Nothing here was doing that.
    */
   dispose(): void {
+    nativeTheme.off('updated', this.repaintBackground);
     // Sockets and timers first: they can fire during teardown and would then touch a half-torn
     // window.
     if (this.syncScheduled) clearTimeout(this.syncScheduled);

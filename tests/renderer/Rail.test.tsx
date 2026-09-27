@@ -202,6 +202,45 @@ describe('rendering', () => {
   });
 });
 
+describe('room for the traffic lights', () => {
+  // Main decides where the traffic lights go; the rail only leaves room when they are in it. The two
+  // disagreed for a compact top rail — main put the lights in the rail, the rail cleared nothing,
+  // and they were drawn over the first two tiles.
+  const spacer = () => document.querySelector('.rail-drag') as HTMLElement;
+  const at = (railPosition: 'left' | 'right' | 'top' | 'bottom', compactRail: boolean) =>
+    state({
+      preferences: {
+        ...DEFAULT_PREFERENCES,
+        appearance: { ...DEFAULT_PREFERENCES.appearance, railPosition, compactRail },
+      },
+    });
+
+  it('a top rail always clears them, compact or not', async () => {
+    for (const compact of [false, true]) {
+      const { unmount } = await renderRail(at('top', compact));
+      expect(spacer().hidden, `compact: ${compact}`).toBe(false);
+      unmount();
+    }
+  });
+
+  it('a left rail clears them unless it is too narrow to hold them', async () => {
+    let r = await renderRail(at('left', false));
+    expect(spacer().hidden).toBe(false);
+    r.unmount();
+    r = await renderRail(at('left', true));
+    expect(spacer().hidden, 'a compact left rail hands them to the strip above it').toBe(true);
+    r.unmount();
+  });
+
+  it('right and bottom rails never hold them', async () => {
+    for (const pos of ['right', 'bottom'] as const) {
+      const { unmount } = await renderRail(at(pos, false));
+      expect(spacer().hidden, pos).toBe(true);
+      unmount();
+    }
+  });
+});
+
 describe('compact rail chevron', () => {
   // The rail's whole part in this is one message. It does not decide anything — main refuses the
   // change during a drag, and a renderer that had also decided would disagree exactly then — so
@@ -242,6 +281,19 @@ describe('compact rail chevron', () => {
   it('an ordinary rail has no chevron — there is nothing to collapse to', async () => {
     await renderRail(state());
     expect(chevron()).toBeNull();
+  });
+
+  it('A COMPACT RAIL ALONG THE TOP OR BOTTOM HAS NO CHEVRON — it has nowhere to open to', async () => {
+    // Opening is for putting names beside the icons, and a horizontal rail has no room beside them.
+    // It used to offer the chevron anyway, and clicking it grew the strip into a 180px band of the
+    // same icons.
+    for (const railPosition of ['top', 'bottom'] as const) {
+      const s = compactState();
+      s.preferences.appearance.railPosition = railPosition;
+      const { unmount } = await renderRail(s);
+      expect(chevron(), railPosition).toBeNull();
+      unmount();
+    }
   });
 
   it('A COLLAPSED RAIL STILL SHOWS EVERY ICON — only the labels are traded away', async () => {

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { BrowserWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
+import { appBackground } from '@main/platform/native-chrome';
 
 /**
  * Settings is a real window rather than another overlay mode, following the macOS Preferences
@@ -26,7 +27,7 @@ export function openSettingsWindow(register: (wc: Electron.WebContents) => void)
     minHeight: 420,
     title: 'Hangar Settings',
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#1b1b1f',
+    backgroundColor: appBackground(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/sidebar.cjs'),
       contextIsolation: true,

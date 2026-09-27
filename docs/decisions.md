@@ -228,7 +228,7 @@ Generalising `Layout` to four edges was easy; the window buttons were not. They 
 to live somewhere:
 
 - **left** — inside the rail, centred.
-- **top** — inset at the rail's left end, reading as a toolbar.
+- **top** — inset at the rail's left end, reading as a toolbar. Compact too; see #102.
 - **right / bottom** — the rail is nowhere near the top-left, so a 38px chrome strip is reserved.
 
 `setWindowButtonPosition()` moves them at runtime, so changing position doesn't recreate the window
@@ -2191,6 +2191,32 @@ a control a screen reader can use and one it can't.
   its end state; none of them carry information that isn't also shown statically.
 - **Two messages were only visible**: the refused-shortcut explanation is an alert now, and the
   find-bar's match count is a status region, read out as it changes.
+
+## 102. The rail and main agree on where the traffic lights are
+
+A compact rail along the top drew the traffic lights over its first two tiles. Main decided they
+didn't fit — a 48px rail is under the 52pt span, the test that is right for a *left* rail — and put
+them where the top strip goes. But a top rail has no strip above it, so nothing was reserved, and the
+rail hid its own spacer for any compact rail on the strength of a comment saying the strip would hold
+them. Two places, each deciding from half the facts.
+
+- **One decision, shared.** `railHostsWindowButtons` in `src/shared/chrome.ts` is what main lays the
+  window out by and what the rail's spacer is shown by. A top rail always holds the lights: the span
+  runs *along* it, so all it needs is the strip's height.
+- **A horizontal compact rail doesn't open.** Opening puts names beside the icons, and a top or bottom
+  rail has no room beside them — the chevron grew the strip into a 180px band of the same icons,
+  flush against the window edge. `railCanExpand` refuses it in main and hides the chevron in the
+  rail, and `railSizes` ignores the flag, so one left over from a side rail can't do it either.
+- **The real button size.** macOS 26 draws the traffic lights larger — 14pt buttons in a 60pt span,
+  not 12pt in 52pt — and Electron doesn't report it. Laid out for the old size they sat 10pt from a
+  left rail's edge and 2pt from the other. Main picks the metrics by OS version.
+- **The window's background follows the theme.** It shows wherever no view is drawn — the strip
+  holding the traffic lights, the gutters between panes — and was fixed dark, so a light theme had a
+  black band across the top of a light rail.
+- **Horizontal rails were unfinished**: the first tile sat flush against the window's rounded corner,
+  and the focus bar, drawn in the margin outside the tile, was clipped by a container the height of
+  the tile — a top or bottom rail showed no focus at all. On a bottom rail it now faces the content,
+  as the side rails' bars do.
 
 ## 103. Being on screen doesn't read a count the page reported
 

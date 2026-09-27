@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { nativeTheme, net, WebContentsView } from 'electron';
+import { net, WebContentsView } from 'electron';
 import { isOrphaned, resolveUrl } from '@shared/catalog';
 import { loadConfig } from '@main/platform/config';
+import { appBackground } from '@main/platform/native-chrome';
 import { captureFavicon } from '@main/features/icons';
 import { creditSuspendedTime } from '@core/runtime/hibernate';
 import {
@@ -112,7 +113,7 @@ export class ServiceManager {
     // Waking a hibernated service rebuilds the view from nothing, and Chromium paints an unstyled
     // view white — a full-pane white flash on every wake, including in dark mode. Matching the
     // app's own background makes the gap read as "loading" rather than as something breaking.
-    view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1b1b1f' : '#f4f4f6');
+    view.setBackgroundColor(appBackground());
 
     const runtime: ServiceRuntime = {
       view,

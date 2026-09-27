@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Pane, Rect } from '@shared/types';
+import {
+  COMPACT_RAIL_SIZE,
+  TOP_STRIP,
+  WINDOW_BUTTON_SPAN,
+  railCanExpand,
+  railHostsWindowButtons,
+  type RailPosition,
+} from '@shared/chrome';
 
 // Re-exported because everything geometric here returns one, and `import type { Rect } from
 // '@core/workspace/layout'` is where callers naturally look for it. It lives in `@shared` so the
@@ -17,19 +25,9 @@ export type { Rect };
 export const MAX_PANES = 4;
 export const PANE_RADIUS = 10;
 
-/** Height of the strip that hosts the traffic lights when the rail can't. See `chromeFor`. */
-export const TOP_STRIP = 38;
-
-/**
- * A collapsed compact rail is a strip of icons, wide enough for a 36px tile and its padding.
- *
- * It was briefly a bare chevron with the tiles hidden entirely. That reclaimed the most space and
- * was the worst of the three: switching service became open the rail, click, and the rail is still
- * open, where it had been one click. Chrome's vertical tabs are the reference — collapsed still
- * shows every favicon, so the common action stays a single click and only the labels are traded
- * away.
- */
-export const COMPACT_RAIL_SIZE = 48;
+// Shared with the rail's renderer, which has to agree with this file about where the traffic
+// lights are. Re-exported because this is where the geometry's callers look for them.
+export { COMPACT_RAIL_SIZE, TOP_STRIP, type RailPosition };
 
 /**
  * A compact rail opened by the chevron: icons *and* labels, side by side, the way Chrome's vertical
@@ -57,19 +55,20 @@ export const EXPANDED_RAIL_SIZE = 180;
  * stand open over the pane indefinitely. Expansion is a click now, and reflow means the rail is
  * never over a pane to begin with.
  *
- * `expanded` is ignored unless the rail is compact, so the caller doesn't have to remember to
- * clear it, and expansion can never make the rail *narrower* than the strip it grew from.
+ * `expanded` is ignored unless the rail is compact and vertical (see `railCanExpand`), so the
+ * caller doesn't have to remember to clear it, and expansion can never make the rail *narrower*
+ * than the strip it grew from.
  */
 export function railSizes(
-  appearance: { railSize: number; compactRail: boolean },
+  appearance: { railSize: number; compactRail: boolean; railPosition?: RailPosition },
   expanded: boolean,
 ): { reserved: number; rail: number } {
   if (!appearance.compactRail) return { reserved: appearance.railSize, rail: appearance.railSize };
-  const size = expanded ? Math.max(EXPANDED_RAIL_SIZE, appearance.railSize) : COMPACT_RAIL_SIZE;
+  const canExpand = railCanExpand({ compactRail: true, railPosition: appearance.railPosition ?? 'left' });
+  const size =
+    expanded && canExpand ? Math.max(EXPANDED_RAIL_SIZE, appearance.railSize) : COMPACT_RAIL_SIZE;
   return { reserved: size, rail: size };
 }
-
-export type RailPosition = 'left' | 'right' | 'top' | 'bottom';
 
 export interface Chrome {
   railPosition: RailPosition;
@@ -79,21 +78,20 @@ export interface Chrome {
   topStrip: number;
 }
 
-/** macOS traffic lights span this much, and cannot be made smaller. */
-const BUTTON_SPAN = 52;
-
 /**
  * macOS window controls have to live *somewhere*.
  *
  * - **left**: inside the rail, centred horizontally — where they've always been.
- * - **top**: inset at the horizontal rail's left end, which reads as an ordinary toolbar.
- * - **right / bottom, or any rail too narrow to hold them**: a slim strip is reserved at the top of
- *   the window. It doubles as the window's drag region.
+ * - **top**: inset at the horizontal rail's left end, which reads as an ordinary toolbar. Compact
+ *   too: the span runs along the rail, so a thin one holds them as well as a thick one. It used to
+ *   hand them to the strip like a narrow left rail — but a top rail *is* the top of the window, so
+ *   no strip was ever reserved, and they were drawn over the first two tiles.
+ * - **right / bottom, or a left rail too narrow to hold them**: a slim strip is reserved at the top
+ *   of the window. It doubles as the window's drag region.
  *
  * `smallestRailSize` is what the rail can shrink to, and defaults to the size it is now. A compact
- * rail passes its collapsed width so the answer doesn't change when it opens: a 52pt span does not
- * fit a 48px rail, and deciding per-size would move the traffic lights into the rail and drop the
- * strip on every toggle, shifting every pane down the window and back.
+ * rail passes its collapsed width so the answer doesn't change when it opens. The decision itself
+ * is `railHostsWindowButtons`, shared with the renderer that has to leave room for them.
  */
 export function chromeFor(
   railPosition: RailPosition,
@@ -101,8 +99,7 @@ export function chromeFor(
   gutter: number,
   smallestRailSize: number = railSize,
 ): Chrome {
-  const hostsButtons =
-    (railPosition === 'left' || railPosition === 'top') && smallestRailSize >= BUTTON_SPAN;
+  const hostsButtons = railHostsWindowButtons(railPosition, smallestRailSize);
   return {
     railPosition,
     railSize,
@@ -111,21 +108,33 @@ export function chromeFor(
   };
 }
 
+/** The traffic lights' size: the whole span of the three, and the height of one. */
+export interface WindowButtonMetrics {
+  span: number;
+  height: number;
+}
+
+/** Every macOS before 26. Main measures the real ones; see `windowButtonMetrics`. */
+export const CLASSIC_WINDOW_BUTTONS: WindowButtonMetrics = { span: WINDOW_BUTTON_SPAN, height: 12 };
+
 /**
  * Where the window buttons go for a given chrome. Applied with `setWindowButtonPosition`.
  *
  * Keyed off `topStrip` rather than re-deciding from the rail position and size, so the strip and
  * the buttons can't disagree about which of them is holding the traffic lights.
  */
-export function windowButtonPosition(chrome: Chrome): { x: number; y: number } {
-  const BUTTON_HEIGHT = 12;
-  if (chrome.topStrip > 0) return { x: 14, y: Math.round((TOP_STRIP - BUTTON_HEIGHT) / 2) };
+export function windowButtonPosition(
+  chrome: Chrome,
+  buttons: WindowButtonMetrics = CLASSIC_WINDOW_BUTTONS,
+): { x: number; y: number } {
+  if (chrome.topStrip > 0) return { x: 14, y: Math.round((TOP_STRIP - buttons.height) / 2) };
   if (chrome.railPosition === 'left') {
-    return { x: Math.round((chrome.railSize - BUTTON_SPAN) / 2), y: 17 };
+    return { x: Math.max(0, Math.round((chrome.railSize - buttons.span) / 2)), y: 17 };
   }
+  // Centred in the rail's height, at its left end.
   return {
     x: 14,
-    y: Math.max(6, Math.round((chrome.railSize - BUTTON_HEIGHT) / 2)),
+    y: Math.max(6, Math.round((chrome.railSize - buttons.height) / 2)),
   };
 }
 
