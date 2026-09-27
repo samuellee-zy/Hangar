@@ -601,7 +601,11 @@ export type Command =
   | { type: 'remove-service'; serviceId: string }
   | { type: 'rename-account'; accountId: string; label: string }
   | { type: 'sign-out-account'; accountId: string }
-  | { type: 'open-settings' }
+  /**
+   * `section` is a Settings group id — `connections`, `workspaces`… — and `serviceId` opens that
+   * service's own page. Without them every route into Settings landed on General.
+   */
+  | { type: 'open-settings'; section?: string; serviceId?: string }
   | { type: 'set-preference'; path: string; value: unknown }
   | { type: 'create-workspace'; name: string }
   | { type: 'rename-workspace'; workspaceId: string; name: string }
@@ -686,3 +690,10 @@ export interface OverlayOpen {
   mode: OverlayMode;
   nonce: number;
 }
+
+/** Where Settings should open to. See `open-settings`. */
+export interface SettingsTarget {
+  section?: string;
+  serviceId?: string;
+}
+

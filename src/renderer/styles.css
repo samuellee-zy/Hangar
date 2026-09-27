@@ -1806,3 +1806,25 @@ kbd {
 .settings .pref-note.refused {
   color: var(--danger);
 }
+
+/* Settings → Connections: one row a service. */
+.service-row {
+  gap: 10px;
+}
+
+.service-row-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.service-row-icon .rail-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.service-row-icon .rail-initials {
+  font-size: 10px;
+}

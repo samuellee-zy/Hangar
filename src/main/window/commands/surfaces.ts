@@ -40,7 +40,13 @@ export const surfaceCommands: CommandTable = {
     return wasOpen;
   },
 
-  'open-settings': (_command, shell) => openSettingsWindow((wc) => shell.registerConsumer(wc)),
+  'open-settings': (command, shell) =>
+    openSettingsWindow(
+      (wc) => shell.registerConsumer(wc),
+      command.section || command.serviceId
+        ? { section: command.section, serviceId: command.serviceId }
+        : null,
+    ),
   'show-window': (_command, shell) => shell.showWindow(),
   'toggle-rail': (_command, shell) => shell.toggleRail(),
 

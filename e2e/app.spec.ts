@@ -80,6 +80,30 @@ test('THE SETTINGS WINDOW RENDERS, AND ITS SECTIONS SWITCH', async () => {
   await expect(settings.getByLabel('Proxy')).toBeVisible();
 });
 
+test("SETTINGS OPENS WHERE IT WAS ASKED TO — a service's own page, then another section", async () => {
+  // Every route into Settings landed on General: "Rename…" on a rail with no room to rename,
+  // "Manage workspaces…", and the tile menu, which had no way in at all.
+  h = await launch();
+  await h.rail();
+  const open = (target: Record<string, string>) =>
+    h.app.evaluate((_electron, t) => {
+      (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch({
+        type: 'open-settings',
+        ...t,
+      });
+    }, target);
+
+  await open({ serviceId: 'two' });
+  await expect.poll(() => h.app.windows().some((w) => w.url().includes('#settings'))).toBeTruthy();
+  const settings = h.app.windows().find((w) => w.url().includes('#settings'))!;
+  await expect(settings.getByRole('heading', { level: 1, name: 'Two' })).toBeVisible();
+  await expect(settings.getByLabel('Start page for Two')).toBeVisible();
+
+  // Already open: it goes where it is told, rather than only coming to the front.
+  await open({ section: 'keyboard' });
+  await expect(settings.getByRole('heading', { level: 1, name: 'Keyboard' })).toBeVisible();
+});
+
 test('⌃TAB GOES BACK TO THE LAST SERVICE, AND ⇧⌘U TO THE NEXT ONE WITH UNREAD', async () => {
   h = await launch();
   await h.rail();

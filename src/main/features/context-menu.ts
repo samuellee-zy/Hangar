@@ -230,6 +230,10 @@ export function showServiceMenu(
         : []),
       { type: 'separator' },
       {
+        label: `Settings for ${svc.name}…`,
+        click: () => dispatch({ type: 'open-settings', serviceId: svc.id }),
+      },
+      {
         label: 'Rename…',
         // Native menus can't prompt for text and Electron has no text dialog, so this used to fall
         // back to opening Settings. That is a page away and drops you on a list — no help at all
@@ -351,7 +355,7 @@ export function showWorkspaceMenu(
       })),
       { type: 'separator' },
       { label: 'New workspace', click: () => dispatch({ type: 'create-workspace', name: 'Workspace' }) },
-      { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings' }) },
+      { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings', section: 'workspaces' }) },
     ],
     window,
   );

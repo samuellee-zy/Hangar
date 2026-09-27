@@ -11,6 +11,7 @@ import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
 import { AppWindow } from '@main/window/app-window';
 import { setNotificationClickRoute } from '@main/window/attention';
+import { takeSettingsTarget } from '@main/features/settings-window';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
 import { redactUrl } from '@core/runtime/urls';
@@ -238,6 +239,9 @@ function registerIpc(): void {
   );
   ipcMain.handle('overlay:get-mode', (event) =>
     fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
+  );
+  ipcMain.handle('settings:get-target', (event) =>
+    fromApp(event, 'settings:get-target') ? takeSettingsTarget() : null,
   );
   // Memory readout for Settings, so the hibernation setting has a visible consequence.
   ipcMain.handle('app:metrics', (event) => {

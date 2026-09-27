@@ -58,7 +58,7 @@ const SCHEMA = {
   'remove-service': { serviceId: 'string' },
   'rename-account': { accountId: 'string', label: 'string' },
   'sign-out-account': { accountId: 'string' },
-  'open-settings': {},
+  'open-settings': { section: 'string?', serviceId: 'string?' },
   // `value` is validated against the preference schema by `setPreference`, which knows the types.
   'set-preference': { path: 'string', value: 'any' },
   'create-workspace': { name: 'string' },

@@ -8,7 +8,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { vi, afterEach, beforeEach } from 'vitest';
-import type { DropHighlight, ShellState } from '../../src/shared/types';
+import type { DropHighlight, SettingsTarget, ShellState } from '../../src/shared/types';
 
 /** Commands sent during a test, in order. Cleared between tests. */
 export const sent: unknown[] = [];
@@ -41,6 +41,18 @@ export function pushHighlight(highlight: DropHighlight | null): void {
   for (const fn of highlightSubscribers) fn(highlight);
 }
 
+/** Where Settings will be told to open, once, on mount — `settings:get-target`. */
+let settingsTarget: SettingsTarget | null = null;
+export function setSettingsTarget(target: SettingsTarget | null): void {
+  settingsTarget = target;
+}
+
+const navigateSubscribers = new Set<(target: SettingsTarget) => void>();
+/** Main asking an open Settings window to go somewhere — `settings:navigate`. */
+export function pushSettingsNavigate(target: SettingsTarget): void {
+  for (const fn of navigateSubscribers) fn(target);
+}
+
 // RTL only registers its own auto-cleanup when Vitest runs with `globals: true`, which this
 // project doesn't. Without this every render stacks in the same document, so the second test to
 // look for a tile finds two and fails with "found multiple elements" — which reads like a
@@ -52,7 +64,9 @@ beforeEach(() => {
   stateSubscribers.clear();
   dragEndedSubscribers.clear();
   highlightSubscribers.clear();
+  navigateSubscribers.clear();
   shellState = null;
+  settingsTarget = null;
 
   (window as unknown as { hangar: unknown }).hangar = {
     getState: vi.fn(async () => shellState),
@@ -63,6 +77,15 @@ beforeEach(() => {
     }),
     getMetrics: vi.fn(async () => ({ processes: 1, residentMb: 100 })),
     getOverlayOpen: vi.fn(async () => null),
+    getSettingsTarget: vi.fn(async () => {
+      const target = settingsTarget;
+      settingsTarget = null;
+      return target;
+    }),
+    onSettingsNavigate: vi.fn((fn: (target: SettingsTarget) => void) => {
+      navigateSubscribers.add(fn);
+      return () => navigateSubscribers.delete(fn);
+    }),
     onFindOpened: vi.fn(() => () => {}),
     onFindResult: vi.fn(() => () => {}),
     onOverlayOpen: vi.fn(() => () => {}),

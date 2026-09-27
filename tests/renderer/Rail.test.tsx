@@ -416,7 +416,7 @@ describe('compact rail chevron', () => {
       ),
     );
     expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
-    expect(sent).not.toContainEqual({ type: 'open-settings' });
+    expect(sent.some((c) => (c as { type: string }).type === 'open-settings')).toBe(false);
   });
 
   it('AN UNRELATED BROADCAST DOES NOT REOPEN a finished edit', async () => {
@@ -448,7 +448,8 @@ describe('compact rail chevron', () => {
     await renderRail(state());
     await act(async () => pushState(state({ renameRequest: { id: 'gmail', nonce: 1 } })));
     expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
-    expect(sent).toContainEqual({ type: 'open-settings' });
+    // To that service's own page, where its name can be edited — not to General.
+    expect(sent).toContainEqual({ type: 'open-settings', serviceId: 'gmail' });
   });
 
   it('A REQUEST ALREADY WAITING WHEN THE RAIL LOADS IS NOT ACTED ON — a reloaded rail reopened the last edit', () => {
@@ -457,7 +458,7 @@ describe('compact rail chevron', () => {
     return (async () => {
       await renderRail(compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 7 } }));
       expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
-      expect(sent).not.toContainEqual({ type: 'open-settings' });
+      expect(sent.some((c) => (c as { type: string }).type === 'open-settings')).toBe(false);
 
       // The next genuine request still works.
       await act(async () =>
@@ -491,7 +492,7 @@ describe('compact rail chevron', () => {
       await userEvent.clear(field);
       await userEvent.type(field, 'Work{Enter}');
       expect(sent).toContainEqual({ type: 'rename-folder', folderId: 'f1', name: 'Work' });
-      expect(sent).not.toContainEqual({ type: 'open-settings' });
+      expect(sent.some((c) => (c as { type: string }).type === 'open-settings')).toBe(false);
     });
 
     it('typing a space in the folder name does not start a drag', async () => {

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Command, DropHighlight, OverlayOpen, ShellState } from '@shared/types';
+import type { Command, DropHighlight, OverlayOpen, SettingsTarget, ShellState } from '@shared/types';
 
 // The rail and palette get exactly two verbs: read state, send a command. No direct access to
 // services, sessions or windows — that keeps the renderer a pure render target and makes the
@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld('hangar', {
   getMetrics: (): Promise<{ processes: number; residentMb: number }> =>
     ipcRenderer.invoke('app:metrics'),
   getOverlayOpen: (): Promise<OverlayOpen | null> => ipcRenderer.invoke('overlay:get-mode'),
+  /** Where Settings was asked to open to, once — and later requests while it is already open. */
+  getSettingsTarget: (): Promise<SettingsTarget | null> => ipcRenderer.invoke('settings:get-target'),
+  onSettingsNavigate: (fn: (target: SettingsTarget) => void): (() => void) => {
+    const handler = (_e: unknown, target: SettingsTarget) => fn(target);
+    ipcRenderer.on('settings:navigate', handler);
+    return () => ipcRenderer.off('settings:navigate', handler);
+  },
   onFindOpened: (fn: () => void): (() => void) => {
     const handler = () => fn();
     ipcRenderer.on('find:opened', handler);

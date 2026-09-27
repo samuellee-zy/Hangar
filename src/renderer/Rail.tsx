@@ -50,6 +50,7 @@ export function Rail() {
   const actedOnNonce = useRef<number | null>(null);
   const request = state?.renameRequest;
   const appearance = state?.preferences.appearance;
+  const allServices = state?.allServices;
   const hasState = state !== null;
   useEffect(() => {
     if (!hasState) return;
@@ -63,8 +64,13 @@ export function Rail() {
     // room for a text field and a horizontal one has no room for a name at all, so those send you
     // to Settings — which lists both services and folders — rather than dropping the request.
     if (railCanExpand(appearance)) setRenamingId(request.id);
-    else window.hangar.send({ type: 'open-settings' });
-  }, [hasState, request, appearance]);
+    // To the thing itself: a service's own page, or the folders list — not General, which is where
+    // it landed before and has neither.
+    else if (allServices?.some((s) => s.id === request.id)) {
+      window.hangar.send({ type: 'open-settings', serviceId: request.id });
+    } else window.hangar.send({ type: 'open-settings', section: 'workspaces' });
+    // `allServices` changes with every broadcast; the nonce above is what keeps this acting once.
+  }, [hasState, request, appearance, allServices]);
 
   // ⌘7 on a tile scrolled out of the rail focused it and left it out of sight. Whichever way focus
   // changes, the tile that has it is brought into view. Optional-called: jsdom has no scrollIntoView.

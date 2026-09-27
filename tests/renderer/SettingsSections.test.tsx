@@ -7,7 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CustomHosts, Workspaces } from '../../src/renderer/settings/Connections';
+import { Workspaces } from '../../src/renderer/settings/Connections';
+import { ServiceList, ServiceSettings } from '../../src/renderer/settings/ServiceSettings';
 import { Notifications, pushReadiness } from '../../src/renderer/settings/Notifications';
 import { Storage } from '../../src/renderer/settings/Storage';
 import { sent } from './setup';
@@ -99,9 +100,12 @@ describe('workspaces', () => {
   });
 });
 
-describe('custom connection hosts', () => {
-  it('HOSTS CAN BE ADDED HERE NOW — the hint said to, and there was no field', async () => {
-    render(<CustomHosts state={state({ allServices: [svc('intranet', { allowedHosts: ['intranet.acme.com'] })] })} />);
+describe("a service's own page: allowed hosts", () => {
+  const page = (service: ServiceView) =>
+    render(<ServiceSettings state={state({ allServices: [service] })} svc={service} onBack={() => {}} />);
+
+  it('HOSTS CAN BE ADDED HERE — the hint said to, and there was no field', async () => {
+    page(svc('intranet', { allowedHosts: ['intranet.acme.com'] }));
     const field = screen.getByLabelText('Extra allowed hosts for intranet');
     await userEvent.type(field, 'Login.Okta.com, sso.acme.com login.okta.com{Enter}');
     expect(sent).toContainEqual({
@@ -112,44 +116,41 @@ describe('custom connection hosts', () => {
   });
 
   it('a catalog service gets the field too — company SSO in front of a catalog app', () => {
-    render(<CustomHosts state={state({ allServices: [svc('gmail')] })} />);
+    page(svc('gmail'));
     expect(screen.getByLabelText('Extra allowed hosts for gmail')).toBeInTheDocument();
   });
 
   it('clearing the field removes the extra hosts', async () => {
-    render(<CustomHosts state={state({ allServices: [svc('gmail', { extraAllowedHosts: ['sso.acme.com'] })] })} />);
+    page(svc('gmail', { extraAllowedHosts: ['sso.acme.com'] }));
     const field = screen.getByLabelText('Extra allowed hosts for gmail');
     await userEvent.clear(field);
     await userEvent.tab();
     expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { extraAllowedHosts: [] } });
   });
 
-  it('says so when there are no connections, rather than showing an empty list', () => {
-    render(<CustomHosts state={state({ allServices: [] })} />);
-    expect(screen.getByText(/no connections yet/i)).toBeInTheDocument();
-  });
-
-  it('DOES NOT CLAIM THERE ARE NONE ABOVE A LIST OF THEM', () => {
-    // Every service is listed here, catalog ones included, and "No custom connections yet." sat
-    // on top of them whenever none was custom.
-    render(<CustomHosts state={state({ allServices: [svc('gmail')] })} />);
-    expect(screen.queryByText(/no (custom )?connections yet/i)).not.toBeInTheDocument();
-  });
-
-  it('lists the allowlist for each custom connection', () => {
-    render(
-      <CustomHosts
-        state={state({
-          allServices: [
-            svc('gmail'),
-            svc('intranet', { allowedHosts: ['intranet.acme.com', 'login.okta.com'] }),
-          ],
-        })}
-      />
-    );
-
-    expect(screen.queryByText(/no custom connections yet/i)).not.toBeInTheDocument();
+  it("shows the service's own allowlist", () => {
+    page(svc('intranet', { allowedHosts: ['intranet.acme.com', 'login.okta.com'] }));
     expect(screen.getByText(/intranet\.acme\.com, login\.okta\.com/)).toBeInTheDocument();
+  });
+});
+
+describe('the list of connections', () => {
+  it('ONE ROW A SERVICE, AND EACH OPENS ITS PAGE — every service was listed four times here', async () => {
+    const opened: string[] = [];
+    render(
+      <ServiceList
+        state={state({ allServices: [svc('gmail'), svc('slack')] })}
+        onOpen={(id) => opened.push(id)}
+      />,
+    );
+    expect(screen.getAllByRole('button', { name: /^Settings for / })).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Settings for slack' }));
+    expect(opened).toEqual(['slack']);
+  });
+
+  it('says so when there are no connections, rather than showing an empty list', () => {
+    render(<ServiceList state={state({ allServices: [] })} onOpen={() => {}} />);
+    expect(screen.getByText(/no connections yet/i)).toBeInTheDocument();
   });
 });
 
@@ -273,10 +274,12 @@ describe('web push readiness', () => {
   });
 });
 
-describe('more per service', () => {
+describe("a service's own page: start page, CSS, running", () => {
+  const page = (service: ServiceView) =>
+    render(<ServiceSettings state={state({ allServices: [service] })} svc={service} onBack={() => {}} />);
+
   it('A SELF-HOSTED START PAGE BRINGS ITS HOST WITH IT — or it would open in the browser', async () => {
-    const { PerService } = await import('../../src/renderer/settings/Connections');
-    render(<PerService state={state({ allServices: [svc('gitlab', { catalogId: 'gitlab' })] })} />);
+    page(svc('gitlab', { catalogId: 'gitlab' }));
     const field = screen.getByLabelText('Start page for gitlab');
     await userEvent.type(field, 'git.acme.io/dashboard{Enter}');
     expect(sent).toContainEqual({
@@ -287,20 +290,38 @@ describe('more per service', () => {
   });
 
   it('a start page on an already-allowed host changes only the URL', async () => {
-    const { PerService } = await import('../../src/renderer/settings/Connections');
-    render(<PerService state={state({ allServices: [svc('gitlab', { catalogId: 'gitlab' })] })} />);
+    page(svc('gitlab', { catalogId: 'gitlab' }));
     await userEvent.type(screen.getByLabelText('Start page for gitlab'), 'https://gitlab.com/acme{Enter}');
     expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gitlab', patch: { url: 'https://gitlab.com/acme' } });
   });
 
   it('custom CSS commits when you leave the box, not per keystroke', async () => {
-    const { PerService } = await import('../../src/renderer/settings/Connections');
-    render(<PerService state={state({ allServices: [svc('gmail')] })} />);
+    page(svc('gmail'));
     const area = screen.getByLabelText('Custom CSS for gmail');
     await userEvent.type(area, '.ad{{display:none}');
     expect(sent.filter((c) => (c as { type: string }).type === 'update-service')).toEqual([]);
     await userEvent.tab();
     expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { customCss: '.ad{display:none}' } });
+  });
+
+  it('KEEP RUNNING IS HERE, AND WHILE IT IS ON, HIBERNATION SAYS WHY IT IS OFF', async () => {
+    page(svc('slack', { keepRunning: true }));
+    expect(screen.getByLabelText('Keep running')).toBeChecked();
+    expect(screen.getByLabelText('Hibernate when idle')).toBeDisabled();
+    expect(screen.getByText('Not while it is set to keep running')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Keep running'));
+    expect(sent).toContainEqual({ type: 'update-service', serviceId: 'slack', patch: { keepRunning: false } });
+  });
+
+  it('removing goes back to the list, since the page it was on no longer has a service', async () => {
+    let back = 0;
+    const service = svc('gmail');
+    render(<ServiceSettings state={state({ allServices: [service] })} svc={service} onBack={() => back++} />);
+    const remove = screen.getByRole('button', { name: 'Remove' });
+    await userEvent.click(remove);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove gmail?' }));
+    expect(sent).toContainEqual({ type: 'remove-service', serviceId: 'gmail' });
+    expect(back).toBe(1);
   });
 });
 
