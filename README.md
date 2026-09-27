@@ -49,8 +49,18 @@ yourself" needs a Developer ID. Details: [packaging.md](docs/packaging.md).
 
 ## What it does
 
-**Panes.** 1–4 web views side by side, inset as rounded cards. `⌘\` splits, `⌘⌥←/→` moves focus.
-The arrangement is remembered per workspace across restarts.
+**Panes.** 1–4 web views side by side, inset as rounded cards.
+- `⌘\` splits, `⌘⌥←/→` moves focus, and `⇧⌘⌥←/→` moves the pane itself.
+- Drag the gap between two panes to resize them.
+- The one large pane and the rest stacked beside it is a toggle in the View menu.
+- `⇧⌘T` reopens the pane you just closed.
+- The arrangement, widths and shape included, is remembered per workspace across restarts.
+- A header on each pane is optional. It has the service's name and page, back, forward and
+  reload, and dragging it moves the pane.
+
+**⌘K finds anything.** Services, most recent first, workspaces, and every action by its menu name,
+with its shortcut. It also has verbs for the service you're in: reload, mute, mark read, pop out,
+Settings for it.
 
 **Accounts and multi-login.** An account owns one cookie jar. Gmail, Calendar and Drive share one
 Google login; a *second* Gmail gets its own. Unlimited, because a partition costs nothing.
@@ -64,12 +74,17 @@ those, and catalog entries without a logo yet, get their favicon captured from t
 
 **Notifications.** A service's own notifications are intercepted and attributed, so the dock badge,
 tray count and folder roll-ups all reflect real unread. Do Not Disturb silences the banner but keeps
-counting; muting a service does neither. Both can be timed — for an hour, until tomorrow — and the
-tray keeps the last few notifications you missed.
+counting; muting a service does neither, and Badge only counts without a banner. They can be timed —
+for an hour, until tomorrow — and ⇧⌘J lists the notifications you missed and your downloads. A
+service set to keep running loads at launch and never sleeps, so it notifies without a pane.
 
 **Links and mail.** A link that leaves one service can open in the service it belongs to — a Jira
 ticket from Slack in your Jira — instead of the browser (opt-in). Hangar can also be your default
 email app: `mailto:` links anywhere on the Mac open a new message in Gmail, Outlook or Yahoo here.
+
+**Automation.** `hangar://open/Slack`, `hangar://dnd/on?for=45` and the same as command-line
+flags. Shortcuts, Raycast and Focus can switch services, workspaces and Do Not Disturb. What a link
+can do is a short list on purpose. See [automation.md](docs/automation.md).
 
 **Panes and windows.** Maximise the focused pane (⌘⇧↵), with a ring marking which one has focus;
 pop any service into a window of its own, still signed in — for a call beside something else.
@@ -184,7 +199,8 @@ that has never opened Gmail.
 
 ## Status
 
-**Built:** the shell (panes, palette, keyboard, application menu, context menus), accounts and
+**Built:** the shell (panes with resizable splits and optional headers, the command palette,
+keyboard, application menu, context menus), `hangar://` links and command-line flags, accounts and
 multi-login, icons, the connection picker with custom URLs, folders, rail reordering, dragging a
 tile onto a pane, dragging one into and out of a folder, the compact rail's chevron, keyboard
 rebinding with per-service passthrough, unread from the page's own badge and from a sleeping
