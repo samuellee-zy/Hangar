@@ -117,6 +117,9 @@ export const paneCommands: CommandTable = {
 
   'sleep-others': (_command, shell) => {
     const keep = shell.layout.visibleServiceIds();
+    // Nor the ones set to keep running — that setting exists so they don't go quiet off screen.
+    // Each can still be put to sleep on its own, from its tile's menu.
+    for (const svc of loadConfig().services) if (svc.keepRunning) keep.add(svc.id);
     for (const [serviceId] of [...shell.services.all()]) {
       if (!keep.has(serviceId)) shell.sleep(serviceId);
     }

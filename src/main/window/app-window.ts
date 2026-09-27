@@ -385,6 +385,7 @@ export class AppWindow {
     if (serviceIds.length === 0) {
       const first = this.activeServices(workspaceId)[0];
       if (first) this.openService(first.id, { newPane: true });
+      this.startBackgroundServices();
       return;
     }
 
@@ -400,6 +401,18 @@ export class AppWindow {
     const restoredFocus = this.layout.panes[focusedIndex >= 0 ? focusedIndex : 0];
     if (restoredFocus) this.layout.focusedPaneId = restoredFocus.id;
     this.saveLayout();
+    this.startBackgroundServices();
+  }
+
+  /**
+   * Loads every `keepRunning` service that isn't already, from every workspace — a message in
+   * another workspace is still one to hear about. No pane: a view with no bounds renders nothing and
+   * still runs, notifies and reports its unread count.
+   */
+  private startBackgroundServices(): void {
+    for (const svc of loadConfig().services) {
+      if (svc.keepRunning && !this.services.has(svc.id)) this.services.ensure(svc);
+    }
   }
 
   private saveLayout(): void {
@@ -1345,7 +1358,8 @@ export class AppWindow {
         serviceId: svc.id,
         visible: visible.has(svc.id),
         sleeping: !this.services.has(svc.id),
-        hibernate: svc.hibernate,
+        // Running in the background is the point of `keepRunning`; sleeping it would undo that.
+        hibernate: svc.hibernate && !svc.keepRunning,
         lastActiveAt: this.services.get(svc.id)?.lastActiveAt ?? Date.now(),
       })),
       timeout,

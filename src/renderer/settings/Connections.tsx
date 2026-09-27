@@ -258,7 +258,11 @@ export function PerService({ state }: { state: ShellState }) {
                 {svc.customCss ? 'custom CSS · ' : ''}
                 {svc.customJs ? 'custom JS · ' : ''}
                 {svc.notificationLevel === 'muted' ? 'muted · ' : ''}
-                {svc.hibernate ? 'may hibernate' : 'never hibernates'}
+                {svc.keepRunning
+                  ? 'keeps running'
+                  : svc.hibernate
+                    ? 'may hibernate'
+                    : 'never hibernates'}
               </span>
             </span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -295,6 +299,25 @@ export function PerService({ state }: { state: ShellState }) {
                   }
                 />
                 hibernate
+              </label>
+              {/* Loads at launch and stays loaded, so it notifies from off screen. */}
+              <label
+                className="pref-note"
+                style={{ display: 'flex', gap: 4 }}
+                title="Load at launch and never hibernate, so it can notify without being in a pane"
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(svc.keepRunning)}
+                  onChange={(e) =>
+                    window.hangar.send({
+                      type: 'update-service',
+                      serviceId: svc.id,
+                      patch: { keepRunning: e.target.checked },
+                    })
+                  }
+                />
+                keep running
               </label>
               {/* Muting is per service and stops the badge as well as the banner — the count is
                   pushed back to the page as an empty rule set, so a muted service stops watching

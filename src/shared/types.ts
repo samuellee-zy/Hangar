@@ -184,6 +184,13 @@ export interface ServiceInstance {
   accountId: string;
   notifications: boolean;
   hibernate: boolean;
+  /**
+   * Loaded at launch and never hibernated, so it notifies and counts without being in a pane. Off
+   * by default: a service not on screen has no page, which is the memory-cheap state, and only
+   * Gmail's endpoint and Web Push could reach you from it. Turned on for the chat and mail you
+   * don't want to miss.
+   */
+  keepRunning?: boolean;
   zoom: number;
   /** Per-service user agent, for a service that refuses Electron's. Set on the service's own page. */
   userAgent?: string;

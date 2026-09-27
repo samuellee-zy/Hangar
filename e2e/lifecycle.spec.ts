@@ -156,6 +156,28 @@ test('CLOSING THE WINDOW AND REOPENING IT LEAVES ONE RAIL — the old one used t
   await expect.poll(rails, { message: 'and the new window has exactly one' }).toBe(1);
 });
 
+test('A SERVICE SET TO KEEP RUNNING IS LOADED AT LAUNCH WITHOUT A PANE — so it can notify', async () => {
+  // Only the services in the saved panes loaded at launch; every other tile had no page, so no
+  // notifications and no unread count until you clicked it. Two is in no pane here.
+  h = await launch((origin) => {
+    const c = seedConfig(origin) as { services: Array<Record<string, unknown>> };
+    c.services[1] = { ...c.services[1], keepRunning: true };
+    return c;
+  });
+  await h.rail();
+
+  const loaded = () =>
+    h.app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()));
+  await expect.poll(async () => (await loaded()).some((url) => url.endsWith('/unread'))).toBe(true);
+
+  const inPane = await h.app.evaluate(
+    () =>
+      (globalThis as never as { __hangarShell: { state: () => { panes: Array<{ serviceId: string }> } } })
+        .__hangarShell.state().panes.map((p) => p.serviceId),
+  );
+  expect(inPane, 'running in the background, not opened in a pane').not.toContain('two');
+});
+
 test('A START PAGE SURVIVES A RELAUNCH — every launch used to put the catalog address back', async () => {
   // A catalog service given its own address in Settings — a self-hosted GitLab. Loading the config
   // dropped `url` from every catalog service, so the next launch sent it to gitlab.com.

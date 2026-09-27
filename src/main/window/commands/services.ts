@@ -55,6 +55,11 @@ export const serviceCommands: CommandTable = {
         svc.keyboardPassthrough = normalisePassthrough(patch.keyboardPassthrough);
       }
     });
+    // Turned on: start it now rather than at the next launch.
+    if (patch.keepRunning) {
+      const svc = loadConfig().services.find((s) => s.id === command.serviceId);
+      if (svc && !shell.services.has(svc.id)) shell.services.ensure(svc);
+    }
     // Zoom applies live; CSS/JS and UA need a reload to take effect, so say so rather than
     // silently doing half the job.
     const runtime = shell.services.get(command.serviceId);
