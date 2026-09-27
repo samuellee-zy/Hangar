@@ -2,9 +2,10 @@
 // place a malformed renderer message could corrupt config on disk. These pin the validation.
 //
 
-import { describe, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import { DEFAULT_PREFERENCES, resetPreferences, setPreference, withDefaults } from '@core/config/preferences';
+import { DEFAULT_BINDINGS, primaryChord } from '@core/keyboard/keymap';
 
 
 const fresh = () => withDefaults(undefined);
@@ -265,5 +266,26 @@ describe('what a full reset preserves', () => {
     const next = resetPreferences(p);
     next.notifications.firebase.apiKey = 'changed';
     assert.equal(p.notifications.firebase.apiKey, 'k');
+  });
+});
+
+describe('actions added after your bindings were saved', () => {
+  it("A NEW ACTION DOESN'T TAKE A CHORD YOU BOUND YOURSELF — ⇧⌘U on sleep-others stays yours", () => {
+    const mine = primaryChord('u', { shift: true });
+    const stored = { keyboard: { bindings: { 'sleep-others': mine } } };
+    const prefs = withDefaults(stored);
+    expect(prefs.keyboard.bindings['sleep-others']).toBe(mine);
+    expect(prefs.keyboard.bindings['next-unread'], 'starts unbound rather than winning the chord').toBe('');
+  });
+
+  it('a new action whose chord is free gets its default', () => {
+    const prefs = withDefaults({ keyboard: { bindings: { split: primaryChord('\\') } } });
+    expect(prefs.keyboard.bindings['next-unread']).toBe(DEFAULT_BINDINGS['next-unread']);
+  });
+
+  it('an action you unbound on purpose stays unbound, and an empty chord takes nothing', () => {
+    const prefs = withDefaults({ keyboard: { bindings: { 'next-unread': '', 'sleep-others': '' } } });
+    expect(prefs.keyboard.bindings['next-unread']).toBe('');
+    expect(prefs.keyboard.bindings['palette']).toBe(DEFAULT_BINDINGS['palette']);
   });
 });

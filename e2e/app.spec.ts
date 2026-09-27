@@ -424,7 +424,10 @@ test('DRAGGING A TILE ONTO A PANE PUTS IT THERE, AND GIVES THE PANES BACK AFTERW
         state: () => { panes: Array<{ serviceId: string }> };
       };
     };
-    g.__hangarShell?.dispatch({ type: 'begin-tile-drag', serviceId: 'one' });
+    // Two, which the rail click above took off the screen. (One is in the pane, and a service
+    // already on screen is focused where it is rather than opened a second time — this used to
+    // pass by drawing One twice.)
+    g.__hangarShell?.dispatch({ type: 'begin-tile-drag', serviceId: 'two' });
     // Top-left of the content area is gutter, never a pane.
     g.__hangarShell?.dispatch({
       type: 'drop-tile',
@@ -434,7 +437,7 @@ test('DRAGGING A TILE ONTO A PANE PUTS IT THERE, AND GIVES THE PANES BACK AFTERW
     });
     return g.__hangarShell?.state().panes.map((p) => p.serviceId);
   });
-  expect(opened).toHaveLength(2);
+  expect(opened).toEqual(['one', 'two']);
 });
 
 test('DRAGGING A TILE ONTO A FOLDER FILES IT THERE, AND DRAGGING IT OUT TAKES IT BACK', async () => {

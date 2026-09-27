@@ -4,7 +4,7 @@ import { persistAll, startMaintenance } from '@main/boot/maintenance';
 import { setUpLogFile, sinceLaunch } from '@main/platform/log-file';
 import { flushConfig, loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
-import { installMenu } from '@main/boot/menu';
+import { installMenu, refreshMenu } from '@main/boot/menu';
 import { DEFAULT_BINDINGS } from '@core/keyboard/keymap';
 import { applyUserAgent } from '@main/platform/ua';
 import { beginQuit, isQuitting } from '@main/platform/quit-state';
@@ -62,6 +62,9 @@ const trackWindow = (w: AppWindow) => {
     w.dispose();
     shell = null;
     publishTestHandle();
+    // The Dock and Go menus list services with their unread counts, and Do Not Disturb. Left as
+    // they were, the Dock went on saying "Slack (5)" with the badge cleared and nothing behind it.
+    refreshMenu();
   });
 };
 
@@ -240,9 +243,11 @@ app.whenReady().then(() => {
   // with close-to-tray off there is no shell to dispatch to, and "Show Hangar" has to build one.
   installMenu(
     (command) => {
-      if (command.type !== 'show-window') return shell?.dispatch(command) ?? false;
-      ensureShell();
-      return true;
+      // A menu choice made with no window builds one first: Do Not Disturb from the Dock, or a Go
+      // item, after ⌘W did nothing at all.
+      if (command.type === 'show-window' || !shell) ensureShell();
+      if (command.type === 'show-window') return true;
+      return shell?.dispatch(command) ?? false;
     },
     () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS,
     () => shell?.state() ?? null,
@@ -297,10 +302,10 @@ function registerIpc(): void {
   ipcMain.handle('settings:get-target', (event) =>
     fromApp(event, 'settings:get-target') ? takeSettingsTarget() : null,
   );
-  // Memory readout for Settings, so the hibernation setting has a visible consequence.
   ipcMain.handle('drag:get-highlight', (event) =>
     fromApp(event, 'drag:get-highlight') ? (shell?.dragHighlight() ?? null) : null,
   );
+  // Memory and process counts, for a readout nothing draws yet (backlog §14.2, task manager).
   ipcMain.handle('app:metrics', (event) => {
     if (!fromApp(event, 'app:metrics')) return null;
     const metrics = app.getAppMetrics();

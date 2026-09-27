@@ -31,10 +31,14 @@ import type { RailItem, ServiceView } from '@shared/types';
 export function workspaceMark(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return '··';
-  const first = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(trimmed)][0]?.segment ?? '';
+  // By grapheme, not UTF-16 unit, everywhere: "Side 🚀" took the second word's first *unit*, half
+  // of the rocket.
+  const graphemes = (text: string) => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((g) => g.segment);
+  const first = graphemes(trimmed)[0] ?? '';
   if (/\p{Extended_Pictographic}/u.test(first)) return first;
   const words = trimmed.split(/\s+/).filter(Boolean);
-  const letters = words.length > 1 ? words[0]![0]! + words[1]![0]! : words[0]!.slice(0, 1);
+  const initial = (word: string) => graphemes(word)[0] ?? '';
+  const letters = words.length > 1 ? initial(words[0]!) + initial(words[1]!) : initial(words[0]!);
   return letters.toUpperCase();
 }
 
