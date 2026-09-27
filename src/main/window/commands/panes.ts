@@ -94,6 +94,42 @@ export const paneCommands: CommandTable = {
     shell.saveLayout();
   },
 
+  'reopen-pane': (_command, shell) => {
+    const available = new Set(shell.activeServices(loadConfig().activeWorkspaceId).map((s) => s.id));
+    const pane = shell.layout.reopen((serviceId) => available.has(serviceId));
+    if (!pane) return false;
+    // The pane is in place and focused; this starts its service if it had gone to sleep, then lays
+    // out and saves.
+    shell.openService(pane.serviceId);
+    shell.focusActivePane();
+  },
+
+  'move-pane': (command, shell) => {
+    if (!shell.layout.moveFocused(command.delta)) return false;
+    shell.relayout();
+    shell.saveLayout();
+    shell.focusActivePane();
+  },
+
+  'toggle-layout-shape': (_command, shell) => {
+    shell.layout.shape = shell.layout.shape === 'columns' ? 'main-stack' : 'columns';
+    // The columns change, and widths dragged for one arrangement say nothing about the other.
+    shell.layout.weights = [];
+    shell.relayout();
+    shell.saveLayout();
+  },
+
+  'drag-split': (command, shell) => shell.dragSplit(command.index, command.screenX),
+
+  'end-split': (_command, shell) => shell.endSplit(),
+
+  'reset-splits': (_command, shell) => {
+    if (!shell.layout.weights.length) return false;
+    shell.layout.weights = [];
+    shell.relayout();
+    shell.saveLayout();
+  },
+
   'toggle-maximise-pane': (_command, shell) => {
     shell.layout.toggleMaximise();
     shell.relayout();

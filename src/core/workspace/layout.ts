@@ -15,9 +15,9 @@ import {
 export type { Rect };
 
 /**
- * Pane geometry. Deliberately dumb: no tree, no resizable splitters, no persisted ratios — just
- * "how do N panes divide whatever the rail leaves behind". A tree buys flexibility nobody asked
- * for; if dragging splitters ever matters, this is the one file that changes.
+ * Pane geometry: how N panes divide whatever the rail leaves behind. Still no tree — two shapes and
+ * a width per column (see `LayoutShape` and `Layout.weights`) cover what a splitter needs, and a
+ * tree buys flexibility nobody asked for.
  *
  * Pure — no Electron import — so all of it is testable under plain node.
  */
@@ -178,9 +178,40 @@ export function contentArea(chrome: Chrome, width: number, height: number): Rect
   }
 }
 
+/**
+ * How the panes are arranged.
+ *
+ * - `columns`: side by side, and a 2×2 grid at four — what there always was.
+ * - `main-stack`: the first pane large on the left, the rest stacked on the right. Three equal
+ *   columns at 1440px are ~430px each, where many web apps fall back to their phone layout; this
+ *   keeps one of them wide.
+ */
+export type LayoutShape = 'columns' | 'main-stack';
+
+/** No pane is dragged narrower than this — below it most web apps stop being usable. */
+export const MIN_PANE_WIDTH = 280;
+
+/** A vertical boundary between two columns, where a splitter sits. */
+export interface Boundary {
+  /** Which boundary: 0 is between the first and second column. */
+  index: number;
+  /** The gutter's rectangle, in window coordinates. */
+  rect: Rect;
+}
+
 export class Layout {
   panes: Pane[] = [];
   focusedPaneId: string | null = null;
+  shape: LayoutShape = 'columns';
+  /**
+   * Column widths as weights, one per column, or empty for equal. Set by dragging a splitter and
+   * saved with the layout. Let go of whenever the number of panes changes: widths dragged for two
+   * mean nothing for three — and nothing for four either, though a 2×2 grid is two columns again,
+   * which is how widths from two panes used to come back when a fourth was opened.
+   */
+  weights: number[] = [];
+  /** Recently closed panes, newest last — what ⌘⇧T reopens, at the place each was. */
+  closed: Array<{ serviceId: string; index: number }> = [];
   /**
    * One pane filling the content area on its own, the others kept but not drawn — the split
    * survives, it is just out of the way. Follows focus: cycling panes while maximised shows the
@@ -267,6 +298,7 @@ export class Layout {
     if (at === -1) this.panes.push(pane);
     else this.panes.splice(beside!.side === 'before' ? at : at + 1, 0, pane);
     this.focusedPaneId = pane.id;
+    this.weights = [];
     return pane;
   }
 
@@ -275,8 +307,44 @@ export class Layout {
     if (index === -1) return;
     // Never close the last pane — the window would be an empty rail with nothing in it.
     if (this.panes.length === 1) return;
-    this.panes.splice(index, 1);
+    const [gone] = this.panes.splice(index, 1);
+    if (gone) this.closed = [...this.closed, { serviceId: gone.serviceId, index }].slice(-10);
+    this.weights = [];
     this.refocusAfter(index, paneId);
+  }
+
+  /** The most recently closed pane, reopened where it was, or null when there is none to reopen. */
+  reopen(isAvailable: (serviceId: string) => boolean): Pane | null {
+    while (this.closed.length && !this.isFull) {
+      const last = this.closed[this.closed.length - 1]!;
+      this.closed = this.closed.slice(0, -1);
+      // A service removed since, or already on screen, is skipped rather than reopened twice.
+      if (!isAvailable(last.serviceId) || this.panes.some((p) => p.serviceId === last.serviceId)) continue;
+      this.maximisedPaneId = null;
+      const pane: Pane = { id: randomUUID(), serviceId: last.serviceId };
+      this.panes.splice(Math.min(last.index, this.panes.length), 0, pane);
+      this.focusedPaneId = pane.id;
+      this.weights = [];
+      return pane;
+    }
+    return null;
+  }
+
+  /** Moves the focused pane one place along — swapping it with its neighbour. */
+  moveFocused(delta: -1 | 1): boolean {
+    const i = this.panes.findIndex((p) => p.id === this.focusedPaneId);
+    const j = i + delta;
+    if (i === -1 || j < 0 || j >= this.panes.length) return false;
+    [this.panes[i], this.panes[j]] = [this.panes[j]!, this.panes[i]!];
+    return true;
+  }
+
+  /** How many columns the drawn panes make, for the shape and the count. */
+  columns(): number {
+    const n = this.drawn().length;
+    if (n <= 1) return n;
+    if (this.shape === 'main-stack') return 2;
+    return n === 4 ? 2 : n;
   }
 
   /**
@@ -291,6 +359,7 @@ export class Layout {
     const index = this.panes.findIndex((p) => p.id === paneId);
     if (index === -1) return;
     this.panes.splice(index, 1);
+    this.weights = [];
     this.refocusAfter(index, paneId);
   }
 
@@ -328,30 +397,87 @@ export class Layout {
 
     const area = contentArea(chrome, contentWidth, contentHeight);
     const { gutter } = chrome;
-    const cols = n === 4 ? 2 : n;
-    const rows = n === 4 ? 2 : 1;
-
+    const cols = this.columns();
+    const stacked = this.shape === 'main-stack' && n >= 2;
     const x0 = area.x + gutter;
     const y0 = area.y + gutter;
     const usableW = Math.max(0, area.width - gutter * (cols + 1));
-    const usableH = Math.max(0, area.height - gutter * (rows + 1));
+    const widths = columnWidths(usableW, cols, this.weights);
+    const columnX = (col: number) => x0 + widths.slice(0, col).reduce((a, b) => a + b, 0) + col * gutter;
 
-    const cellW = Math.floor(usableW / cols);
-    const cellH = Math.floor(usableH / rows);
+    // Which cells each column holds: one each in columns; in a grid, two rows; in main-stack, the
+    // first pane alone and the rest stacked in the second column.
+    const cellsOf = (col: number): Pane[] => {
+      if (stacked) return col === 0 ? panes.slice(0, 1) : panes.slice(1);
+      if (n === 4) return panes.filter((_, i) => i % 2 === col);
+      return [panes[col]!];
+    };
 
-    panes.forEach((pane, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      out.set(pane.id, {
-        x: x0 + col * (cellW + gutter),
-        y: y0 + row * (cellH + gutter),
-        // Last column/row absorbs the rounding remainder so the far gutter stays even.
-        width: col === cols - 1 ? usableW - col * cellW : cellW,
-        height: row === rows - 1 ? usableH - row * cellH : cellH,
+    // Built per column, returned in pane order — callers iterate it and expect the panes' own order.
+    const byPane = new Map<string, Rect>();
+    for (let col = 0; col < cols; col++) {
+      const cells = cellsOf(col);
+      const rows = cells.length;
+      const usableH = Math.max(0, area.height - gutter * (rows + 1));
+      const cellH = Math.floor(usableH / rows);
+      cells.forEach((pane, row) => {
+        byPane.set(pane.id, {
+          x: columnX(col),
+          y: y0 + row * (cellH + gutter),
+          width: widths[col]!,
+          // Last row absorbs the rounding remainder so the far gutter stays even.
+          height: row === rows - 1 ? usableH - row * cellH : cellH,
+        });
       });
-    });
-
+    }
+    for (const pane of panes) {
+      const rect = byPane.get(pane.id);
+      if (rect) out.set(pane.id, rect);
+    }
     return out;
+  }
+
+  /** The gutters between columns, where splitters go. Empty with one column. */
+  boundaries(chrome: Chrome, contentWidth: number, contentHeight: number): Boundary[] {
+    const cols = this.columns();
+    if (cols < 2) return [];
+    const area = contentArea(chrome, contentWidth, contentHeight);
+    const { gutter } = chrome;
+    const usableW = Math.max(0, area.width - gutter * (cols + 1));
+    const widths = columnWidths(usableW, cols, this.weights);
+    const out: Boundary[] = [];
+    let x = area.x + gutter;
+    for (let i = 0; i < cols - 1; i++) {
+      x += widths[i]!;
+      out.push({ index: i, rect: { x, y: area.y + gutter, width: gutter, height: Math.max(0, area.height - gutter * 2) } });
+      x += gutter;
+    }
+    return out;
+  }
+
+  /**
+   * Moves boundary `index` so it sits at window x `at`, keeping every column at least
+   * `MIN_PANE_WIDTH` wide — or, where the pair is too narrow to give both that, a third of the pair.
+   * Only the two columns either side of it change.
+   */
+  resizeAt(index: number, at: number, chrome: Chrome, contentWidth: number, contentHeight: number): void {
+    const cols = this.columns();
+    if (index < 0 || index >= cols - 1) return;
+    const area = contentArea(chrome, contentWidth, contentHeight);
+    const { gutter } = chrome;
+    const usableW = Math.max(0, area.width - gutter * (cols + 1));
+    const widths = columnWidths(usableW, cols, this.weights);
+    // Where the left of the pair starts, and how much the pair has between them.
+    const start = area.x + gutter + widths.slice(0, index).reduce((a, b) => a + b, 0) + index * gutter;
+    const pair = widths[index]! + widths[index + 1]!;
+    // Half the pair was the fallback, which in a narrow window pinned the boundary in the middle:
+    // three columns in 820px are 240px each, under the minimum already, and couldn't be resized at all.
+    // Only then, though: a pair with room for two minimums keeps them.
+    const floor = pair >= 2 * MIN_PANE_WIDTH ? MIN_PANE_WIDTH : Math.round(pair / 3);
+    const left = Math.max(floor, Math.min(pair - floor, Math.round(at - start - gutter / 2)));
+    widths[index] = left;
+    widths[index + 1] = pair - left;
+    this.weights = widths;
   }
 
   /** Services currently on screen — everything else gets detached. */
@@ -359,3 +485,21 @@ export class Layout {
     return new Set(this.panes.map((p) => p.serviceId));
   }
 }
+
+/**
+ * Column widths from weights, summing exactly to `total`: equal when there are no weights for this
+ * many columns, and the last column absorbs the rounding so the far gutter stays even.
+ */
+export function columnWidths(total: number, cols: number, weights: readonly number[]): number[] {
+  if (cols <= 0) return [];
+  const usable =
+    weights.length === cols &&
+    weights.every((v) => Number.isFinite(v) && v > 0) &&
+    Number.isFinite(weights.reduce((a, b) => a + b, 0));
+  const w = usable ? weights : Array(cols).fill(1);
+  const sum = w.reduce((a, b) => a + b, 0);
+  const out = w.map((v) => Math.floor((total * v) / sum));
+  out[cols - 1] = total - out.slice(0, -1).reduce((a, b) => a + b, 0);
+  return out;
+}
+

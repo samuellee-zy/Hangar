@@ -156,6 +156,39 @@ test('CLOSING THE WINDOW AND REOPENING IT LEAVES ONE RAIL — the old one used t
   await expect.poll(rails, { message: 'and the new window has exactly one' }).toBe(1);
 });
 
+test('CLOSING A SPLIT WINDOW AND REOPENING IT WORKS — teardown threw on the splitter, and no window came back', async () => {
+  // Two panes means a splitter. Its teardown detached it from a window already destroyed, which
+  // throws; `dispose` stopped there, `shell` was never cleared, and a Dock click then asked the dead
+  // window whether it was visible — so nothing ever appeared again until the app was quit.
+  h = await launch();
+  await h.rail();
+  await h.app.evaluate(() =>
+    (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } }).__hangarShell.dispatch({
+      type: 'split',
+    }),
+  );
+  const splitters = () =>
+    h.app.evaluate(({ webContents }) =>
+      webContents.getAllWebContents().filter((wc) => wc.getURL().includes('#splitter-')).length,
+    );
+  await expect.poll(splitters).toBe(1);
+
+  await h.app.evaluate(() =>
+    (globalThis as never as { __hangarShell: { win: { close: () => void } } }).__hangarShell.win.close(),
+  );
+  await expect.poll(splitters, { message: 'the splitter went with the window' }).toBe(0);
+
+  await h.app.evaluate(({ app }) => app.emit('activate'));
+  await expect
+    .poll(() =>
+      h.app.evaluate(() => {
+        const current = (globalThis as never as { __hangarShell: { win: Electron.BaseWindow } | null }).__hangarShell;
+        return Boolean(current && !current.win.isDestroyed() && current.win.isVisible());
+      }),
+    )
+    .toBe(true);
+});
+
 test('A SERVICE SET TO KEEP RUNNING IS LOADED AT LAUNCH WITHOUT A PANE — so it can notify', async () => {
   // Only the services in the saved panes loaded at launch; every other tile had no page, so no
   // notifications and no unread count until you clicked it. Two is in no pane here.

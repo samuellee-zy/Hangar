@@ -81,6 +81,47 @@ body[data-route='drag'] {
   background: transparent;
 }
 
+/* A splitter sits on a gutter, which is bare window background: the view is transparent and draws
+   only a line down its middle, while it's pointed at or dragged. See renderer/Splitter.tsx. */
+body[data-route^='splitter-'] {
+  background: transparent;
+}
+
+.splitter {
+  position: fixed;
+  inset: 0;
+  cursor: col-resize;
+}
+
+.splitter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 1px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--focus);
+  opacity: 0;
+  /* A short delay, so sweeping the pointer across a gutter on the way to a pane doesn't flash it. */
+  transition: opacity 120ms ease 150ms;
+}
+
+.splitter:hover::after,
+.splitter.is-dragging::after {
+  opacity: 1;
+}
+
+.splitter.is-dragging::after {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splitter::after {
+    transition: none;
+  }
+}
+
 /* --- drop target ------------------------------------------------------------------------ */
 
 /* The answer to "what happens if I let go here?", drawn over the pane it would affect.

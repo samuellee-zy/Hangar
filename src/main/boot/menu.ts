@@ -69,13 +69,24 @@ function build(): void {
     dispatch({ type: 'focus-service', serviceId });
   };
 
+  /**
+   * The labels that depend on state, each saying what choosing it would do: it said "Maximise pane"
+   * while a pane was maximised.
+   */
+  const labelOf = (action: (typeof KEY_ACTIONS)[number]): string => {
+    if (action.id === 'maximise-pane' && state?.maximisedPaneId) return 'Restore panes';
+    if (action.id === 'layout-shape') {
+      return state?.layoutShape === 'main-stack' ? 'Put panes side by side' : 'One large pane, the rest stacked';
+    }
+    return action.label;
+  };
+
   /** The items for one menu, with their separators, drawn from the single table. */
   const items = (menu: 'app' | 'file' | 'view' | 'go' | 'help'): MenuItemConstructorOptions[] =>
     KEY_ACTIONS.filter((action) => action.menu === menu).flatMap((action) => {
       const accelerator = toAccelerator(current[action.id] ?? '');
       const item: MenuItemConstructorOptions = {
-        // The one label that depends on state: it said "Maximise pane" while a pane was maximised.
-        label: action.id === 'maximise-pane' && state?.maximisedPaneId ? 'Restore panes' : action.label,
+        label: labelOf(action),
         click: send(action.command),
         // Shown, not bound. See the module comment — this is the whole reason rebinding works.
         ...(accelerator ? { accelerator, registerAccelerator: false } : {}),

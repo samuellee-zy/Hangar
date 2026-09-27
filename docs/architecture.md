@@ -13,6 +13,7 @@ Back to front — the order is the z-order, and `relayout` re-establishes it on 
 BaseWindow
 ├── View             focus ring                          (index 0: a coloured card behind the focused pane)
 ├── WebContentsView  service…   → persist:<account>     (1–4 panes, inset rounded cards)
+├── WebContentsView  splitter…  → renderer #splitter-N  (one per gutter between columns; none with one)
 ├── WebContentsView  empty      → renderer #empty       (only when no pane can be filled)
 ├── WebContentsView  rail       → renderer #rail        (any edge; frameless, drag handle)
 ├── WebContentsView  find bar   → renderer #find        (attached on demand)
@@ -28,6 +29,13 @@ attached first — which was invisible while it only ever occupied space the pan
 and became a blocker the moment it needed to grow over them (decisions #88). It no longer does —
 the panes reflow around an opened rail (#95) — but a pane whose bounds are a frame stale still
 mustn't cover it, and `relayout` re-raises it only when one does.
+
+The splitters sit on the gutters, which are bare window background with nothing to take a pointer,
+so each is a thin transparent renderer of its own. A drag reports the pointer in *screen*
+coordinates — the view moves with the boundary it's dragging, so a client position would be a frame
+stale — and main applies it to the panes' rectangles without a full relayout, which would re-attach
+every pane once a frame. Nothing re-attaches a splitter mid-drag: macOS sends the rest of a press to
+the view that took it, and a view taken off the window loses it.
 
 Anything attached on demand is also *detached*, never hidden: a `WebContentsView` hit-tests across
 its whole bounds whether or not you can see it, so one left attached swallows every click in the

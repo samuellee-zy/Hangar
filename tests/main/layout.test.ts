@@ -8,7 +8,9 @@ import {
   COMPACT_RAIL_SIZE,
   EXPANDED_RAIL_SIZE,
   Layout,
+  MIN_PANE_WIDTH,
   TOP_STRIP,
+  columnWidths,
   chromeFor,
   contentArea,
   railBounds,
@@ -498,6 +500,129 @@ describe('opening beside a pane', () => {
       l.panes.map((p) => p.serviceId),
       ['a', 'right-of-a', 'left-of-b', 'b'],
     );
+  });
+});
+
+describe('shapes and splitters', () => {
+  const layout = (ids: string[], shape: 'columns' | 'main-stack' = 'columns') => {
+    const l = new Layout();
+    ids.forEach((id) => l.add(id));
+    l.shape = shape;
+    return l;
+  };
+  const rects = (l: Layout) => [...l.bounds(chrome('left'), W, H).values()];
+
+  it('ONE LARGE, THE REST STACKED — three equal columns were 430px each', () => {
+    const r = rects(layout(['a', 'b', 'c'], 'main-stack'));
+    assert.equal(r[0]!.height, r[1]!.height + r[2]!.height + GUTTER, 'the first runs the full height');
+    assert.equal(r[1]!.x, r[2]!.x, 'the others share a column');
+    assert.ok(r[1]!.y < r[2]!.y, 'stacked');
+  });
+
+  it('a splitter moves the boundary it sits on, and only the two panes beside it change', () => {
+    const l = layout(['a', 'b', 'c']);
+    const before = rects(l);
+    const [first] = l.boundaries(chrome('left'), W, H);
+    // The pointer is on the gutter's centre line; move it 100px left.
+    l.resizeAt(first!.index, first!.rect.x + first!.rect.width / 2 - 100, chrome('left'), W, H);
+    const after = rects(l);
+    assert.equal(after[0]!.width, before[0]!.width - 100);
+    assert.equal(after[1]!.width, before[1]!.width + 100);
+    assert.equal(after[2]!.width, before[2]!.width, 'the far pane is untouched');
+  });
+
+  it('NO PANE IS DRAGGED NARROWER THAN THE MINIMUM', () => {
+    const l = layout(['a', 'b']);
+    l.resizeAt(0, 0, chrome('left'), W, H); // as far left as it goes
+    assert.ok(rects(l)[0]!.width >= MIN_PANE_WIDTH);
+  });
+
+  it('A PAIR ALREADY UNDER THE MINIMUM CAN STILL BE RESIZED — down to a third each', () => {
+    // 820px, a left rail, three columns: each is well under MIN_PANE_WIDTH before anything moves.
+    const narrow = 820;
+    const l = layout(['a', 'b', 'c']);
+    const before = [...l.bounds(chrome('left'), narrow, H).values()];
+    assert.ok(before[0]!.width < MIN_PANE_WIDTH);
+    const pair = before[0]!.width + before[1]!.width;
+    const [first] = l.boundaries(chrome('left'), narrow, H);
+    l.resizeAt(0, first!.rect.x + first!.rect.width / 2 + 60, chrome('left'), narrow, H);
+    const moved = [...l.bounds(chrome('left'), narrow, H).values()];
+    assert.equal(moved[0]!.width, before[0]!.width + 60, 'it moved');
+    l.resizeAt(0, 0, chrome('left'), narrow, H);
+    assert.equal([...l.bounds(chrome('left'), narrow, H).values()][0]!.width, Math.round(pair / 3));
+  });
+
+  it('weights for one number of columns are ignored for another', () => {
+    const l = layout(['a', 'b']);
+    l.resizeAt(0, 400, chrome('left'), W, H);
+    l.add('c'); // three columns now; the two-column weights mean nothing
+    const r = rects(l);
+    assert.ok(Math.abs(r[0]!.width - r[1]!.width) <= 1 && Math.abs(r[1]!.width - r[2]!.width) <= 1);
+  });
+
+  it('A PAIR WITH ROOM FOR TWO MINIMUMS KEEPS THEM — the third was the floor below 840px', () => {
+    // Three panes in about 1100px: a pair of ~670, which fits two 280s.
+    const wide = 1100;
+    const l = layout(['a', 'b', 'c']);
+    const before = [...l.bounds(chrome('left'), wide, H).values()];
+    const pair = before[0]!.width + before[1]!.width;
+    assert.ok(pair >= 2 * MIN_PANE_WIDTH && pair < 840);
+    l.resizeAt(0, 0, chrome('left'), wide, H);
+    assert.equal([...l.bounds(chrome('left'), wide, H).values()][0]!.width, MIN_PANE_WIDTH);
+  });
+
+  it('WIDTHS DRAGGED FOR TWO PANES DON\'T COME BACK AT FOUR — a 2×2 grid is two columns again', () => {
+    const l = layout(['a', 'b']);
+    l.resizeAt(0, 400, chrome('left'), W, H);
+    assert.equal(l.weights.length, 2);
+    l.add('c');
+    l.add('d');
+    const r = rects(l);
+    assert.ok(Math.abs(r[0]!.width - r[1]!.width) <= 1, 'equal columns');
+  });
+
+  it('weights that are not all finite and positive are ignored — Infinity made every rect NaN', () => {
+    for (const bad of [[Infinity, 1], [1e308, 1e308], [NaN, 1], [-1, 2], [0, 1]]) {
+      const widths = columnWidths(1000, 2, bad);
+      assert.deepEqual(widths, [500, 500], JSON.stringify(bad));
+    }
+  });
+
+  it('columnWidths always sums to the space it was given', () => {
+    for (const weights of [[], [1, 2], [3, 1, 1], [0.2, 0.8]]) {
+      const cols = weights.length || 3;
+      assert.equal(columnWidths(1001, cols, weights).reduce((a, b) => a + b, 0), 1001);
+    }
+  });
+});
+
+describe('closing and reopening, and moving panes', () => {
+  it('⌘⇧T REOPENS THE LAST CLOSED PANE WHERE IT WAS', () => {
+    const l = new Layout();
+    l.add('a');
+    const b = l.add('b');
+    l.add('c');
+    l.close(b.id);
+    const reopened = l.reopen(() => true);
+    assert.equal(reopened?.serviceId, 'b');
+    assert.deepEqual(l.panes.map((p) => p.serviceId), ['a', 'b', 'c']);
+  });
+
+  it('skips a service that has been removed, or is already on screen', () => {
+    const l = new Layout();
+    l.add('a');
+    const b = l.add('b');
+    l.close(b.id);
+    assert.equal(l.reopen((id) => id !== 'b'), null);
+  });
+
+  it('moving the focused pane swaps it with its neighbour', () => {
+    const l = new Layout();
+    l.add('a');
+    l.add('b'); // focused
+    assert.equal(l.moveFocused(-1), true);
+    assert.deepEqual(l.panes.map((p) => p.serviceId), ['b', 'a']);
+    assert.equal(l.moveFocused(-1), false, 'already at the start');
   });
 });
 

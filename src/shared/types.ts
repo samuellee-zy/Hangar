@@ -317,6 +317,10 @@ export interface Workspace {
 export interface StoredLayout {
   panes: Pane[];
   focusedPaneId: string | null;
+  /** `columns` (side by side) when absent. */
+  shape?: 'columns' | 'main-stack';
+  /** Column widths as weights, from dragging a splitter. Equal when absent. */
+  weights?: number[];
 }
 
 export interface WindowBounds {
@@ -533,6 +537,8 @@ export interface ShellState {
   recentServiceIds?: string[];
   /** The pane filling the content area on its own, while the others wait behind it. */
   maximisedPaneId?: string | null;
+  /** How the panes are arranged. `columns` when absent. */
+  layoutShape?: 'columns' | 'main-stack';
   /** The shortcut table, resolved against the stored bindings. See `KeyboardMap`. */
   keyboard: KeyboardMap;
 }
@@ -598,6 +604,21 @@ export type Command =
   | { type: 'mark-all-read' }
   /** The sheet of recent notifications and downloads. */
   | { type: 'open-activity' }
+  /**
+   * From splitter `index`, mid-drag: the pointer's `screenX`. Screen rather than client
+   * coordinates, because the splitter's own view moves with the boundary it is dragging.
+   */
+  | { type: 'drag-split'; index: number; screenX: number }
+  /** The drag let go: save where it ended. */
+  | { type: 'end-split' }
+  /** Back to equal widths — a splitter double-clicked. */
+  | { type: 'reset-splits' }
+  /** Side by side ↔ the first pane large and the rest stacked beside it. */
+  | { type: 'toggle-layout-shape' }
+  /** Swap the focused pane with its neighbour. */
+  | { type: 'move-pane'; delta: -1 | 1 }
+  /** The most recently closed pane, back where it was (⌘⇧T). */
+  | { type: 'reopen-pane' }
   /** `on: null` returns the account to the global setting. */
   | { type: 'set-account-adblock'; accountId: string; on: boolean | null }
   /** The HTTP cache and service-worker caches, not cookies or storage — so it stays signed in. */

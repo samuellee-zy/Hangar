@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { DragLayer } from './DragLayer';
 import { ErrorBoundary } from './ErrorBoundary';
 import { FindBar } from './FindBar';
+import { Splitter } from './Splitter';
 import './styles.css';
 
 // Every surface is a route of one app, selected by hash (see main/renderer-url.ts), and the large
@@ -11,7 +12,8 @@ import './styles.css';
 //
 // The drag layer and the find bar stay in the entry, and not for size — they're a kilobyte each.
 // Main talks to them the moment their view exists: a drag's first highlight arrives while the page
-// is still loading, and a lazy component isn't listening yet, so it was lost.
+// is still loading, and a lazy component isn't listening yet, so it was lost. The splitters are
+// smaller still, and a chunk of their own would only be a second request for each.
 const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
   lazy(() => load().then((module) => ({ default: module[name] })));
 
@@ -42,6 +44,8 @@ createRoot(document.getElementById('root')!).render(
         <EmptyState />
       ) : route === 'drag' ? (
         <DragLayer />
+      ) : route.startsWith('splitter-') ? (
+        <Splitter index={Number(route.slice('splitter-'.length))} />
       ) : (
         <Rail />
       )}

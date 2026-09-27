@@ -81,6 +81,7 @@ export interface ProjectionInput {
   /** Services by most recent use, newest first. */
   recentServiceIds?: string[];
   maximisedPaneId?: string | null;
+  layoutShape?: 'columns' | 'main-stack';
 }
 
 /**
@@ -132,6 +133,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     railExpanded: input.railExpanded,
     recentServiceIds: input.recentServiceIds ?? [],
     maximisedPaneId: input.maximisedPaneId ?? null,
+    layoutShape: input.layoutShape ?? 'columns',
     keyboard: keyboardMapOf(config),
   };
 }
