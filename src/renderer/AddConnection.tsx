@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { catalog } from '@shared/catalog';
-import { accentFor, useColorScheme } from './accent';
+import { accentStyle } from './accent';
 import { fuzzy } from './fuzzy';
 import { useFocusTrap } from './useFocusTrap';
 import { useShellState } from './useShellState';
@@ -18,7 +18,6 @@ export function AddConnection() {
   const trapRef = useFocusTrap<HTMLDivElement>();
   const state = useShellState();
   const [query, setQuery] = useState('');
-  const scheme = useColorScheme();
   const [customOpen, setCustomOpen] = useState(false);
 
   const [customSeed, setCustomSeed] = useState('');
@@ -145,7 +144,7 @@ export function AddConnection() {
               <div key={entry.id} className="grid-item">
                 <button
                   className={`grid-tile${isAdded ? ' is-added' : ''}`}
-                  style={{ ['--accent' as string]: accentFor(entry.color, scheme) }}
+                  style={accentStyle(entry.color)}
                   title={
                     [
                       isAdded

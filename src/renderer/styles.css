@@ -303,6 +303,22 @@ body[data-route='drag'] {
   display: none;
 }
 
+/* A service's colour, in the variant for the theme on screen. Both come from `accentStyle`; which
+   applies is the stylesheet's business, so it follows the theme without anything listening. */
+.rail-item,
+.rail-rename,
+.grid-tile {
+  --accent: var(--accent-dark);
+}
+
+@media (prefers-color-scheme: light) {
+  .rail-item,
+  .rail-rename,
+  .grid-tile {
+    --accent: var(--accent-light);
+  }
+}
+
 /* One neutral surface for every tile. State is carried by surface *value* plus an edge indicator,
    never by the brand colour — tinting the tile with brand at low opacity collapsed Slack to 1.03:1
    against the rail and made Linear and Teams identical to each other. */
@@ -1154,13 +1170,11 @@ kbd {
   right: 4px;
 }
 
+/* At the end of the row, after the name and any count — the icon keeps the start. */
 .rail.is-panel .rail-mark {
   position: static;
   flex: none;
-}
-
-.rail.is-panel .rail-sleep-mark {
-  margin-left: auto;
+  order: 2;
 }
 
 .rail-item.is-sleeping:hover .rail-icon,
