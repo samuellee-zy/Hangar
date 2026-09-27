@@ -7,15 +7,35 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # The groups carry minor and patch updates only. The first grouped PR bundled six majors with
+    # eighteen routine bumps — TypeScript 7, Vite 8, Vitest 5, electron-vite 5 among them — and
+    # failed at `npm ci`, since electron-vite 5 doesn't support Vite 8; the Electron security patch
+    # in it sat behind that. Any other major comes as a PR of its own, to be judged on its own.
     groups:
       dev-dependencies:
         dependency-type: development
+        update-types: ['minor', 'patch']
       runtime-dependencies:
         dependency-type: production
-    # Electron is a major-version decision — new APIs, removed ones, a different Chromium — not a
-    # routine bump. Taken on purpose, by hand.
+        update-types: ['minor', 'patch']
+    # Majors taken on purpose, by hand, not as a routine bump:
+    # - Electron: new APIs, removed ones, a different Chromium.
+    # - The build toolchain: TypeScript, Vite, Vitest, electron-vite and the React plugin move
+    #   together — each constrains the next's versions — so one on its own can't install.
     ignore:
       - dependency-name: electron
+        update-types: ['version-update:semver-major']
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      - dependency-name: vite
+        update-types: ['version-update:semver-major']
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: electron-vite
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitejs/plugin-react'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
