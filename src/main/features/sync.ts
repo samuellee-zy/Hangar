@@ -107,7 +107,8 @@ export interface SyncDeps {
   readBase: () => string | null;
   writeBase: (serialised: string) => void;
   /** Called after an incoming config lands, so the window can rebuild. */
-  onApplied: () => void;
+  /** An incoming config was written. `previous` is the config it replaced. */
+  onApplied: (previous: Config) => void;
   /** Called whenever status changes, so Settings reflects a background failure. */
   onStatusChange: () => void;
   log: (message: string) => void;
@@ -308,7 +309,7 @@ export class ConfigSync {
     // The base is what we just agreed on, computed from the merged config so it matches what a
     // subsequent `serialise(local)` will produce.
     this.deps.writeBase(serialise(merged));
-    this.deps.onApplied();
+    this.deps.onApplied(local);
     this.deps.log('applied an incoming config');
     this.set({ state: 'idle', lastSync: Date.now() });
   }

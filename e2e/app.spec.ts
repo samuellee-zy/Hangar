@@ -33,6 +33,29 @@ test('boots, renders the rail, and loads a service into the first pane', async (
     .toBeTruthy();
 });
 
+test('SWITCHING TO A SERVICE PUTS THE KEYBOARD IN ITS PAGE — ⌘K↵ and a tile click both', async () => {
+  // Switching opened the service and left the keyboard where it was — in the closed palette, in the
+  // rail, in a pane now detached — so the first keystrokes after ⌘K↵ went nowhere.
+  h = await launch();
+  const rail = await h.rail();
+
+  const focusedUrl = () =>
+    h.app.evaluate(({ webContents }) => webContents.getFocusedWebContents()?.getURL() ?? '');
+
+  // A pointer click on the second tile.
+  await rail.locator('.rail-item[aria-label*="Two"]').first().click();
+  await expect.poll(focusedUrl).toContain('/unread');
+
+  // The palette's route: open it, then pick the first service.
+  await h.app.evaluate(() => {
+    const shell = (globalThis as never as { __hangarShell: { dispatch: (c: unknown) => boolean } })
+      .__hangarShell;
+    shell.dispatch({ type: 'open-palette' });
+    shell.dispatch({ type: 'focus-service', serviceId: 'one' });
+  });
+  await expect.poll(focusedUrl).toMatch(/127\.0\.0\.1:\d+\/$/);
+});
+
 test('the overlay stops eating clicks once closed', async () => {
   // The overlay is a transparent full-window view. Hiding rather than *removing* it leaves it
   // hit-testing across its whole bounds, so every click meant for a pane lands on nothing and the

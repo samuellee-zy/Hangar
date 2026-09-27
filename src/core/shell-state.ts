@@ -178,7 +178,7 @@ export function keyboardMapOf(config: Config): KeyboardMap {
  */
 export function resolveCommand(
   command: Command,
-  context: { config: Config; focusedPaneId: string | null },
+  context: { config: Config; focusedPaneId: string | null; focusedServiceId?: string | null },
 ): Command | null {
   const { config, focusedPaneId } = context;
 
@@ -194,6 +194,10 @@ export function resolveCommand(
   }
   if (command.type === 'close-pane' && command.paneId === '#focused') {
     return focusedPaneId ? { type: 'close-pane', paneId: focusedPaneId } : null;
+  }
+  if (command.type === 'reload-service' && command.serviceId === '#focused') {
+    const serviceId = context.focusedServiceId;
+    return serviceId ? { ...command, serviceId } : null;
   }
   return command;
 }

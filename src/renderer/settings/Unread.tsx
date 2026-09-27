@@ -71,8 +71,8 @@ export function Unread({ state }: { state: ShellState }) {
       </p>
       <p className="hint">
         Prefer a <code>data-testid</code> or another attribute the service's own tests use, and
-        never a generated class like <code>.css-1x2y3z</code> — those change on every deploy. See
-        docs/unread-selectors.md for the full procedure.
+        never a generated class like <code>.css-1x2y3z</code> — those change on every deploy. The full procedure
+        is in <code>docs/unread-selectors.md</code> in the Hangar repository.
       </p>
       <p className="hint">
         Reading the page needs the page, so a hibernated service has nothing to read. Where a

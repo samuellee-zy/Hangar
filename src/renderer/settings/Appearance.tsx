@@ -22,7 +22,17 @@ export function Appearance({
     <section>
       <h2>Appearance</h2>
       <p className="hint">Applies immediately.</p>
+      {/* Ordered so each setting comes before the ones it switches off: Compact rail above the size
+          and labels it overrides, position above the compact rail whose opening depends on it. */}
       <ul className="rows">
+        <Choice name="Rail position" path="appearance.railPosition" value={appearance.railPosition}
+                options={['left', 'right', 'top', 'bottom'] as const}
+                labels={{ left: 'Left', right: 'Right', top: 'Top', bottom: 'Bottom' }} />
+        <Toggle name="Compact rail"
+                note={horizontal
+                  ? 'A 48px strip of icons'
+                  : 'A 48px strip of icons; the chevron opens a panel with names'}
+                path="appearance.compactRail" value={appearance.compactRail} />
         <Num name="Rail size"
              note={sizeIgnored ? 'Not used by a compact rail, which has sizes of its own' : 'Thickness in pixels'}
              path="appearance.railSize" value={appearance.railSize} min={56} max={120} step={4}
@@ -34,22 +44,23 @@ export function Appearance({
                     : 'A top or bottom rail has no room for names'
                   : 'Service names under each icon'}
                 path="appearance.showLabels" value={appearance.showLabels} disabled={labelsIgnored} />
+        {/* Named for what it does. As "Density: compact" it sat beside "Compact rail", two settings
+            with one word between them — and until their CSS classes were told apart, they did the
+            same thing. */}
+        <Choice name="Tile spacing" path="appearance.density" value={appearance.density}
+                options={['comfortable', 'compact'] as const}
+                labels={{ comfortable: 'Comfortable', compact: 'Tight' }} />
+        <Choice name="Theme" path="appearance.theme" value={appearance.theme}
+                options={['system', 'light', 'dark'] as const}
+                labels={{ system: 'Match the system', light: 'Light', dark: 'Dark' }} />
+        <Num name="Pane gutter" note="Space around each pane" path="appearance.gutter"
+             value={appearance.gutter} min={0} max={24} />
         <Toggle name="Show tray icon"
                 note={closeToTray
                   ? 'Always on while Close to tray is on — otherwise a closed window has no way back'
                   : 'Menu-bar presence with unread count'}
                 path="appearance.showTrayIcon" value={appearance.showTrayIcon || closeToTray}
                 disabled={closeToTray} />
-        <Choice name="Rail position" path="appearance.railPosition" value={appearance.railPosition}
-                options={['left', 'right', 'top', 'bottom'] as const} />
-        <Choice name="Theme" path="appearance.theme" value={appearance.theme}
-                options={['system', 'light', 'dark'] as const} />
-        <Choice name="Density" path="appearance.density" value={appearance.density}
-                options={['comfortable', 'compact'] as const} />
-        <Num name="Pane gutter" note="Space around each pane" path="appearance.gutter"
-             value={appearance.gutter} min={0} max={24} />
-        <Toggle name="Compact rail" note="A 48px strip of icons; the chevron opens a panel with names"
-                path="appearance.compactRail" value={appearance.compactRail} />
       </ul>
     </section>
   );

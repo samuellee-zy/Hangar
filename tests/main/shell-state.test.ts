@@ -249,6 +249,17 @@ describe('resolveCommand', () => {
     ).toBeNull();
   });
 
+  it('#focused reload resolves to the focused pane\'s service, keeping ignoreCache', () => {
+    const reload = { type: 'reload-service' as const, serviceId: '#focused', ignoreCache: true };
+    expect(resolveCommand(reload, { ...ctx, focusedServiceId: 'b' })).toEqual({
+      type: 'reload-service',
+      serviceId: 'b',
+      ignoreCache: true,
+    });
+    // No pane, nothing to reload — and the keyboard layer lets ⌘R through to the page.
+    expect(resolveCommand(reload, { ...ctx, focusedServiceId: null })).toBeNull();
+  });
+
   it('a real id is passed through untouched', () => {
     const cmd = { type: 'focus-service' as const, serviceId: 'b' };
     expect(resolveCommand(cmd, ctx)).toBe(cmd);

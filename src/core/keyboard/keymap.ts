@@ -110,6 +110,8 @@ export type ActionId =
   | 'focus-next-pane'
   | 'back'
   | 'forward'
+  | 'reload'
+  | 'hard-reload'
   | 'sleep-others';
 
 export interface KeyAction {
@@ -244,6 +246,22 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'navigate', direction: 'forward' },
     menu: 'view',
     defaultChord: primaryChord(']'),
+  },
+  // ⌘R did nothing: a pane is not a browser tab, so nothing gave it the chord every browser does,
+  // and the only way to reload a stuck page was its right-click menu.
+  {
+    id: 'reload',
+    label: 'Reload page',
+    command: { type: 'reload-service', serviceId: '#focused' },
+    menu: 'view',
+    defaultChord: primaryChord('r'),
+  },
+  {
+    id: 'hard-reload',
+    label: 'Reload page, ignoring the cache',
+    command: { type: 'reload-service', serviceId: '#focused', ignoreCache: true },
+    menu: 'view',
+    defaultChord: primaryChord('r', { shift: true }),
   },
   // No default chord. It's a real action, it belongs in the menu, and there is no obvious key for
   // it — which is exactly the case rebinding exists to serve.

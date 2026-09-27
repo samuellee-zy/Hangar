@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { badgeText } from './badge';
 import { fuzzy } from './fuzzy';
 import { useFocusTrap } from './useFocusTrap';
 import { useShellState } from './useShellState';
@@ -59,6 +60,12 @@ export function Palette() {
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, results.length - 1)));
   }, [results.length]);
+
+  // The arrows moved the highlight past the bottom of the list and it stayed out of sight.
+  // `scrollIntoView` is optional-called because jsdom doesn't implement it.
+  useEffect(() => {
+    document.getElementById(optionId(index))?.scrollIntoView?.({ block: 'nearest' });
+  }, [index]);
 
   const run = (i: number, newPane: boolean) => {
     const item = results[i];
@@ -131,11 +138,13 @@ export function Palette() {
               role="option"
               aria-selected={i === index}
               className={i === index ? 'is-active' : ''}
-              onMouseEnter={() => setIndex(i)}
+              // Move, not enter: scrolling the list under a pointer that hasn't moved "entered" a
+              // new row each time and dragged the highlight away from the arrow keys.
+              onMouseMove={() => i !== index && setIndex(i)}
               onClick={(e) => run(i, e.metaKey)}
             >
               <span>{item.label}</span>
-              {item.unread > 0 && <span className="palette-unread">{item.unread}</span>}
+              {item.unread > 0 && <span className="palette-unread">{badgeText(item.unread)}</span>}
               <span className="palette-hint">{item.hint}</span>
             </li>
           ))}

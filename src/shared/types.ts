@@ -542,8 +542,13 @@ export type DragOrigin = 'rail' | 'content';
 
 /** Commands the rail and palette can send. Keep this the single funnel into main. */
 export type Command =
-  | { type: 'focus-service'; serviceId: string }
-  | { type: 'open-in-new-pane'; serviceId: string }
+  /**
+   * `keepFocus`: leave the keyboard where it is. Set by the rail for a tile activated from the
+   * keyboard, so Tab and the arrows keep working there; every other route moves the keyboard into
+   * the page, which is where typing is meant to go.
+   */
+  | { type: 'focus-service'; serviceId: string; keepFocus?: boolean }
+  | { type: 'open-in-new-pane'; serviceId: string; keepFocus?: boolean }
   | { type: 'focus-pane'; paneId: string }
   | { type: 'close-pane'; paneId: string }
   | { type: 'split' }
@@ -595,7 +600,8 @@ export type Command =
   | { type: 'find'; query: string; forward?: boolean; findNext?: boolean }
   | { type: 'zoom'; direction: 'in' | 'out' | 'reset' }
   | { type: 'print' }
-  | { type: 'reload-service'; serviceId: string }
+  /** `ignoreCache`: ⇧⌘R, for a page stuck on a stale script or stylesheet. */
+  | { type: 'reload-service'; serviceId: string; ignoreCache?: boolean }
   | { type: 'sleep-service'; serviceId: string }
   | { type: 'show-service-menu'; serviceId: string }
   | { type: 'show-rail-menu' }

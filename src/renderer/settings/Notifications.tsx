@@ -49,8 +49,8 @@ export function Notifications({
         Messaging on the site's behalf and holds the receiving connection itself.
         {' '}
         <b>This needs a free Firebase project of your own.</b> Hangar can't ship one: the API key
-        would sit in the source, on a quota shared by everyone. See <code>docs/push.md</code> for
-        the three-minute setup.
+        would sit in the source, on a quota shared by everyone. The three-minute setup is
+        in <code>docs/push.md</code> in the Hangar repository.
       </p>
       <ul className="rows">
         <Toggle

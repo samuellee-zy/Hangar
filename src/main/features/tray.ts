@@ -56,6 +56,9 @@ export function destroyTray(): void {
  */
 let lastSignature = '';
 
+/** How many services the menu lists before the rest go under More. */
+const TRAY_SERVICES = 12;
+
 export function refreshTray(state: ShellState | null, dispatch: (c: Command) => boolean): void {
   if (!tray || !state) return;
 
@@ -74,6 +77,13 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
   lastSignature = signature;
 
   const unread = services.reduce((sum, s) => sum + s.unread, 0);
+  const serviceItem = (svc: (typeof services)[number]): Electron.MenuItemConstructorOptions => ({
+    label: svc.unread > 0 ? `${svc.name} (${svc.unread})` : svc.name,
+    click: () => {
+      dispatch({ type: 'show-window' });
+      dispatch({ type: 'focus-service', serviceId: svc.id });
+    },
+  });
   // Text beside the icon, not a badge — macOS trays have no badge API.
   tray.setTitle(unread > 0 ? String(unread) : '');
   tray.setToolTip(unread > 0 ? `Hangar — ${unread} unread` : 'Hangar');
@@ -81,14 +91,21 @@ export function refreshTray(state: ShellState | null, dispatch: (c: Command) => 
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Show Hangar', click: () => dispatch({ type: 'show-window' }) },
-      { type: 'separator' },
-      ...services.slice(0, 12).map((svc) => ({
-        label: svc.unread > 0 ? `${svc.name} (${svc.unread})` : svc.name,
+      {
+        label: 'Add connection…',
         click: () => {
           dispatch({ type: 'show-window' });
-          dispatch({ type: 'focus-service', serviceId: svc.id });
+          dispatch({ type: 'open-connections' });
         },
-      })),
+      },
+      { label: 'Settings…', click: () => dispatch({ type: 'open-settings' }) },
+      { type: 'separator' },
+      ...services.slice(0, TRAY_SERVICES).map(serviceItem),
+      // The rest, rather than nothing: the list stopped at twelve, so a thirteenth service had no
+      // way in from here at all.
+      ...(services.length > TRAY_SERVICES
+        ? [{ label: 'More', submenu: services.slice(TRAY_SERVICES).map(serviceItem) }]
+        : []),
       { type: 'separator' },
       ...(() => {
         const extras = [...recentMenu(state, dispatch), ...downloadsMenu(state, dispatch)];
@@ -121,12 +138,18 @@ function dndMenu(state: ShellState, dispatch: (c: Command) => boolean): Electron
   const set = (on: boolean, until: number | null) => () => dispatch({ type: 'set-dnd', on, until });
   return {
     label: dnd ? `Do not disturb — ${dndUntil ? untilLabel(dndUntil) : 'on'}` : 'Do not disturb',
+    // The state as one radio group, the timed choices as plain items below it. Radio and plain items
+    // were interleaved, so a timed DND had nothing checked at all and "Off" looked unselected for
+    // no visible reason.
     submenu: [
       { label: 'Off', type: 'radio', checked: !dnd, click: set(false, null) },
+      ...(dnd && dndUntil
+        ? [{ label: `On ${untilLabel(dndUntil)}`, type: 'radio' as const, checked: true, enabled: false }]
+        : []),
+      { label: 'On until I turn it off', type: 'radio', checked: dnd && dndUntil === null, click: set(true, null) },
       { type: 'separator' },
       { label: 'For 1 hour', click: () => dispatch({ type: 'set-dnd', on: true, until: Date.now() + HOUR_MS }) },
       { label: 'Until tomorrow', click: () => dispatch({ type: 'set-dnd', on: true, until: tomorrowMorning(Date.now()) }) },
-      { label: 'Until I turn it off', type: 'radio', checked: dnd && dndUntil === null, click: set(true, null) },
     ],
   };
 }

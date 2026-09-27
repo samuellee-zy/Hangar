@@ -147,6 +147,9 @@ export function Settings() {
 
   return (
     <div className="settings has-nav">
+      {/* The window's title bar. `hiddenInset` removes the native one, and nothing replaced it, so
+          the Settings window could not be moved. */}
+      <div className="settings-titlebar" aria-hidden="true" />
       <nav className="settings-nav" aria-label="Settings sections">
         <input
           className="field settings-search"

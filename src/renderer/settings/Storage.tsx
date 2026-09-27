@@ -13,7 +13,7 @@ export function Data() {
         <li className="pref">
           <span className="pref-label">
             <span className="pref-name">Configuration</span>
-            <span className="pref-note">No cloud sync by design, so backup is manual</span>
+            <span className="pref-note">A file to keep as a backup, or to import on another Mac</span>
           </span>
           <span style={{ display: 'flex', gap: 8 }}>
             <button className="secondary" onClick={() => window.hangar.send({ type: 'export-config' })}>

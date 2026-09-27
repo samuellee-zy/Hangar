@@ -734,17 +734,26 @@ kbd {
   user-select: none;
 }
 
-/* With the sidebar: the window scrolls the content column, not itself. The top padding clears the
-   inset traffic lights, which sit over the nav. */
+/* With the sidebar: the window scrolls the content column, not itself. The top padding is the title
+   bar's, which holds the inset traffic lights; the columns start below it, so nothing scrolls up
+   under a region that drags the window instead of taking the click. */
 .settings.has-nav {
+  position: relative;
   display: grid;
   grid-template-columns: 180px 1fr;
-  padding: 0;
+  padding: 38px 0 0;
   overflow: hidden;
 }
 
+.settings-titlebar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 38px;
+  -webkit-app-region: drag;
+}
+
 .settings-nav {
-  padding: 46px 10px 16px;
+  padding: 8px 10px 16px;
   border-right: 1px solid var(--line);
   overflow-y: auto;
 }
@@ -784,7 +793,7 @@ kbd {
 }
 
 .settings-content {
-  padding: 46px 28px 32px;
+  padding: 8px 28px 32px;
   overflow-y: auto;
 }
 
@@ -1019,10 +1028,6 @@ kbd {
 
 .pref.is-pending {
   opacity: 0.5;
-}
-
-.pref.is-pending .pref-note::after {
-  content: ' · not wired up yet';
 }
 
 /* --- folders ------------------------------------------------------------------------------ */

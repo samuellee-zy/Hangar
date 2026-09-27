@@ -7,12 +7,13 @@ import { destroyTray, ensureTray } from '@main/features/tray';
 import type { PushManager } from '@main/features/push-manager';
 import {
   ALL_PREFERENCE_EFFECTS,
+  effectsForChange,
   preferenceEffectFor,
   trayWanted,
   type PreferenceEffect,
 } from '@core/config/effects';
 import { firebaseConfigStatus } from '@core/push/policy';
-import type { Command, ShellState } from '@shared/types';
+import type { Command, Preferences, ShellState } from '@shared/types';
 
 /**
  * The preferences that configure something outside the config — launchd, the proxy, the global
@@ -56,6 +57,18 @@ export class PreferenceEffects {
   applyAll(): void {
     for (const effect of ALL_PREFERENCE_EFFECTS) this.run(effect);
     nativeTheme.themeSource = loadConfig().preferences.appearance.theme;
+  }
+
+  /**
+   * After preferences were replaced wholesale — an incoming sync, an import: every effect whose
+   * preference differs from `before`, and the theme. See `effectsForChange`.
+   */
+  applyChanged(before: Preferences): void {
+    const now = loadConfig().preferences;
+    if (now.appearance.theme !== before.appearance.theme) {
+      nativeTheme.themeSource = now.appearance.theme;
+    }
+    for (const effect of effectsForChange(before, now)) this.run(effect);
   }
 
   /**

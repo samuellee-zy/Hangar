@@ -247,6 +247,7 @@ export class AppWindow {
       this.saveWindowBounds();
     });
     this.win.on('move', () => this.saveWindowBounds());
+    this.win.on('focus', () => (this.defaultMailApp = null));
     this.win.on('show', () => this.attention.acknowledgePanes());
     this.win.on('restore', () => this.attention.acknowledgePanes());
     // The debounce means a window that's never moved would otherwise never record its bounds,
@@ -293,7 +294,10 @@ export class AppWindow {
       write: (next) => saveConfig(next, { sync: false }),
       readBase: () => readSyncBase(),
       writeBase: (text) => writeSyncBase(text),
-      onApplied: () => {
+      onApplied: (previous) => {
+        // Theme, tray, shortcut, ad blocking, push: an incoming config changes them like any other
+        // edit, and they used to stay as they were until a restart while Settings showed the new.
+        this.effects.applyChanged(previous.preferences);
         // Mirrors `import-config` exactly. Calling `restoreLayout()` without clearing first
         // appends to the existing panes — `Layout.add` never dedupes — so two panes became four,
         // each service shown twice, and `saveLayout()` made it stick.
@@ -398,7 +402,9 @@ export class AppWindow {
 
     const write = () => {
       if (this.win.isDestroyed() || this.win.isMinimized()) return;
-      const { x, y, width, height } = this.win.getBounds();
+      // The normal bounds, not the current ones: saved while fullscreen or zoomed, the window came
+      // back next launch at the size of the whole screen, with no way to un-zoom it to what it was.
+      const { x, y, width, height } = this.win.getNormalBounds();
       updateConfig((c) => {
         c.window = { x, y, width, height };
       });
@@ -419,6 +425,19 @@ export class AppWindow {
     return activeServicesOf(loadConfig(), workspaceId);
   }
 
+  /**
+   * Whether macOS sends `mailto:` here. Asked once and remembered, rather than on every state
+   * broadcast — it is a Launch Services query, and a resize alone broadcasts dozens of times.
+   * Forgotten when the window regains focus (the answer can change in Mail's settings while you're
+   * elsewhere) and after Hangar asks to become the default.
+   */
+  private defaultMailApp: boolean | null = null;
+
+  private isDefaultMailApp(): boolean {
+    this.defaultMailApp ??= app.isPackaged && app.isDefaultProtocolClient('mailto');
+    return this.defaultMailApp;
+  }
+
   state(): ShellState {
     return projectShellState({
       config: loadConfig(),
@@ -435,7 +454,7 @@ export class AppWindow {
       iconVersions: iconVersions(),
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
-      isDefaultMailApp: app.isPackaged && app.isDefaultProtocolClient('mailto'),
+      isDefaultMailApp: this.isDefaultMailApp(),
       recentNotifications: this.attention.recentNotifications(),
       downloads: recentDownloads(),
     });
@@ -1041,6 +1060,7 @@ export class AppWindow {
     return resolveCommand(command, {
       config: loadConfig(),
       focusedPaneId: this.layout.focusedPaneId,
+      focusedServiceId: this.layout.focused()?.serviceId ?? null,
     });
   }
 
@@ -1107,6 +1127,8 @@ export class AppWindow {
       pushUnreadRules: (id) => this.pushUnreadRules(id),
       applyAllPreferenceEffects: () => this.effects.applyAll(),
       applyPreferenceEffect: (path) => this.effects.applyFor(path),
+      applyChangedPreferences: (before) => this.effects.applyChanged(before),
+      forgetDefaultMailApp: () => (this.defaultMailApp = null),
       toggleRail: () => this.toggleRail(),
       beginRename: (id) => this.beginRename(id),
       beginTileDrag: (id) => this.tileDrag.begin(id),
@@ -1377,6 +1399,7 @@ export class AppWindow {
    */
   dispose(): void {
     nativeTheme.off('updated', this.repaintBackground);
+    this.attention.dispose();
     // Sockets and timers first: they can fire during teardown and would then touch a half-torn
     // window.
     if (this.syncScheduled) clearTimeout(this.syncScheduled);

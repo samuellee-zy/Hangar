@@ -39,6 +39,13 @@ export interface AttentionHost {
 
 type RecentNotification = NonNullable<ShellState['recentNotifications']>[number];
 
+/** Where a banner click goes. Set once by boot, which can build a window if there isn't one. */
+let clickRoute: ((serviceId: string) => void) | null = null;
+
+export function setNotificationClickRoute(route: ((serviceId: string) => void) | null): void {
+  clickRoute = route;
+}
+
 export class AttentionCenter {
   readonly unread = new UnreadCounts();
   /** Banners held until dismissed, so GC can't take one before its click handler fires. */
@@ -203,16 +210,26 @@ export class AttentionCenter {
   ): void {
     const notification = new Notification({
       title: payload.title || svc.name,
+      // Which service, under the page's own title. "Alex: are you free?" from two Slacks and a
+      // WhatsApp looked identical; the title is the page's, and says nothing about where it's from.
+      subtitle: payload.title && payload.title !== svc.name ? svc.name : undefined,
       body: payload.body,
       silent: payload.silent || !sound,
     });
-    // Clicking should land you on the thing that pinged you.
-    notification.on('click', () => this.host.focusService(svc.id));
+    // Clicking should land you on the thing that pinged you — through the app's route when there is
+    // one, because a banner outlives the window that raised it. After ⌘W on the last pane the
+    // window is destroyed, and a click that reached back into it threw on the dead window and kept
+    // it alive besides. The handlers below capture locals, not `this`, for the same reason.
+    const serviceId = svc.id;
+    const route = clickRoute;
+    const host = this.host;
+    const live = this.live;
+    notification.on('click', () => (route ? route(serviceId) : host.focusService(serviceId)));
     notification.show();
     // Retained until it's dismissed: the object is otherwise only referenced by this local, so
     // GC can collect it before the click handler ever fires and click-to-focus does nothing.
-    this.live.add(notification);
-    notification.on('close', () => this.live.delete(notification));
+    live.add(notification);
+    notification.on('close', () => live.delete(notification));
     // Bounded. A notification left in Notification Center never closes, so over a week of
     // messages the set only grew. The oldest are the least likely to be clicked; a Set iterates
     // in insertion order, so the first entry is the oldest.
@@ -224,10 +241,19 @@ export class AttentionCenter {
     // The only evidence there will ever be. macOS delivers nothing to an unsigned bundle, and
     // before this the banner simply never appeared — unread counted, the badge moved, and the
     // log said nothing at all. Also released here: a failed notification never closes.
+    const name = svc.name;
     notification.on('failed', (_event, error) => {
-      console.error(`[notification] ${svc.name}: not delivered — ${error}`);
-      this.live.delete(notification);
+      console.error(`[notification] ${name}: not delivered — ${error}`);
+      live.delete(notification);
     });
+  }
+
+  /**
+   * The window is going. Its counts go with it — a rebuilt window starts from zero, as a restart
+   * does — so the Dock badge must too, or it kept a number nothing on screen could explain.
+   */
+  dispose(): void {
+    app.setBadgeCount(0);
   }
 
   /** The window has just come back into view: whatever is in a pane has now been seen. */

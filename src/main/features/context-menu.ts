@@ -110,7 +110,7 @@ export function showServiceMenu(
   window: BaseWindow,
   svc: ServiceInstance,
   {
-    isVisible,
+    paneId,
     isSleeping,
     folders,
     currentFolderId,
@@ -118,7 +118,8 @@ export function showServiceMenu(
     currentUrl,
     otherWorkspaces,
   }: {
-    isVisible: boolean;
+    /** The pane showing this service, or null when it isn't on screen. */
+    paneId: string | null;
     isSleeping: boolean;
     folders: Array<{ id: string; name: string }>;
     currentFolderId: string | null;
@@ -251,8 +252,13 @@ export function showServiceMenu(
         enabled: !isSleeping,
         click: () => dispatch({ type: 'reload-service', serviceId: svc.id }),
       },
+      // Two items, not one relabelled. "Close pane" used to send `sleep-service`, which throws the
+      // page away and puts a different service into the pane — the opposite of closing it.
+      ...(paneId
+        ? [{ label: 'Close pane', click: () => dispatch({ type: 'close-pane', paneId }) }]
+        : []),
       {
-        label: isVisible ? 'Close pane' : 'Put to sleep',
+        label: 'Put to sleep',
         enabled: !isSleeping,
         click: () => dispatch({ type: 'sleep-service', serviceId: svc.id }),
       },
