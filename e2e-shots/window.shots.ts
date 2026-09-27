@@ -109,6 +109,20 @@ for (const theme of THEMES) {
     await capture(`${theme}-main-stack`);
   });
 
+  // A right rail, so the top strip holds the title bar, with a header over each pane.
+  test(`${theme}-headers`, async () => {
+    await open(theme, { railPosition: 'right', paneHeaders: true });
+    await h!.app.evaluate(() => {
+      (globalThis as never as { __hangarShell: Shell }).__hangarShell.dispatch({
+        type: 'open-in-new-pane',
+        serviceId: 'two',
+      });
+    });
+    await new Promise((r) => setTimeout(r, 800));
+    await scheme(theme);
+    await capture(`${theme}-headers`);
+  });
+
   test(`${theme}-panel`, async () => {
     await open(theme, { railPosition: 'left', compactRail: true });
     await h!.app.evaluate(() => {

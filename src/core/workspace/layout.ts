@@ -24,6 +24,24 @@ export type { Rect };
 
 export const MAX_PANES = 4;
 export const PANE_RADIUS = 10;
+/** A pane's header, when `appearance.paneHeaders` is on. */
+export const PANE_HEADER = 30;
+
+/**
+ * A pane's card, split into its header and the page below it.
+ *
+ * The header runs `PANE_RADIUS` further down, under the page. Every view's corners are rounded
+ * alike — Electron has no per-corner radius — so a header exactly its own height would have rounded
+ * bottom corners meeting the page's rounded top ones, pinched at the join. Tucked under, the page's
+ * top corners show header behind them instead, and the two read as one card.
+ */
+export function splitCard(card: Rect, withHeader: boolean): { header: Rect | null; page: Rect } {
+  if (!withHeader || card.height <= PANE_HEADER * 2) return { header: null, page: card };
+  return {
+    header: { x: card.x, y: card.y, width: card.width, height: PANE_HEADER + PANE_RADIUS },
+    page: { x: card.x, y: card.y + PANE_HEADER, width: card.width, height: card.height - PANE_HEADER },
+  };
+}
 
 // Shared with the rail's renderer, which has to agree with this file about where the traffic
 // lights are. Re-exported because this is where the geometry's callers look for them.
@@ -191,6 +209,12 @@ export type LayoutShape = 'columns' | 'main-stack';
 /** No pane is dragged narrower than this — below it most web apps stop being usable. */
 export const MIN_PANE_WIDTH = 280;
 
+/** Where a pane dragged by its header goes. See `Layout.movePane`. */
+export type PaneMove =
+  | { swapWith: string }
+  | { beside: { paneId: string; side: 'before' | 'after' } }
+  | { toEnd: true };
+
 /** A vertical boundary between two columns, where a splitter sits. */
 export interface Boundary {
   /** Which boundary: 0 is between the first and second column. */
@@ -337,6 +361,45 @@ export class Layout {
     if (i === -1 || j < 0 || j >= this.panes.length) return false;
     [this.panes[i], this.panes[j]] = [this.panes[j]!, this.panes[i]!];
     return true;
+  }
+
+  /**
+   * A pane dragged by its header and let go: swapped with the pane it was dropped on, or moved to
+   * beside one, or to the end. False, and nothing touched — focus included — when that changes
+   * nothing: dropped on itself, beside a neighbour on the side it's already on, or to the end when
+   * it's last. Focus moved on those before, with nothing redrawn to show it, and the next ⌘W closed
+   * the pane that was dragged rather than the one with the ring round it.
+   */
+  movePane(paneId: string, to: PaneMove): boolean {
+    const next = this.reorderedBy(paneId, to);
+    if (!next) return false;
+    this.panes = next;
+    this.focusedPaneId = paneId;
+    return true;
+  }
+
+  /** Whether `movePane` would change anything — for a drag deciding what to highlight. */
+  wouldMove(paneId: string, to: PaneMove): boolean {
+    return this.reorderedBy(paneId, to) !== null;
+  }
+
+  /** The order after the move, or null when it would be the same order. */
+  private reorderedBy(paneId: string, to: PaneMove): Pane[] | null {
+    const panes = [...this.panes];
+    const from = panes.findIndex((p) => p.id === paneId);
+    if (from === -1) return null;
+    if ('swapWith' in to) {
+      const other = panes.findIndex((p) => p.id === to.swapWith);
+      if (other === -1 || other === from) return null;
+      [panes[from], panes[other]] = [panes[other]!, panes[from]!];
+    } else {
+      const [pane] = panes.splice(from, 1);
+      const anchor = 'beside' in to ? panes.findIndex((p) => p.id === to.beside.paneId) : -1;
+      if ('beside' in to && anchor === -1) return null;
+      const at = anchor === -1 ? panes.length : 'beside' in to && to.beside.side === 'after' ? anchor + 1 : anchor;
+      panes.splice(at, 0, pane!);
+    }
+    return panes.map((p) => p.id).join() === this.panes.map((p) => p.id).join() ? null : panes;
   }
 
   /** How many columns the drawn panes make, for the shape and the count. */

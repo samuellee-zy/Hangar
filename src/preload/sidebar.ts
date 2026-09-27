@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Command, DropHighlight, OverlayOpen, SettingsTarget, ShellState } from '@shared/types';
+import type {
+  Command,
+  DropHighlight,
+  OverlayOpen,
+  PaneChromeState,
+  SettingsTarget,
+  ShellState,
+} from '@shared/types';
 
 // The rail and palette get exactly two verbs: read state, send a command. No direct access to
 // services, sessions or windows — that keeps the renderer a pure render target and makes the
@@ -57,5 +64,12 @@ contextBridge.exposeInMainWorld('hangar', {
     const handler = () => fn();
     ipcRenderer.on('drag:ended', handler);
     return () => ipcRenderer.off('drag:ended', handler);
+  },
+  /** A pane bar's contents — the title bar's, or one pane header's. See main/features/pane-chrome.ts. */
+  getPaneChrome: (): Promise<PaneChromeState | null> => ipcRenderer.invoke('pane-chrome:get'),
+  onPaneChrome: (fn: (state: PaneChromeState) => void): (() => void) => {
+    const handler = (_e: unknown, state: PaneChromeState) => fn(state);
+    ipcRenderer.on('pane-chrome:state', handler);
+    return () => ipcRenderer.off('pane-chrome:state', handler);
   },
 });

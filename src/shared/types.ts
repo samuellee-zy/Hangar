@@ -351,6 +351,8 @@ export interface Preferences {
     showLabels: boolean;
     /** Menu-bar presence. Independent of closeToTray, which needs it but isn't the only reason to want it. */
     showTrayIcon: boolean;
+    /** A bar above each pane: its name, back, forward and reload, pop out, maximise and close. */
+    paneHeaders: boolean;
   };
   behaviour: {
     /** Accelerator string, or null for none. The single legitimate global shortcut. */
@@ -449,6 +451,35 @@ export type ServiceView = ServiceInstance & {
   /** Changes when a new favicon has been cached. Absent is 0. */
   iconVersion?: number;
 };
+
+/**
+ * What a pane's bar draws — the header above a pane, or the title bar across the top strip, which
+ * shows the focused pane's. Sent on its own channel rather than in `ShellState`: a page's title
+ * changes whenever a chat app's unread count does, and nothing else needs to hear about it.
+ */
+export interface PaneBar {
+  paneId: string;
+  serviceId: string;
+  name: string;
+  color: string;
+  iconVersion: number;
+  /** The page's own title, or empty when it says nothing the name doesn't. */
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+  focused: boolean;
+  /** Whether this pane is maximised, or null when there's only one pane and it can't be. */
+  maximised: boolean | null;
+}
+
+export interface PaneChromeState {
+  kind: 'titlebar' | 'header';
+  /** Null for a title bar with no pane to speak for. */
+  bar: PaneBar | null;
+  /** Where the title bar's content may start: to the right of the traffic lights. 0 for a header. */
+  inset: number;
+}
 
 export interface DownloadEntry {
   id: string;
@@ -575,8 +606,11 @@ export interface KeyboardMap {
   passthrough: Record<string, { chords: string[]; fromCatalog: boolean }>;
 }
 
-/** Whose client coordinates a drag position is expressed in. See `drag-tile-to`. */
-export type DragOrigin = 'rail' | 'content';
+/**
+ * Whose client coordinates a drag position is expressed in. See `drag-tile-to`. `header` is the
+ * header a pane is being dragged by.
+ */
+export type DragOrigin = 'rail' | 'content' | 'header';
 
 /** Commands the rail and palette can send. Keep this the single funnel into main. */
 export type Command =
@@ -592,7 +626,8 @@ export type Command =
   | { type: 'split' }
   | { type: 'cycle-pane'; delta: -1 | 1 }
   | { type: 'set-workspace'; workspaceId: string }
-  | { type: 'navigate'; direction: 'back' | 'forward' }
+  /** The focused pane's page, or `serviceId`'s — from a pane's own header. */
+  | { type: 'navigate'; direction: 'back' | 'forward'; serviceId?: string }
   | { type: 'open-palette' }
   | { type: 'open-shortcuts' }
   /** `until` null with `on` true is "until I turn it off". */
@@ -690,6 +725,11 @@ export type Command =
    * panes — `main/features/drag-layer.ts` explains why the drag can't simply travel there itself.
    */
   | { type: 'begin-tile-drag'; serviceId: string }
+  /**
+   * A pane lifted by its header, to swap it with another or move it beside one. The rest of the
+   * drag is a tile drag's — `drag-tile-to`, `drop-tile` — from `header`.
+   */
+  | { type: 'begin-pane-drag'; paneId: string }
   /**
    * The pointer moved, or was released, during a tile drag.
    *

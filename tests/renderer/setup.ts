@@ -8,7 +8,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { vi, afterEach, beforeEach } from 'vitest';
-import type { DropHighlight, SettingsTarget, ShellState } from '../../src/shared/types';
+import type { DropHighlight, PaneChromeState, SettingsTarget, ShellState } from '../../src/shared/types';
 
 /** Commands sent during a test, in order. Cleared between tests. */
 export const sent: unknown[] = [];
@@ -53,6 +53,16 @@ export function pushSettingsNavigate(target: SettingsTarget): void {
   for (const fn of navigateSubscribers) fn(target);
 }
 
+/** What a pane bar is told on mount (`pane-chrome:get`), and pushed after (`pane-chrome:state`). */
+let paneChrome: PaneChromeState | null = null;
+export function setPaneChrome(state: PaneChromeState | null): void {
+  paneChrome = state;
+}
+const paneChromeSubscribers = new Set<(state: PaneChromeState) => void>();
+export function pushPaneChrome(state: PaneChromeState): void {
+  for (const fn of paneChromeSubscribers) fn(state);
+}
+
 // RTL only registers its own auto-cleanup when Vitest runs with `globals: true`, which this
 // project doesn't. Without this every render stacks in the same document, so the second test to
 // look for a tile finds two and fails with "found multiple elements" — which reads like a
@@ -65,8 +75,10 @@ beforeEach(() => {
   dragEndedSubscribers.clear();
   highlightSubscribers.clear();
   navigateSubscribers.clear();
+  paneChromeSubscribers.clear();
   shellState = null;
   settingsTarget = null;
+  paneChrome = null;
 
   (window as unknown as { hangar: unknown }).hangar = {
     getState: vi.fn(async () => shellState),
@@ -97,6 +109,11 @@ beforeEach(() => {
     onDragEnded: vi.fn((fn: () => void) => {
       dragEndedSubscribers.add(fn);
       return () => dragEndedSubscribers.delete(fn);
+    }),
+    getPaneChrome: vi.fn(async () => paneChrome),
+    onPaneChrome: vi.fn((fn: (state: PaneChromeState) => void) => {
+      paneChromeSubscribers.add(fn);
+      return () => paneChromeSubscribers.delete(fn);
     }),
   };
 });

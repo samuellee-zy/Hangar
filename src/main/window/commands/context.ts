@@ -4,7 +4,7 @@ import type { ConfigSync } from '@main/features/sync';
 import type { FindBar } from '@main/features/find-bar';
 import type { Overlay } from '@main/window/overlay';
 import type { ServiceManager } from '@main/window/service-manager';
-import type { Command, OverlayMode, Preferences, ServiceInstance, Workspace } from '@shared/types';
+import type { Command, DragOrigin, OverlayMode, Preferences, ServiceInstance, Workspace } from '@shared/types';
 
 /**
  * What a command handler may reach in the window, listed.
@@ -64,8 +64,9 @@ export interface ShellContext {
   beginRename(id: string): void;
 
   beginTileDrag(serviceId: string): void;
-  moveTileDrag(from: 'rail' | 'content', x: number, y: number): void;
-  dropTile(from: 'rail' | 'content', x: number, y: number): void;
+  beginPaneDrag(paneId: string): void;
+  moveTileDrag(from: DragOrigin, x: number, y: number): void;
+  dropTile(from: DragOrigin, x: number, y: number): void;
   endTileDrag(): void;
 
   /** Splitter `index` is being dragged; the pointer is at `screenX`. */

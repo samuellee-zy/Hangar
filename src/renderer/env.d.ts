@@ -9,7 +9,14 @@
  * The surface is deliberately tiny: read state, send a command. Anything richer would let the
  * renderer accumulate its own state, which is the rule the whole architecture rests on.
  */
-import type { Command, DropHighlight, OverlayOpen, SettingsTarget, ShellState } from '@shared/types';
+import type {
+  Command,
+  DropHighlight,
+  OverlayOpen,
+  PaneChromeState,
+  SettingsTarget,
+  ShellState,
+} from '@shared/types';
 
 declare global {
   interface Window {
@@ -27,6 +34,8 @@ declare global {
       getDragHighlight: () => Promise<DropHighlight | null>;
       onDragHighlight: (fn: (highlight: DropHighlight | null) => void) => () => void;
       onDragEnded: (fn: () => void) => () => void;
+      getPaneChrome: () => Promise<PaneChromeState | null>;
+      onPaneChrome: (fn: (state: PaneChromeState) => void) => () => void;
     };
   }
 }
