@@ -652,3 +652,14 @@ describe('a maximised pane', () => {
     expect(screen.getByRole('button', { name: /^slack/i }).classList.contains('is-visible')).toBe(true);
   });
 });
+
+describe('workspaceMark', () => {
+  it('AN EMOJI, OR THE INITIALS OF TWO WORDS — "Workspace" drew as WO', async () => {
+    const { workspaceMark } = await import('../../src/renderer/Rail');
+    expect(workspaceMark('🏠 Home')).toBe('🏠');
+    expect(workspaceMark('👩‍💻 Code')).toBe('👩‍💻');
+    expect(workspaceMark('Side projects')).toBe('SP');
+    expect(workspaceMark('Workspace')).toBe('W');
+    expect(workspaceMark('   ')).toBe('··');
+  });
+});

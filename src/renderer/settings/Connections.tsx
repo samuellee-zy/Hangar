@@ -1,5 +1,6 @@
 import { CommitOnBlur } from '../CommitOnBlur';
 import { ConfirmButton } from '../ConfirmButton';
+import { Icon } from '../Icon';
 import type { ShellState } from '@shared/types';
 
 /**
@@ -16,8 +17,27 @@ export function Workspaces({ state }: { state: ShellState }) {
         keeps its services — anything not in another workspace moves to the first.
       </p>
       <ul className="rows">
-        {state.workspaces.map((ws) => (
+        {state.workspaces.map((ws, i) => (
           <li key={ws.id}>
+            {/* Reorder: the order is ⌘⌥1…9's, and the command existed with nothing that sent it. */}
+            <span className="reorder">
+              <button
+                className="secondary"
+                aria-label={`Move ${ws.name} up`}
+                disabled={i === 0}
+                onClick={() => reorder(state, i, i - 1)}
+              >
+                <Icon name="arrow-up" size={12} />
+              </button>
+              <button
+                className="secondary"
+                aria-label={`Move ${ws.name} down`}
+                disabled={i === state.workspaces.length - 1}
+                onClick={() => reorder(state, i, i + 1)}
+              >
+                <Icon name="arrow-down" size={12} />
+              </button>
+            </span>
             <CommitOnBlur
               aria-label={`Workspace name, ${ws.name}`}
               value={ws.name}
@@ -166,3 +186,12 @@ export function Accounts({ state }: { state: ShellState }) {
     </section>
   );
 }
+
+function reorder(state: ShellState, from: number, to: number): void {
+  const ids = state.workspaces.map((w) => w.id);
+  const [moved] = ids.splice(from, 1);
+  if (!moved) return;
+  ids.splice(to, 0, moved);
+  window.hangar.send({ type: 'reorder-workspaces', workspaceIds: ids });
+}
+

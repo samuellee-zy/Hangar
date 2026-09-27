@@ -45,8 +45,15 @@ test('SWITCHING TO A SERVICE PUTS THE KEYBOARD IN ITS PAGE — ⌘K↵ and a til
     (globalThis as never as { __hangarShell: { win: { focus: () => void } } }).__hangarShell.win.focus();
   });
 
+  // Brought forward on every look. Which view has the keyboard *inside* the window survives the
+  // window losing and regaining focus, but it's only reported while the window is the active one —
+  // and in a full run another test's window can have just taken that.
   const focusedUrl = () =>
-    h.app.evaluate(({ webContents }) => webContents.getFocusedWebContents()?.getURL() ?? '');
+    h.app.evaluate(({ app, webContents }) => {
+      app.focus({ steal: true });
+      (globalThis as never as { __hangarShell: { win: { focus: () => void } } }).__hangarShell.win.focus();
+      return webContents.getFocusedWebContents()?.getURL() ?? '';
+    });
 
   // A pointer click on the second tile.
   await rail.locator('.rail-item[aria-label*="Two"]').first().click();

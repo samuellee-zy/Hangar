@@ -15,8 +15,22 @@ const FIXED: Array<[string, string]> = [
   ['⌘1 … ⌘9', 'The nth service in the rail'],
   ['⌘⌥1 … ⌘⌥9', 'The nth workspace'],
   ['⌥-click a tile', 'Open it beside the focused pane'],
-  ['⌥↑ ⌥↓ on a tile', 'Move it up or down the rail'],
+  ['Drag a tile onto a pane', 'Open it there — between two panes, beside them'],
+  ['Drag a tile onto a folder', 'File it in the folder'],
+  ['Right-click a tile', 'Everything else it can do'],
+  ['⌥↑ ⌥↓ on a tile', 'Move it along the rail (⌥← ⌥→ on a top or bottom rail)'],
+  ['⌃Space on a tile', 'Pick it up to move with the arrows'],
+  ['⇧↵ in Find', 'The previous match'],
   ['Double-click a tile', 'Rename it, in an opened compact rail'],
+];
+
+/** The menu bar's order, so the sheet reads the way the menus do. */
+const GROUPS: Array<[string, string]> = [
+  ['app', 'Hangar'],
+  ['file', 'File'],
+  ['view', 'View'],
+  ['go', 'Go'],
+  ['help', 'Help'],
 ];
 
 export function ShortcutSheet() {
@@ -45,24 +59,46 @@ export function ShortcutSheet() {
             <Icon name="close" size={14} />
           </button>
         </header>
-        <dl className="shortcut-list">
-          {actions.map((action) => (
-            <div key={action.id} className="shortcut-row">
-              <dt>{action.label.replace(/…$/, '')}</dt>
-              <dd>
-                {action.chord ? <kbd>{displayChord(action.chord)}</kbd> : <span className="unbound">not set</span>}
-              </dd>
-            </div>
-          ))}
-          {FIXED.map(([keys, what]) => (
-            <div key={keys} className="shortcut-row">
-              <dt>{what}</dt>
-              <dd>
-                <kbd>{keys}</kbd>
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div className="shortcut-list">
+          {/* In menu order, under each menu's name: the internal table's order put ⌘K sixth, after
+              Print, and nothing said which were whose. */}
+          {GROUPS.map(([menu, heading]) => {
+            const inMenu = actions.filter((a) => (a.menu ?? 'view') === menu);
+            if (!inMenu.length) return null;
+            return (
+              <section key={menu} aria-label={heading}>
+                <h3 className="shortcut-group-head">{heading}</h3>
+                <dl>
+                  {inMenu.map((action) => (
+                    <div key={action.id} className="shortcut-row">
+                      <dt>{action.label.replace(/…$/, '')}</dt>
+                      <dd>
+                        {action.chord ? (
+                          <kbd>{displayChord(action.chord)}</kbd>
+                        ) : (
+                          <span className="unbound">not set</span>
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            );
+          })}
+          <section aria-label="Tiles, panes and gestures">
+            <h3 className="shortcut-group-head">Tiles, panes and gestures</h3>
+            <dl>
+              {FIXED.map(([keys, what]) => (
+                <div key={keys} className="shortcut-row">
+                  <dt>{what}</dt>
+                  <dd>
+                    <kbd>{keys}</kbd>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </div>
         <footer className="palette-footer">
           Change any of these in Settings → Keyboard · <kbd>esc</kbd> to close
         </footer>

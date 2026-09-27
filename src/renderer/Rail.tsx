@@ -23,6 +23,21 @@ import type { RailItem, ServiceView } from '@shared/types';
  * Opening a compact rail is the chevron's click, *reported* rather than acted on: whether it may
  * open right now is main's to decide, and comes back as `railExpanded`.
  */
+/**
+ * What the workspace switcher draws for a workspace: its emoji, if the name starts with one, or the
+ * initials of its first two words. It took the first two letters, so "Workspace" became "WO",
+ * "Side projects" became "SI", and an emoji was cut in half.
+ */
+export function workspaceMark(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return '··';
+  const first = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(trimmed)][0]?.segment ?? '';
+  if (/\p{Extended_Pictographic}/u.test(first)) return first;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0]![0]! + words[1]![0]! : words[0]!.slice(0, 1);
+  return letters.toUpperCase();
+}
+
 /** "muted", "muted until 14:30", or null — for a tile's name and tooltip. */
 function muteNote(svc: ServiceView): string | null {
   if (svc.notificationLevel !== 'muted') return null;
@@ -341,7 +356,7 @@ export function Rail() {
           onClick={() => send({ type: 'show-workspace-menu' })}
         >
           <span className="rail-workspace-mark" aria-hidden="true">
-            {workspace.name.trim().slice(0, 2).toUpperCase() || '··'}
+            {workspaceMark(workspace.name)}
           </span>
           {panel && (
             <span className="rail-label" aria-hidden="true">

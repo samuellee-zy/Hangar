@@ -357,3 +357,21 @@ describe('the global shortcut', () => {
     expect(sent).toContainEqual({ type: 'set-preference', path: 'behaviour.globalShortcut', value: null });
   });
 });
+
+describe('reordering workspaces', () => {
+  it('MOVES ONE UP OR DOWN — the order is ⌘⌥1…9, and nothing could change it', async () => {
+    render(
+      <Workspaces
+        state={state({
+          workspaces: [
+            { id: 'w1', name: 'Work', items: [] },
+            { id: 'w2', name: 'Home', items: [] },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Move Work up' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Move Work down' }));
+    expect(sent).toContainEqual({ type: 'reorder-workspaces', workspaceIds: ['w2', 'w1'] });
+  });
+});

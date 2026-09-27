@@ -155,6 +155,7 @@ export function keyboardMapOf(config: Config): KeyboardMap {
         chord,
         conflict: clashing.has(chord),
         command: action.command,
+        menu: action.menu,
       };
     }),
     reserved: [...RESERVED_CHORDS],

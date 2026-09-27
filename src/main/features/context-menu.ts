@@ -388,7 +388,15 @@ export function showWorkspaceMenu(
         click: () => dispatch({ type: 'set-workspace', workspaceId: w.id }),
       })),
       { type: 'separator' },
-      { label: 'New workspace', click: () => dispatch({ type: 'create-workspace', name: 'Workspace' }) },
+      {
+        // Straight to its name: a new workspace called "Workspace" was never renamed, because
+        // nothing asked.
+        label: 'New workspace…',
+        click: () => {
+          dispatch({ type: 'create-workspace', name: 'New workspace' });
+          dispatch({ type: 'open-settings', section: 'workspaces' });
+        },
+      },
       { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings', section: 'workspaces' }) },
     ],
     window,

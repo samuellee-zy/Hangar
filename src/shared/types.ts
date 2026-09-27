@@ -547,6 +547,8 @@ export interface KeyboardMap {
     conflict: boolean;
     /** What the action does, so the palette can offer every one of them by name. */
     command: Command;
+    /** Which menu it's in, which is how the shortcut sheet groups them. */
+    menu?: 'app' | 'file' | 'view' | 'go' | 'help' | null;
   }>;
   /** Chords the menu bar's roles already own. Settings refuses them before sending. */
   reserved: string[];

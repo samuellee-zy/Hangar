@@ -41,9 +41,20 @@ export function EmptyState() {
       <div className="empty-state">
         <h1>Welcome to Hangar</h1>
         <p>
-          Each connection gets its own isolated session. Services from one provider share a login —
-          Gmail and Calendar, say — and a second Gmail is simply a second account.
+          Your web apps, side by side, each staying signed in. Pick a few to start — Gmail and
+          Calendar share one Google sign-in, and a second Gmail is simply a second account.
         </p>
+        {/* The three things nothing on screen teaches, said once, where someone starting out looks.
+            Read from the live keymap, so a rebound chord is shown as rebound. */}
+        <ul className="empty-tips">
+          <li>
+            <kbd>{palette || '⌘K'}</kbd> jumps to any service or action by name
+          </li>
+          <li>
+            <kbd>⌥</kbd>-click a tile, or drag it onto a pane, to see two side by side
+          </li>
+          <li>Right-click a tile for everything else it can do</li>
+        </ul>
         <ul className="starter-grid" aria-label="Add a connection">
           {starters.map((entry) => (
             <li key={entry.id}>
