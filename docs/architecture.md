@@ -11,12 +11,13 @@ Back to front — the order is the z-order, and `relayout` re-establishes it on 
 
 ```
 BaseWindow
+├── View             focus ring                          (index 0: a coloured card behind the focused pane)
 ├── WebContentsView  service…   → persist:<account>     (1–4 panes, inset rounded cards)
 ├── WebContentsView  empty      → renderer #empty       (only when no pane can be filled)
 ├── WebContentsView  rail       → renderer #rail        (any edge; frameless, drag handle)
-├── WebContentsView  drag layer → renderer #drag        (attached only while a tile is in flight)
 ├── WebContentsView  find bar   → renderer #find        (attached on demand)
-└── WebContentsView  overlay    → renderer #overlay     (attached on demand, removed on close)
+├── WebContentsView  overlay    → renderer #overlay     (attached on demand, removed on close)
+└── WebContentsView  drag layer → renderer #drag        (attached last, only while a tile is out of the rail)
 
 BrowserWindow       settings    → renderer #settings    (separate window, ⌘,)
 Tray                            → menu bar
@@ -24,7 +25,9 @@ Tray                            → menu bar
 
 The rail is in front of the panes deliberately. It was behind them for a long time — it was
 attached first — which was invisible while it only ever occupied space the panes had been denied,
-and became the blocker on hover-expand the moment it needed to grow over them (decisions #88).
+and became a blocker the moment it needed to grow over them (decisions #88). It no longer does —
+the panes reflow around an opened rail (#95) — but a pane whose bounds are a frame stale still
+mustn't cover it, and `relayout` re-raises it only when one does.
 
 Anything attached on demand is also *detached*, never hidden: a `WebContentsView` hit-tests across
 its whole bounds whether or not you can see it, so one left attached swallows every click in the
