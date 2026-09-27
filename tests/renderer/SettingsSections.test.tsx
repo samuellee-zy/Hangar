@@ -72,8 +72,12 @@ describe('workspaces', () => {
 
     // By title, not by name: every row's button reads "Delete", so the name alone is ambiguous
     // the moment there is more than one workspace — which is the case under test.
+    // Two clicks: the first arms it, and sends nothing.
     await userEvent.click(screen.getByTitle('Delete Work'));
+    expect(sent).not.toContainEqual({ type: 'delete-workspace', workspaceId: 'w1' });
+    expect(screen.getByRole('button', { name: 'Delete Work?' })).toBeInTheDocument();
 
+    await userEvent.click(screen.getByTitle('Delete Work'));
     expect(sent).toContainEqual({ type: 'delete-workspace', workspaceId: 'w1' });
   });
 
@@ -96,6 +100,30 @@ describe('workspaces', () => {
 });
 
 describe('custom connection hosts', () => {
+  it('HOSTS CAN BE ADDED HERE NOW — the hint said to, and there was no field', async () => {
+    render(<CustomHosts state={state({ allServices: [svc('intranet', { allowedHosts: ['intranet.acme.com'] })] })} />);
+    const field = screen.getByLabelText('Extra allowed hosts for intranet');
+    await userEvent.type(field, 'Login.Okta.com, sso.acme.com login.okta.com{Enter}');
+    expect(sent).toContainEqual({
+      type: 'update-service',
+      serviceId: 'intranet',
+      patch: { extraAllowedHosts: ['login.okta.com', 'sso.acme.com'] },
+    });
+  });
+
+  it('a catalog service gets the field too — company SSO in front of a catalog app', () => {
+    render(<CustomHosts state={state({ allServices: [svc('gmail')] })} />);
+    expect(screen.getByLabelText('Extra allowed hosts for gmail')).toBeInTheDocument();
+  });
+
+  it('clearing the field removes the extra hosts', async () => {
+    render(<CustomHosts state={state({ allServices: [svc('gmail', { extraAllowedHosts: ['sso.acme.com'] })] })} />);
+    const field = screen.getByLabelText('Extra allowed hosts for gmail');
+    await userEvent.clear(field);
+    await userEvent.tab();
+    expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { extraAllowedHosts: [] } });
+  });
+
   it('says so when there are none, rather than showing an empty list', () => {
     render(<CustomHosts state={state({ allServices: [svc('gmail')] })} />);
 
@@ -115,7 +143,7 @@ describe('custom connection hosts', () => {
     );
 
     expect(screen.queryByText(/no custom connections yet/i)).not.toBeInTheDocument();
-    expect(screen.getByText('intranet.acme.com, login.okta.com')).toBeInTheDocument();
+    expect(screen.getByText(/intranet\.acme\.com, login\.okta\.com/)).toBeInTheDocument();
   });
 });
 
@@ -133,6 +161,8 @@ describe('unused sessions', () => {
 
     expect(screen.getByText('2 left by removed connections')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(sent).not.toContainEqual({ type: 'purge-orphan-partitions' });
+    await userEvent.click(screen.getByRole('button', { name: 'Delete 2?' }));
     expect(sent).toContainEqual({ type: 'purge-orphan-partitions' });
   });
 
@@ -234,5 +264,69 @@ describe('web push readiness', () => {
     );
 
     expect(screen.getByDisplayValue('AIzaSecret')).toHaveAttribute('type', 'password');
+  });
+});
+
+describe('more per service', () => {
+  it('A SELF-HOSTED START PAGE BRINGS ITS HOST WITH IT — or it would open in the browser', async () => {
+    const { PerService } = await import('../../src/renderer/settings/Connections');
+    render(<PerService state={state({ allServices: [svc('gitlab', { catalogId: 'gitlab' })] })} />);
+    const field = screen.getByLabelText('Start page for gitlab');
+    await userEvent.type(field, 'git.acme.io/dashboard{Enter}');
+    expect(sent).toContainEqual({
+      type: 'update-service',
+      serviceId: 'gitlab',
+      patch: { url: 'https://git.acme.io/dashboard', extraAllowedHosts: ['git.acme.io'] },
+    });
+  });
+
+  it('a start page on an already-allowed host changes only the URL', async () => {
+    const { PerService } = await import('../../src/renderer/settings/Connections');
+    render(<PerService state={state({ allServices: [svc('gitlab', { catalogId: 'gitlab' })] })} />);
+    await userEvent.type(screen.getByLabelText('Start page for gitlab'), 'https://gitlab.com/acme{Enter}');
+    expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gitlab', patch: { url: 'https://gitlab.com/acme' } });
+  });
+
+  it('custom CSS commits when you leave the box, not per keystroke', async () => {
+    const { PerService } = await import('../../src/renderer/settings/Connections');
+    render(<PerService state={state({ allServices: [svc('gmail')] })} />);
+    const area = screen.getByLabelText('Custom CSS for gmail');
+    await userEvent.type(area, '.ad{{display:none}');
+    expect(sent.filter((c) => (c as { type: string }).type === 'update-service')).toEqual([]);
+    await userEvent.tab();
+    expect(sent).toContainEqual({ type: 'update-service', serviceId: 'gmail', patch: { customCss: '.ad{display:none}' } });
+  });
+});
+
+describe('the global shortcut', () => {
+  it('IS RECORDED, NOT TYPED — pressing the keys stores an accelerator Electron accepts', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    render(<Behaviour behaviour={DEFAULT_PREFERENCES.behaviour} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Set a global shortcut' }));
+    await userEvent.keyboard('{Meta>}{Shift>}h{/Shift}{/Meta}');
+    expect(sent).toContainEqual({
+      type: 'set-preference',
+      path: 'behaviour.globalShortcut',
+      value: 'Shift+Command+H',
+    });
+  });
+
+  it('SAYS WHEN ANOTHER APP ALREADY HAS IT — that used to reach the log and nowhere else', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    render(
+      <Behaviour
+        behaviour={{ ...DEFAULT_PREFERENCES.behaviour, globalShortcut: 'Command+Shift+Space' }}
+        shortcutStatus="taken"
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Another app already uses this');
+    expect(screen.getByRole('button', { name: /Global shortcut ⌘⇧Space/ })).toBeInTheDocument();
+  });
+
+  it('Clear removes it', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    render(<Behaviour behaviour={{ ...DEFAULT_PREFERENCES.behaviour, globalShortcut: 'Command+H' }} shortcutStatus="active" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(sent).toContainEqual({ type: 'set-preference', path: 'behaviour.globalShortcut', value: null });
   });
 });

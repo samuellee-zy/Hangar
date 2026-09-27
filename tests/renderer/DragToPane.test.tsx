@@ -85,21 +85,31 @@ async function dragTile(name: RegExp, to: { x: number; y: number }, { release = 
 }
 
 describe('lifting a tile', () => {
-  it('tells main a drag has begun, naming the service', async () => {
+  it('tells main a drag has begun once the pointer leaves the rail, naming the service', async () => {
     await renderRail();
-    await dragTile(/gmail/i, { x: 400, y: 300 }, { release: false });
+    await dragTile(/gmail/i, { x: 2000, y: 300 });
     expect(sent).toContainEqual({ type: 'begin-tile-drag', serviceId: 'gmail' });
+  });
+
+  it('A DRAG THAT STAYS IN THE RAIL NEVER INVOLVES MAIN — a relayout there could end it', async () => {
+    // Telling main at the lift attached the drag layer for every reorder, and anything that relaid
+    // the window out mid-gesture ended the drag: the intermittent CI failure of the folder test.
+    await renderRail();
+    await dragTile(/gmail/i, { x: 400, y: 300 });
+    expect(typesSent()).not.toContain('begin-tile-drag');
+    expect(typesSent()).not.toContain('drag-tile-to');
+    expect(typesSent()).not.toContain('drop-tile');
   });
 
   it('reports the pointer position in its own coordinates while dragging', async () => {
     await renderRail();
-    await dragTile(/gmail/i, { x: 400, y: 300 }, { release: false });
+    await dragTile(/gmail/i, { x: 2000, y: 300 });
     const moves = ofType<{ x: number; y: number; from: string }>('drag-tile-to');
     expect(moves.length).toBeGreaterThan(0);
     // `from` is how main knows which origin to translate against — the rail doesn't know where it
     // sits in the window, and shouldn't have to.
     expect(moves.every((m) => m.from === 'rail')).toBe(true);
-    expect(moves.at(-1)).toMatchObject({ x: 400, y: 300 });
+    expect(moves.at(-1)).toMatchObject({ x: 2000, y: 300 });
   });
 
   it('says nothing at all when the pointer moves without a drag', async () => {
@@ -121,7 +131,7 @@ describe('lifting a tile', () => {
       ])
     );
     expect(document.querySelectorAll('.rail-slot.is-member')).toHaveLength(1);
-    await dragTile(/gmail/i, { x: 400, y: 300 }, { release: false });
+    await dragTile(/gmail/i, { x: 2000, y: 300 });
     expect(sent).toContainEqual({ type: 'begin-tile-drag', serviceId: 'gmail' });
   });
 
@@ -166,7 +176,8 @@ describe('releasing', () => {
   // `closestCenter` never resolves an `over` and the reorder path is unreachable in this
   // environment — a test that drove the drag would pass whether the rule existed or not.
 
-  it('inside the rail, still tells main so the layer it attached gets detached', async () => {
+  it('back inside the rail after leaving it, still tells main so the layer gets detached', async () => {
+    // Once main has attached the drag layer, only a message from here takes it down again.
     await renderRail();
     const user = userEvent.setup();
     const gmail = screen.getByRole('button', { name: /gmail/i });
@@ -174,9 +185,11 @@ describe('releasing', () => {
     await user.pointer([
       { keys: '[MouseLeft>]', target: gmail, coords: { clientX: 20, clientY: 20 } },
       { target: gmail, coords: { clientX: 20, clientY: 60 } },
+      { target: gmail, coords: { clientX: 2000, clientY: 60 } },
       { target: slack, coords: { clientX: 20, clientY: 90 } },
       { keys: '[/MouseLeft]', target: slack, coords: { clientX: 20, clientY: 90 } },
     ]);
+    expect(typesSent()).toContain('begin-tile-drag');
     expect(typesSent()).toContain('drop-tile');
   });
 });

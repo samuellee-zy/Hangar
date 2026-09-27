@@ -202,6 +202,45 @@ describe('rendering', () => {
   });
 });
 
+describe('room for the traffic lights', () => {
+  // Main decides where the traffic lights go; the rail only leaves room when they are in it. The two
+  // disagreed for a compact top rail — main put the lights in the rail, the rail cleared nothing,
+  // and they were drawn over the first two tiles.
+  const spacer = () => document.querySelector('.rail-drag') as HTMLElement;
+  const at = (railPosition: 'left' | 'right' | 'top' | 'bottom', compactRail: boolean) =>
+    state({
+      preferences: {
+        ...DEFAULT_PREFERENCES,
+        appearance: { ...DEFAULT_PREFERENCES.appearance, railPosition, compactRail },
+      },
+    });
+
+  it('a top rail always clears them, compact or not', async () => {
+    for (const compact of [false, true]) {
+      const { unmount } = await renderRail(at('top', compact));
+      expect(spacer().hidden, `compact: ${compact}`).toBe(false);
+      unmount();
+    }
+  });
+
+  it('a left rail clears them unless it is too narrow to hold them', async () => {
+    let r = await renderRail(at('left', false));
+    expect(spacer().hidden).toBe(false);
+    r.unmount();
+    r = await renderRail(at('left', true));
+    expect(spacer().hidden, 'a compact left rail hands them to the strip above it').toBe(true);
+    r.unmount();
+  });
+
+  it('right and bottom rails never hold them', async () => {
+    for (const pos of ['right', 'bottom'] as const) {
+      const { unmount } = await renderRail(at(pos, false));
+      expect(spacer().hidden, pos).toBe(true);
+      unmount();
+    }
+  });
+});
+
 describe('compact rail chevron', () => {
   // The rail's whole part in this is one message. It does not decide anything — main refuses the
   // change during a drag, and a renderer that had also decided would disagree exactly then — so
@@ -244,11 +283,24 @@ describe('compact rail chevron', () => {
     expect(chevron()).toBeNull();
   });
 
+  it('A COMPACT RAIL ALONG THE TOP OR BOTTOM HAS NO CHEVRON — it has nowhere to open to', async () => {
+    // Opening is for putting names beside the icons, and a horizontal rail has no room beside them.
+    // It used to offer the chevron anyway, and clicking it grew the strip into a 180px band of the
+    // same icons.
+    for (const railPosition of ['top', 'bottom'] as const) {
+      const s = compactState();
+      s.preferences.appearance.railPosition = railPosition;
+      const { unmount } = await renderRail(s);
+      expect(chevron(), railPosition).toBeNull();
+      unmount();
+    }
+  });
+
   it('A COLLAPSED RAIL STILL SHOWS EVERY ICON — only the labels are traded away', async () => {
     // The whole reason to collapse rather than hide: switching service stays ONE click. Hiding the
     // tiles made it three (open, click, close), which is worse than the width it bought back.
     await renderRail(compactState());
-    expect(rail().className).toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(true);
     expect(screen.getByLabelText('gmail')).toBeInTheDocument();
     expect(screen.queryByText('gmail')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Show the rail')).toBeInTheDocument();
@@ -275,7 +327,7 @@ describe('compact rail chevron', () => {
     // The labels are the only thing opening it buys, so they are not left to `showLabels` the way
     // an ordinary rail's are. A wider strip of unlabelled icons would be a pointless state.
     await renderRail(compactState({ railExpanded: true }));
-    expect(rail().className).not.toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(false);
     expect(rail().className).toContain('is-panel');
     expect(screen.getByText('gmail')).toBeInTheDocument();
     // INSIDE the tile, not beside it: the whole row is the click target, the way a Chrome tab is
@@ -350,7 +402,7 @@ describe('compact rail chevron', () => {
 
     await act(async () =>
       pushState(
-        compactState({ railExpanded: true, renameRequest: { serviceId: 'gmail', nonce: 1 } }),
+        compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 1 } }),
       ),
     );
     expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
@@ -360,8 +412,9 @@ describe('compact rail chevron', () => {
   it('AN UNRELATED BROADCAST DOES NOT REOPEN a finished edit', async () => {
     // `renameRequest` is carried by every subsequent broadcast. Reacting to the request rather
     // than to a *change* in its nonce would reopen the field on the next unread tick.
-    const request = { serviceId: 'gmail', nonce: 1 };
-    await renderRail(compactState({ railExpanded: true, renameRequest: request }));
+    const request = { id: 'gmail', nonce: 1 };
+    await renderRail(compactState({ railExpanded: true }));
+    await act(async () => pushState(compactState({ railExpanded: true, renameRequest: request })));
     await userEvent.type(screen.getByLabelText('Rename gmail'), '{Escape}');
     await userEvent.tab();
     expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
@@ -374,7 +427,7 @@ describe('compact rail chevron', () => {
     // A second, genuinely new request still lands.
     await act(async () =>
       pushState(
-        compactState({ railExpanded: true, renameRequest: { serviceId: 'gmail', nonce: 2 } }),
+        compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 2 } }),
       ),
     );
     expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
@@ -382,9 +435,63 @@ describe('compact rail chevron', () => {
 
   it('falls back to Settings when the rail has nowhere to put a field', async () => {
     // An ordinary 72px rail cannot hold a text field, and a horizontal one has no name on screen.
-    await renderRail(state({ renameRequest: { serviceId: 'gmail', nonce: 1 } }));
+    await renderRail(state());
+    await act(async () => pushState(state({ renameRequest: { id: 'gmail', nonce: 1 } })));
     expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
     expect(sent).toContainEqual({ type: 'open-settings' });
+  });
+
+  it('A REQUEST ALREADY WAITING WHEN THE RAIL LOADS IS NOT ACTED ON — a reloaded rail reopened the last edit', () => {
+    // Main never clears a request, so a rail renderer that reloads (it recovers from crashes now)
+    // finds the last one in its very first state.
+    return (async () => {
+      await renderRail(compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 7 } }));
+      expect(screen.queryByLabelText('Rename gmail')).not.toBeInTheDocument();
+      expect(sent).not.toContainEqual({ type: 'open-settings' });
+
+      // The next genuine request still works.
+      await act(async () =>
+        pushState(compactState({ railExpanded: true, renameRequest: { id: 'gmail', nonce: 8 } })),
+      );
+      expect(screen.getByLabelText('Rename gmail')).toBeInTheDocument();
+    })();
+  });
+
+  describe('folders', () => {
+    const withFolder = (over: Partial<ShellState> = {}) =>
+      compactState({
+        railExpanded: true,
+        railItems: [
+          { kind: 'folder', id: 'f1', name: 'New folder', collapsed: true, serviceIds: ['gmail'] },
+          { kind: 'service', id: 'slack' },
+        ],
+        ...over,
+      });
+
+    it('A FOLDER SHOWS ITS NAME IN THE PANEL, as a service does', async () => {
+      await renderRail(withFolder());
+      expect(screen.getByText('New folder')).toBeInTheDocument();
+    });
+
+    it('RIGHT-CLICK ▸ RENAME EDITS A FOLDER IN PLACE — it used to open a Settings page with no folders on it', async () => {
+      await renderRail(withFolder());
+      await act(async () => pushState(withFolder({ renameRequest: { id: 'f1', nonce: 1 } })));
+
+      const field = screen.getByLabelText('Rename folder New folder');
+      await userEvent.clear(field);
+      await userEvent.type(field, 'Work{Enter}');
+      expect(sent).toContainEqual({ type: 'rename-folder', folderId: 'f1', name: 'Work' });
+      expect(sent).not.toContainEqual({ type: 'open-settings' });
+    });
+
+    it('typing a space in the folder name does not start a drag', async () => {
+      await renderRail(withFolder());
+      await act(async () => pushState(withFolder({ renameRequest: { id: 'f1', nonce: 1 } })));
+      const field = screen.getByLabelText('Rename folder New folder');
+      await userEvent.clear(field);
+      await userEvent.type(field, 'Side projects{Enter}');
+      expect(sent).toContainEqual({ type: 'rename-folder', folderId: 'f1', name: 'Side projects' });
+    });
   });
 
   it('clicking away commits the edit and leaves the panel open', async () => {
@@ -399,14 +506,29 @@ describe('compact rail chevron', () => {
     expect(sent).not.toContainEqual({ type: 'toggle-rail' });
   });
 
+  it('COMPACT DENSITY IS NOT A COMPACT RAIL — the two used to share a class', async () => {
+    // Density rendered as `is-${density}`, so density "compact" added `is-compact` and a 72px rail
+    // took on every collapsed-rail rule: 36px tiles, no divider, the focus bar adrift.
+    await renderRail(
+      state({
+        preferences: {
+          ...DEFAULT_PREFERENCES,
+          appearance: { ...DEFAULT_PREFERENCES.appearance, density: 'compact' },
+        },
+      })
+    );
+    expect(rail().classList.contains('is-compact')).toBe(false);
+    expect(rail().classList.contains('density-compact')).toBe(true);
+  });
+
   it('follows main rather than its own click: expansion arrives as state', async () => {
     await renderRail(compactState());
-    expect(rail().className).toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(true);
     await userEvent.click(chevron()!);
     // Clicking alone changes nothing on screen — main has not answered yet.
-    expect(rail().className).toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(true);
     await act(async () => pushState(compactState({ railExpanded: true })));
-    expect(rail().className).not.toContain('is-compact');
+    expect(rail().classList.contains('is-compact')).toBe(false);
   });
 
   it('sets no width of its own — the view is the rail', async () => {
@@ -426,5 +548,36 @@ describe('the add and settings buttons', () => {
     expect(sent).toContainEqual({ type: 'open-connections' });
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(sent).toContainEqual({ type: 'open-settings' });
+  });
+});
+
+describe('the workspace switcher', () => {
+  const two = (over: Partial<ShellState> = {}) => {
+    const gmail = svc('gmail');
+    const figma = svc('figma', { unread: 3 });
+    return state({
+      services: [gmail],
+      allServices: [gmail, figma],
+      railItems: [{ kind: 'service', id: 'gmail' }],
+      workspaces: [
+        { id: 'w', name: 'Work', items: [{ kind: 'service', id: 'gmail' }] },
+        { id: 'd', name: 'Design', items: [{ kind: 'service', id: 'figma' }] },
+      ],
+      activeWorkspaceId: 'w',
+      ...over,
+    });
+  };
+
+  it('IS THERE WITH TWO WORKSPACES, says which one this is, and counts unread in the others', async () => {
+    await renderRail(two());
+    const button = screen.getByRole('button', { name: /^Workspace Work/ });
+    expect(button).toHaveAccessibleName('Workspace Work, 3 unread in other workspaces, switch workspace');
+    await userEvent.click(button);
+    expect(sent).toContainEqual({ type: 'show-workspace-menu' });
+  });
+
+  it('is not there with one workspace — there is nothing to switch to', async () => {
+    await renderRail(state({ workspaces: [{ id: 'w', name: 'All', items: [] }] }));
+    expect(screen.queryByRole('button', { name: /^Workspace/ })).not.toBeInTheDocument();
   });
 });

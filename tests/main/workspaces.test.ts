@@ -11,14 +11,16 @@ import {
   deleteWorkspace,
   rehomeUnreachable,
   renameWorkspace,
+  moveServiceToWorkspace,
   reorderWorkspaces,
+  workspaceHolding,
 } from '@core/workspace/workspaces';
 
 
 const svc = (id) => ({ kind: 'service' as const, id });
 
 const config = (...workspaces) => ({
-  version: 4 as const,
+  version: 5 as const,
   services: [...new Set(workspaces.flatMap((w) => w.items.map((i) => i.id)))].map((id) => ({ id })),
   workspaces,
   activeWorkspaceId: workspaces[0]?.id ?? null,
@@ -141,5 +143,42 @@ describe('layout cleanup', () => {
     c.layouts = { w1: { panes: [], focusedPaneId: null } };
     deleteWorkspace(c, 'w1'); // the last workspace — refused
     assert.deepEqual(Object.keys(c.layouts), ['w1']);
+  });
+});
+
+describe('which workspace holds a service', () => {
+  it('the active one when it is there, even if another holds it too', () => {
+    const c = config(ws('w1', 'a', 'b'), ws('w2', 'b'));
+    c.activeWorkspaceId = 'w2';
+    assert.equal(workspaceHolding(c, 'b'), 'w2');
+  });
+
+  it('otherwise the first that has it — including inside a folder', () => {
+    const c = config(ws('w1', 'a'), {
+      id: 'w2',
+      name: 'w2',
+      items: [{ kind: 'folder', id: 'f', name: 'F', collapsed: true, serviceIds: ['z'] }],
+    });
+    assert.equal(workspaceHolding(c, 'z'), 'w2');
+  });
+
+  it('null for a service no workspace holds', () => {
+    assert.equal(workspaceHolding(config(ws('w1', 'a')), 'nope'), null);
+  });
+});
+
+describe('moving a service to another workspace', () => {
+  it('leaves every other workspace — out of a folder too — and lands at the end of the target', () => {
+    const c = config(ws('w1', 'a', 'b'), ws('w2', 'c'));
+    c.workspaces[0]!.items.push({ kind: 'folder', id: 'f', name: 'F', collapsed: false, serviceIds: ['b'] } as never);
+    assert.equal(moveServiceToWorkspace(c, 'b', 'w2'), true);
+    assert.ok(!reachable({ workspaces: [c.workspaces[0]] }).has('b'));
+    assert.deepEqual(c.workspaces[1]!.items.map((i) => i.id), ['c', 'b']);
+  });
+
+  it('A MISSING TARGET TOUCHES NOTHING — a service must never be left in no workspace', () => {
+    const c = config(ws('w1', 'a'));
+    assert.equal(moveServiceToWorkspace(c, 'a', 'nope'), false);
+    assert.ok(reachable(c).has('a'));
   });
 });

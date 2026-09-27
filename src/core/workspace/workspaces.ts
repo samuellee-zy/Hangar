@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { flattenServiceIds } from '@core/workspace/folders';
+import { detach, flattenServiceIds } from '@core/workspace/folders';
 import type { Config, RailItem, Workspace } from '@shared/types';
 
 /**
@@ -77,4 +77,30 @@ export function rehomeUnreachable(config: Config): string[] {
     target.items.push(...orphans.map((id): RailItem => ({ kind: 'service', id })));
   }
   return orphans;
+}
+
+/**
+ * The workspace a service lives in, preferring the active one when it is in several.
+ *
+ * For anything that can name a service from outside the rail — the tray, the palette, a
+ * notification — and so has to be able to reach one in a workspace you are not looking at.
+ */
+export function workspaceHolding(config: Config, serviceId: string): string | null {
+  const holds = (w: Config['workspaces'][number]) => flattenServiceIds(w).includes(serviceId);
+  const active = config.workspaces.find((w) => w.id === config.activeWorkspaceId);
+  if (active && holds(active)) return active.id;
+  return config.workspaces.find(holds)?.id ?? null;
+}
+
+/**
+ * Moves a service to another workspace: out of every other one it is in — folders included — and
+ * onto the end of the target's rail. False when the target doesn't exist, in which case nothing is
+ * touched: a service must never be left in no workspace at all.
+ */
+export function moveServiceToWorkspace(config: Config, serviceId: string, targetId: string): boolean {
+  const target = config.workspaces.find((w) => w.id === targetId);
+  if (!target) return false;
+  for (const w of config.workspaces) if (w.id !== targetId) detach(w, serviceId);
+  if (!flattenServiceIds(target).includes(serviceId)) target.items.push({ kind: 'service', id: serviceId });
+  return true;
 }

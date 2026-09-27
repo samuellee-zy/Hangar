@@ -49,6 +49,11 @@ export function sanitiseServicePatch(patch: unknown): Partial<ServiceInstance> {
     out.zoom = Math.min(2, Math.max(0.5, raw.zoom));
   }
 
+  if ('mutedUntil' in raw) {
+    const until = raw.mutedUntil;
+    if (typeof until === 'number' && Number.isFinite(until) && until > 0) out.mutedUntil = until;
+  }
+
   if ('notificationLevel' in raw) {
     const level = str(raw.notificationLevel);
     if (level === 'all' || level === 'muted') out.notificationLevel = level;

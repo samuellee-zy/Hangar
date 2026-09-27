@@ -1,4 +1,4 @@
-import { dialog } from 'electron';
+import { app, dialog } from 'electron';
 
 /**
  * Keeping a missing terminal from killing the app.
@@ -91,6 +91,14 @@ export const outputMuted = (): boolean => guard?.muted() ?? false;
 function reportFatal(error: unknown): void {
   const err = error instanceof Error ? error : new Error(String(error));
   const stack = err.stack ? err.stack : `${err.name}: ${err.message}`;
+  // Under the E2E harness nobody is there to click OK, and this dialog is modal and synchronous:
+  // the main process stopped dead, the test's quit never finished, and CI reported only a hook
+  // timeout. Logged and exited instead, so the test fails where it happened and says why.
+  if (process.env['HANGAR_E2E']) {
+    console.error(`[fatal] ${stack}`);
+    app.exit(70);
+    return;
+  }
   dialog.showErrorBox(
     'A JavaScript error occurred in the main process',
     `Uncaught Exception:\n${stack}`
@@ -124,10 +132,18 @@ export function installLogGuards(): void {
     reportFatal(error);
   });
 
-  // Node's default for an unhandled rejection is to raise it as an uncaught exception. Rethrowing
-  // preserves that exactly, rather than quietly downgrading every unawaited promise to a log line.
+  // Logged, loudly, and not rethrown. Rethrowing matched Node's default — raise it as an uncaught
+  // exception — and in this app that ends in `reportFatal`, whose `showErrorBox` is modal and
+  // *synchronous*: the main process stops until someone clicks OK. With the window closed to the
+  // tray there is nobody to click it, and the app just looks hung. A `zoommtg:` link on a Mac
+  // without Zoom was enough, because `shell.openExternal` rejects for a scheme with no handler.
+  //
+  // An uncaught *exception* keeps the dialog: that is a bug in our own synchronous code, and
+  // Electron's behaviour for it is the one to preserve. A rejection is overwhelmingly an operation
+  // that failed — a load, a request, a file — and the log line is where it is useful.
   process.on('unhandledRejection', (reason) => {
     if (isBrokenPipe(reason)) return;
-    throw reason;
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    console.error(`[unhandled-rejection] ${err.stack ?? `${err.name}: ${err.message}`}`);
   });
 }

@@ -615,6 +615,20 @@ body[data-route='drag'] {
   font-size: 12px;
 }
 
+/* Between the name and the hint, so a service with messages waiting stands out in the list. */
+.palette-unread {
+  margin-left: auto;
+  margin-right: 10px;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #ff453a;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
 .palette-empty {
   cursor: default;
   justify-content: center;
@@ -652,6 +666,60 @@ kbd {
   overflow-y: auto;
   padding: 46px 28px 32px;
   user-select: none;
+}
+
+/* With the sidebar: the window scrolls the content column, not itself. The top padding clears the
+   inset traffic lights, which sit over the nav. */
+.settings.has-nav {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-nav {
+  padding: 46px 10px 16px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.settings-nav ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-nav button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-nav button:hover {
+  background: var(--tile-hover);
+}
+
+.settings-nav button.is-current {
+  background: var(--tile);
+  font-weight: 500;
+}
+
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-content {
+  padding: 46px 28px 32px;
+  overflow-y: auto;
 }
 
 .settings h1 {
@@ -759,7 +827,8 @@ kbd {
   color: #ff6b60;
 }
 
-.settings button.danger {
+.settings button.danger,
+.settings button.secondary {
   padding: 5px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -773,6 +842,20 @@ kbd {
 .settings button.danger:hover {
   color: #ff6b60;
   border-color: #ff6b6040;
+}
+
+/* Same shape as `danger`, without the red: for Add, Export, Import and Default, which were styled as
+   destructive for want of anything else and so turned red under the pointer. */
+.settings button.secondary:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* A ConfirmButton after its first click: now it is asking, and it should look like it. */
+.settings button.danger.is-armed {
+  color: #ff6b60;
+  border-color: #ff6b60;
+  background: #ff6b6014;
 }
 
 /* Confirms an action whose effect might otherwise be invisible — focusing a service that is
@@ -891,6 +974,27 @@ kbd {
   color: var(--muted);
 }
 
+/* In a panel the grid is the folder's icon, so it takes the icon's place at the start of the row
+   rather than centring itself in a row that is now 180px wide. */
+.rail.is-panel .folder-grid {
+  width: 20px;
+  margin: 0;
+  flex: none;
+}
+
+.rail.is-panel .folder-mini {
+  width: 9px;
+  height: 9px;
+}
+
+/* Stands in for the grid while the name is being edited, so the field starts where the name did. */
+.rail-rename-folder {
+  width: 20px;
+  flex: none;
+  text-align: center;
+  color: var(--muted);
+}
+
 /* An open folder's members are draggable in their own right — each is its own sortable row, so it
    gets the same slot wrapper as a top-level tile. The group keeps them on one axis with the same
    rhythm as the rail itself, which is what makes the extra wrapper invisible. */
@@ -917,6 +1021,25 @@ kbd {
   opacity: 0.5;
 }
 
+/* A mark as well as the dimming, because 50% opacity alone reads as "disabled" — and clicking a
+   sleeping tile is exactly what wakes it. A small crescent in the corner the badge doesn't use. */
+.rail-item.is-sleeping::after {
+  content: '☾';
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.rail.is-panel .rail-item.is-sleeping::after {
+  position: static;
+  margin-left: auto;
+  order: 2;
+}
+
 .rail-item.is-sleeping:hover,
 .rail-item.is-sleeping:focus-visible {
   opacity: 1;
@@ -932,8 +1055,15 @@ kbd {
   border-right: 0;
 }
 
+/* The full thickness of the rail, not just the tiles': the focus bar sits in the margin outside a
+   tile, and a box the height of the tile clipped it away — a horizontal rail showed no focus at
+   all. Inset from the ends too, or the first tile sat flush against the window edge, its corner
+   cut off by the window's own rounding. */
 .rail.is-horizontal .rail-items {
   flex-direction: row;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 8px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -949,16 +1079,15 @@ kbd {
   padding: 0 10px;
 }
 
-/* Only the top rail hosts the window buttons; a bottom rail needs no clearance for them. */
+/* Only the top rail hosts the window buttons along its length; whether this is drawn at all is
+   the `hidden` attribute, which follows the same decision main made. 14px in, macOS 26's 60pt span
+   (52pt before it), and the items' own 8px inset after: the gap to the first tile matches the gap
+   before the lights. */
 .rail.is-top .rail-drag {
-  height: 100%;
-  width: 78px;
+  align-self: stretch;
+  height: auto;
+  width: 80px;
   flex: none;
-}
-
-.rail.is-bottom .rail-drag,
-.rail.is-right .rail-drag {
-  display: none;
 }
 
 .rail.is-right {
@@ -989,6 +1118,32 @@ kbd {
   height: 3px;
 }
 
+.rail.is-bottom .rail-item.is-focused::before {
+  top: -7px;
+  bottom: auto;
+}
+
+/* A 36px tile in a 48px rail has 6px either side, so the -7px above hung a pixel off the window.
+   -5px puts the 3px bar 2–5px from the edge, the same inside-the-margin placement as a full rail. */
+.rail.is-compact .rail-item.is-focused::before {
+  left: -5px;
+}
+
+.rail.is-compact.is-right .rail-item.is-focused::before {
+  left: auto;
+  right: -5px;
+}
+
+.rail.is-compact.is-top .rail-item.is-focused::before {
+  left: 50%;
+  bottom: -5px;
+}
+
+.rail.is-compact.is-bottom .rail-item.is-focused::before {
+  left: 50%;
+  top: -5px;
+}
+
 /* --- density and compact ------------------------------------------------------------------ */
 
 .rail.is-compact .rail-item,
@@ -1003,11 +1158,9 @@ kbd {
   height: 19px;
 }
 
-.rail.is-comfortable .rail-items {
-  gap: 6px;
-}
-
-.rail.is-compact-density .rail-items,
+/* Compact density is spacing only, on a rail of any size. Shrinking the tiles is what a compact
+   rail does, and until the classes were told apart density-compact did that too. */
+.rail.density-compact .rail-items,
 .rail.is-compact .rail-items {
   gap: 3px;
 }
@@ -1110,6 +1263,100 @@ kbd {
   margin-top: 14px;
   font-size: 11px;
   color: var(--muted);
+}
+
+/* First run: a handful of one-click starters in a grid, sized for a pane rather than a sheet. */
+.starter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 96px);
+  gap: 8px;
+  margin: 4px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.starter-grid button,
+.wake-list button {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.starter-grid button {
+  flex-direction: column;
+  gap: 6px;
+  width: 96px;
+  padding: 12px 6px;
+  font-size: 12px;
+}
+
+.starter-grid button:hover,
+.wake-list button:hover {
+  border-color: var(--muted);
+}
+
+.starter-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.starter-initials {
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--tile);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Nothing open: the workspace's own services, one click each. */
+.wake-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(320px, 100%);
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.wake-list button {
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.wake-list .rail-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.wake-name {
+  flex: 1;
+}
+
+.wake-state {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.wake-unread {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #ff453a;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
 }
 
 /* --- route error boundary ----------------------------------------------------------------- */
@@ -1257,4 +1504,172 @@ kbd {
   outline: 2px solid var(--focus, #6ea8fe);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* Motion is decoration here, never information: the loading pulse, the waking shimmer and the
+   notification flash all have a static state that says the same thing. With "Reduce motion" on in
+   macOS, they stop — the pulses looped for as long as a service was loading, which is exactly the
+   kind of perpetual movement the setting exists to switch off. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- shortcut sheet ------------------------------------------------------------------------- */
+
+.shortcut-sheet {
+  max-height: min(560px, 86vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+}
+
+.shortcut-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.shortcut-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.shortcut-list {
+  margin: 0;
+  padding: 4px 16px 12px;
+  overflow-y: auto;
+}
+
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.shortcut-row dd {
+  margin: 0;
+}
+
+.shortcut-row kbd {
+  font: 12px ui-monospace, Menlo, monospace;
+}
+
+.shortcut-row .unbound {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The picker when a search matches nothing: say so, and offer the obvious next step. */
+.grid-none {
+  padding: 18px 16px 6px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.grid-none p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.grid-none button {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.custom-form .hint.refused {
+  color: #ff6b60;
+}
+
+/* Per-service extras: one disclosure per service, so the long fields stay out of the way. */
+.settings .service-more {
+  display: block;
+  padding: 6px 0;
+}
+
+.settings .service-more summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.service-more-fields {
+  display: grid;
+  gap: 10px;
+  padding: 10px 0 6px 14px;
+}
+
+.service-more-fields label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.service-more-fields label > span:first-child {
+  width: 130px;
+  flex: none;
+  color: var(--muted);
+}
+
+.service-more-fields label.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.service-more-fields label.stack > span:first-child {
+  width: auto;
+}
+
+.settings textarea.code {
+  width: 100%;
+  box-sizing: border-box;
+  font: 12px ui-monospace, Menlo, monospace;
+  resize: vertical;
+}
+
+/* The workspace switcher: a quieter tile than a service's, so it reads as navigation rather than
+   as one more thing to open. */
+.rail-workspace {
+  border: 1px solid var(--line);
+  background: transparent;
+  margin-bottom: 6px;
+}
+
+.rail-workspace-mark {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+/* Messages in another workspace: a muted badge, since they are not on this rail to act on. */
+.rail-badge.is-elsewhere {
+  background: var(--muted);
+}
+
+.settings .pref-note.refused {
+  color: #ff6b60;
 }

@@ -1,4 +1,5 @@
 import { catalogById } from '@shared/catalog';
+import { ConfirmButton } from '../ConfirmButton';
 import type { ShellState } from '@shared/types';
 
 /** The sections a reset can target. Sync and Firebase are excluded — see the hint below. */
@@ -40,12 +41,12 @@ export function Reset() {
             <span className="pref-name">Everything</span>
             <span className="pref-note">All preferences at once</span>
           </span>
-          <button
-            className="danger"
-            onClick={() => window.hangar.send({ type: 'reset-preferences' })}
+          <ConfirmButton
+            confirmLabel="Reset every preference?"
+            onConfirm={() => window.hangar.send({ type: 'reset-preferences' })}
           >
             Reset all
-          </button>
+          </ConfirmButton>
         </li>
       </ul>
     </section>
@@ -54,15 +55,41 @@ export function Reset() {
 
 export function About({ state }: { state: ShellState }) {
   const fromCatalog = state.allServices.filter((s) => catalogById(s.catalogId)).length;
+  const about = state.about;
+  // Shortened for reading, not for copying: the Reveal buttons are how you get to the real thing.
+  const tidy = (p: string) => p.replace(/^\/Users\/[^/]+/, '~');
 
   return (
     <section>
       <h2>About</h2>
       <p className="hint">
-        Config lives at <code>~/Library/Application Support/Hangar/config.json</code>. No cloud
-        account, no telemetry. Catalog services: {fromCatalog}, custom:{' '}
-        {state.allServices.length - fromCatalog}.
+        {about ? `Hangar ${about.version}. ` : ''}No cloud account, no telemetry. Catalog services:{' '}
+        {fromCatalog}, custom: {state.allServices.length - fromCatalog}.
       </p>
+      {/* From main, not hard-coded: the config moves with a redirected profile (`dev:isolated`,
+          the E2E suite), and the path this used to print was wrong for both. */}
+      {about && (
+        <ul className="rows">
+          <li className="pref">
+            <span className="pref-label">
+              <span className="pref-name">Configuration</span>
+              <span className="pref-note"><code>{tidy(about.configPath)}</code></span>
+            </span>
+            <button className="secondary" onClick={() => window.hangar.send({ type: 'reveal', what: 'config' })}>
+              Show in Finder
+            </button>
+          </li>
+          <li className="pref">
+            <span className="pref-label">
+              <span className="pref-name">Log</span>
+              <span className="pref-note"><code>{tidy(about.logPath)}</code> — what to attach to a bug report</span>
+            </span>
+            <button className="secondary" onClick={() => window.hangar.send({ type: 'reveal', what: 'log' })}>
+              Show in Finder
+            </button>
+          </li>
+        </ul>
+      )}
     </section>
   );
 }

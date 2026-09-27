@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, type Session } from 'electron';
+import { app, ipcMain, net, type Session } from 'electron';
 import { ElectronBlocker } from '@ghostery/adblocker-electron';
+import { createSessionBlocking, type SessionBlocker } from '@main/platform/adblock-sessions';
 
 /**
  * Ad and tracker blocking, per session.
@@ -25,6 +26,12 @@ import { ElectronBlocker } from '@ghostery/adblocker-electron';
  * for a static, universal filter list and carries nothing about which services you use, and the
  * result is cached on disk so it happens roughly weekly rather than per launch. A failed fetch is
  * non-fatal — no blocking, services load as normal.
+ *
+ * **Chromium's `net.fetch`, not Node's global `fetch`.** Node's validates TLS against its own
+ * bundled CA list and ignores the macOS keychain and the system proxy, so on a machine whose network
+ * inspects TLS — a managed laptop, a corporate VPN — the lists failed with a bare "fetch failed"
+ * while every service page, going through Chromium, loaded fine. The first packaged build with the
+ * blocker in it shipped with blocking silently off for exactly that reason.
  */
 
 /** Refetched past this age. The lists themselves change daily; weekly is the usual compromise. */
@@ -52,7 +59,7 @@ function loadEngine(): Promise<ElectronBlocker> {
   dropStaleCache(file);
 
   const startedAt = Date.now();
-  engine = ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
+  engine = ElectronBlocker.fromPrebuiltAdsAndTracking((url: string) => net.fetch(url), {
     path: file,
     read: fs.promises.readFile,
     write: fs.promises.writeFile,
@@ -74,6 +81,10 @@ function loadEngine(): Promise<ElectronBlocker> {
   return engine;
 }
 
+/** One engine, many sessions — see adblock-sessions.ts for why ghostery needs help with that. */
+const sessions = createSessionBlocking<Session>(ipcMain as never);
+const asSessionBlocker = (blocker: ElectronBlocker) => blocker as unknown as SessionBlocker<Session>;
+
 /**
  * Turn blocking on for one session. Asynchronous by nature — the engine may still be loading — so
  * early requests in a brand new session go unblocked rather than being held up behind a download.
@@ -87,8 +98,8 @@ export function applyAdBlocking(ses: Session, enabled: boolean): void {
   void loadEngine()
     .then((blocker) => {
       // The session can be gone by the time the engine arrives, and enabling twice would register
-      // a second set of webRequest listeners.
-      if (!blocker.isBlockingEnabled(ses)) blocker.enableBlockingInSession(ses);
+      // a second set of webRequest listeners; `enable` checks.
+      sessions.enable(asSessionBlocker(blocker), ses);
     })
     .catch((err) => {
       console.warn('[adblock] unavailable, continuing without it:', err?.message ?? err);
@@ -99,7 +110,7 @@ export function disableAdBlocking(ses: Session): void {
   if (!engine) return;
   void engine
     .then((blocker) => {
-      if (blocker.isBlockingEnabled(ses)) blocker.disableBlockingInSession(ses);
+      sessions.disable(asSessionBlocker(blocker), ses);
     })
     .catch(() => {
       // Never loaded, so there is nothing enabled to turn off.

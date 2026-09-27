@@ -1,14 +1,19 @@
 # Packaging
 
+For your own Mac, one command:
+
 ```bash
-npm run dist
+npm run install:local
 ```
 
-Builds `dist/Hangar-0.1.0-arm64.dmg` and `dist/Hangar-0.1.0.dmg` (Intel), unsigned. Roughly 116 MB
-each — that's Chromium, and there's no way around it for an Electron app.
+It builds this Mac's architecture only, signs it, quits the running copy, swaps
+`/Applications/Hangar.app` in place and starts it again — under launchd, if launch at login is on.
+Run it again after every change; that is the whole update story for a local build.
 
-`npm run dist:signed` is the same thing without `--mac.identity=null`, for when a Developer ID
-certificate is present in the keychain.
+`npm run dist` still builds the two DMGs (`dist/Hangar-0.1.0-arm64.dmg` and the Intel one, roughly
+116 MB each — that's Chromium) for handing to someone else, **unsigned**: `-c.mac.identity=null`
+makes electron-builder skip signing altogether. `npm run dist:signed` is the same without that flag,
+for when a Developer ID certificate is in the keychain.
 
 ## Installing it, and getting off the terminal
 
@@ -16,12 +21,54 @@ Running the app through `npm run dev` makes it a child of whatever shell started
 closed terminal came to take the app down overnight — see [decision #92](decisions.md). A
 Finder-launched `.app` has no such parent, and its stdout is not a pipe whose reader can disappear.
 
-1. `npm run dist`
-2. Open `dist/Hangar-0.1.0-arm64.dmg` and drag Hangar to Applications.
-3. First launch only: right-click → **Open** to get past Gatekeeper on an unsigned build.
+`install:local` does, in order:
 
-Then turn on **Close to tray** and **Start hidden** in Settings, so ⌘W leaves it running in the menu
-bar rather than quitting it.
+1. `npm run build` and `npm run icon`.
+2. `electron-builder --mac dir --<this arch>`, signed (next section), with hardened runtime and
+   timestamping off — both exist for notarisation, and hardened runtime with anything but a
+   Developer ID can stop the app launching.
+3. `codesign --verify --deep --strict`, and stops if that fails.
+4. Quits the running copy **gracefully**. It is usually the launchd job, and killing it is an
+   unsuccessful exit that launchd answers by starting it again — possibly mid-copy. So it asks:
+   `Hangar --quit` first (no dialog, cookies promoted, exit 0), then AppleScript's quit for builds
+   older than that flag (which does show "Quit Hangar?" if you have confirm-before-quitting on), and
+   only then `launchctl bootout` and a signal.
+5. Copies to `Hangar.app.new` with `ditto` and renames it into place, so there is never a
+   half-copied app at the real path.
+6. Starts it: `launchctl bootstrap`/`kickstart` when there is a login item for this copy, `open`
+   otherwise.
+
+No Gatekeeper step: a bundle you built yourself is never quarantined. (For a DMG from somewhere
+else, the old right-click → **Open** bypass is gone from macOS 15 on; it is System Settings →
+Privacy & Security → **Open Anyway** now.)
+
+Close to tray is worth turning on, so ⌘W leaves it running in the menu bar rather than quitting it.
+There is no longer a "start hidden" — see [decision #96](decisions.md): it hid every start of the
+installed app, and with the Dock icon unable to show a hidden window, left it running and
+unreachable. The Dock icon, Window → Show Hangar, the Dock menu and the tray all bring the window
+back now.
+
+### Signing — why a local build is signed at all
+
+macOS **does not deliver notifications to an unsigned app**, and says nothing when it drops them.
+That alone rules out `identity=null` for a copy you use. There are two ways to sign without a
+Developer ID, and `install:local` picks for you:
+
+| Identity | How | Notifications | Camera / microphone grants |
+| --- | --- | --- | --- |
+| Self-signed "Hangar Local" | `npm run cert:local`, once | Delivered | **Survive rebuilds** — same identity every build |
+| Ad-hoc (`-`) | The default when there is no certificate | Delivered | Asked again after every install — the signature is a hash of the bundle |
+
+`cert:local` creates a certificate in your login keychain, usable for code signing only, and trusts
+it for that (macOS asks for your password). The first build afterwards may ask whether `codesign`
+may use the key; choose **Always Allow**. It is removable in Keychain Access under My Certificates.
+It is not a Developer ID: another Mac still won't open the app.
+
+If you switch from ad-hoc to the certificate, macOS may keep an old camera or microphone decision
+against the previous identity. `tccutil reset Camera com.hangar.desktop` (and `Microphone`) clears it.
+
+`Notification` failures are logged now (`[notification] … not delivered`), so if banners stop, the
+log says why.
 
 ### Launch at login works unsigned, via a LaunchAgent
 
@@ -32,9 +79,13 @@ Developer ID (below) — but writes a user LaunchAgent instead, which carries no
 ~/Library/LaunchAgents/com.hangar.desktop.plist
 ```
 
-**Both toggles take effect at the next login, not immediately.** The app writes the plist and never
-runs `launchctl`, because the effect that writes it also runs on every `activate`, and booting a job
-out would terminate the very app doing it. See [decision #93](decisions.md).
+**Both toggles take effect at the next login, not immediately** — unless you install with
+`install:local`, which bootstraps the job for you. The app writes the plist and never runs
+`launchctl`, because the effect that writes it also runs on every `activate`, and booting a job out
+would terminate the very app doing it. See [decision #93](decisions.md).
+
+Only a copy in an Applications folder writes it. Opening a build straight from `dist/` used to
+repoint login at the build directory, which the next clean build then deleted.
 
 **Relaunch if it stops unexpectedly** adds `KeepAlive: { SuccessfulExit: false }` to the same job.
 Two things to know:
@@ -122,10 +173,10 @@ Hangar.
 `LSMultipleInstancesProhibited` is also set. Without it, launching a second copy silently does
 nothing instead of focusing the running one.
 
-## What signing would unlock
+## What a Developer ID would unlock
 
-Unsigned is fine for your own machine — Gatekeeper needs a right-click → Open the first time, and
-after that it's a normal app. Two things stay broken until there's a Developer ID:
+A local signature — self-signed or ad-hoc — is fine for your own machine. Two things stay broken
+until there's a Developer ID:
 
 **Distribution to anyone else.** An unsigned, un-notarised DMG shows the "damaged and can't be
 opened" dialog on another Mac. That message is a lie — it means unsigned — but there's no way to

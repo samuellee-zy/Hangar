@@ -93,8 +93,10 @@ module.exports = {
       comment:
         'A devDependency imported by shipped code is missing at runtime in the packaged app — ' +
         'electron-builder prunes them. `electron` itself is the exception: it is correctly a ' +
-        'devDependency because the runtime provides it rather than the bundle.',
-      from: { path: '^src/', pathNot: '\\.test\\.ts$' },
+        'devDependency because the runtime provides it rather than the bundle. The renderer is ' +
+        'exempt for the opposite reason: Vite bundles everything it imports, so React and dnd-kit ' +
+        'are build inputs — as dependencies they were shipped a second time, unused, in the asar.',
+      from: { path: '^src/', pathNot: ['\\.test\\.ts$', '^src/renderer/'] },
       // Matched on the RESOLVED path — 'electron' alone never matches node_modules/electron.
       to: { dependencyTypes: ['npm-dev'], pathNot: 'node_modules/electron/' },
     },

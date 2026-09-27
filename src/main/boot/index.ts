@@ -1,21 +1,22 @@
 import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
-import { catalogById } from '@shared/catalog';
-import { loadConfig } from '@main/platform/config';
+import { persistAll, startMaintenance } from '@main/boot/maintenance';
+import { setUpLogFile } from '@main/platform/log-file';
+import { flushConfig, loadConfig } from '@main/platform/config';
 import { installIconProtocol, registerIconScheme } from '@main/features/icons';
 import { installMenu } from '@main/boot/menu';
 import { DEFAULT_BINDINGS } from '@core/keyboard/keymap';
-import { DEFAULT_COOKIE_TTL_DAYS, flushStorage, promoteSessionCookies } from '@main/platform/persist-cookies';
-import { allLiveSessions, partitionFor, pruneSessions } from '@main/platform/session';
 import { applyUserAgent } from '@main/platform/ua';
 import { beginQuit, isQuitting } from '@main/platform/quit-state';
 import { releaseGlobalShortcut } from '@main/platform/system';
 import { AppWindow } from '@main/window/app-window';
-import type { Command } from '@shared/types';
+import { isInternalSender } from '@main/platform/renderer-url';
+import { commandProblem, isCommand } from '@core/commands';
 
 /**
- * Process entry point. Owns boot order, the single-instance lock, the IPC surface, and the two
- * background loops (session durability and hibernation).
+ * Process entry point. Owns boot order, the single-instance lock, the IPC surface and quitting.
+ * The background loops — session durability, the sweeps, suspend and resume — start here and live
+ * in boot/maintenance.ts.
  *
  * Boot order is load-bearing and documented in docs/architecture.md — `app.setName` before the
  * menu, `registerIconScheme` before app-ready, and `applyUserAgent` first thing *inside*
@@ -25,6 +26,7 @@ import type { Command } from '@shared/types';
 // Before anything that logs, which is nearly everything below. A terminal that goes away while the
 // app is running turns every subsequent log line into a fatal EPIPE — see the module.
 installLogGuards();
+setUpLogFile();
 
 // Unpackaged Electron reports its own name, so the menu bar and About box read "Electron".
 // package.json's productName only applies once packaged — this makes dev match the real thing.
@@ -73,25 +75,78 @@ function publishTestHandle(): void {
   (globalThis as { __hangarShell?: AppWindow | null }).__hangarShell = shell;
 }
 
+/**
+ * `Hangar --quit` asks the running copy to quit, without the confirm dialog, and exits.
+ *
+ * For `scripts/install-local.mjs`, which has to replace the bundle of a copy that is usually the
+ * launchd job. Killing it would count as an unsuccessful exit and launchd would start it again
+ * mid-copy; a graceful quit exits 0, and still promotes session cookies on the way out. AppleScript
+ * `quit` is graceful too, but goes through `confirmQuit` and so stops on a dialog.
+ *
+ * Carried as the lock's `additionalData` rather than parsed out of the forwarded argv, because it
+ * is ours to shape and Chromium's switch handling is not.
+ */
+const quitRequested = process.argv.includes('--quit');
+
 // A second copy fighting over the same partitions would corrupt cookie jars, so hand off to the
 // running instance instead.
-const gotLock = app.requestSingleInstanceLock();
+const gotLock = app.requestSingleInstanceLock({ quit: quitRequested });
 console.log(`[boot] single-instance lock: ${gotLock ? 'acquired' : 'denied — handing off and quitting'}`);
-if (!gotLock) {
+if (!gotLock || quitRequested) {
   // `app.quit()` before app-ready doesn't stop this module executing — everything below still
   // registered, and a second copy briefly raced the first over the same partitions, which is
   // exactly what corrupts a cookie jar. Exit outright instead.
+  //
+  // `--quit` with the lock acquired means nothing was running to quit, and booting the whole app
+  // in answer to "quit" would be exactly backwards.
   app.exit(0);
 }
 
 // Must precede app-ready, hence not inside whenReady with the rest of the setup.
 registerIconScheme();
 
-app.on('second-instance', () => {
-  // `showWindow()`, not a hand-rolled restore-and-focus. Under `closeToTray` the window is *hidden*
-  // rather than minimized, so restoring and focusing without showing it put focus on something
-  // invisible — relaunching from Spotlight looked like the app had died.
-  shell?.showWindow();
+/**
+ * The one way to put a window in front of the user: build one if there is none, then show it.
+ *
+ * `showWindow()`, never a bare `focus()`. Under `closeToTray` the window is *hidden* rather than
+ * minimized, and focusing a hidden window does nothing visible — which is how a Dock click, a
+ * Finder double-click and a Spotlight launch all came to look like the app had died while it sat
+ * there running (decision #96). `activate` and `second-instance` both land here so that the two can
+ * never drift apart again: they did once, when only one of them was fixed.
+ */
+function ensureShell(): void {
+  if (!shell) {
+    shell = new AppWindow();
+    trackWindow(shell);
+    publishTestHandle();
+    // Re-apply, or a rebuilt window has no global shortcut, no tray and no proxy. This was called
+    // once at boot and never again, so everything system-level died with the first ⌘W.
+    shell.applySystemPreferences();
+  }
+  shell.showWindow();
+}
+
+/**
+ * `mailto:` links, once Hangar is the default email app. macOS can deliver one before the app is
+ * ready — clicking an address launches Hangar to handle it — so it waits for a window.
+ */
+let pendingMailto: string | null = null;
+app.on('open-url', (event, url) => {
+  if (!/^mailto:/i.test(url)) return;
+  event.preventDefault();
+  if (shell && app.isReady()) shell.openMailto(url);
+  else pendingMailto = url;
+});
+
+app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
+  if ((additionalData as { quit?: unknown } | null)?.quit === true) {
+    console.log('[boot] --quit from a second instance');
+    quitGracefully({ confirm: false });
+    return;
+  }
+  // Before ready there is nothing to show and nothing safe to build; the window is about to appear
+  // anyway, since nothing hides it at boot any more.
+  if (app.isReady()) ensureShell();
 });
 
 app.whenReady().then(() => {
@@ -100,29 +155,78 @@ app.whenReady().then(() => {
   const config = loadConfig();
   nativeTheme.themeSource = config.preferences.appearance.theme;
   installIconProtocol(() => loadConfig().services);
+
+  // Every route back to the window, and every IPC handler, is registered *before* the window is
+  // built. They were registered after it, so a throw anywhere in construction or in
+  // `applySystemPreferences` — `new Tray()` included — left a Dock icon that did nothing and a rail
+  // whose `shell:get-state` had no handler: a blank window with no way to recover it.
+  app.on('activate', () => ensureShell());
+  registerIpc();
+
+  // GPU, network service, utilities. Chromium restarts them itself, and the only trace used to be a
+  // bare line from Chromium's own logging — this says which, why, and with what exit code.
+  app.on('child-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return;
+    console.warn(
+      `[process] ${details.name ?? details.type} ${details.reason} (exit ${details.exitCode})`,
+    );
+  });
+
   shell = new AppWindow();
   trackWindow(shell);
   publishTestHandle();
   // The bindings are read on every rebuild rather than captured, so `refreshMenu` after a rebind
   // redraws against the new map without this call site knowing anything about it.
+  //
+  // `show-window` is answered here rather than by the shell, because the menu outlives it: after ⌘W
+  // with close-to-tray off there is no shell to dispatch to, and "Show Hangar" has to build one.
   installMenu(
-    (command) => shell?.dispatch(command) ?? false,
+    (command) => {
+      if (command.type !== 'show-window') return shell?.dispatch(command) ?? false;
+      ensureShell();
+      return true;
+    },
     () => loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS
   );
   shell.applySystemPreferences();
-  // "Launch to the tray rather than a window" — the emphasis is on *launch*. The setting exists so
-  // that logging in doesn't throw a window at you, and it was being applied to every start,
-  // including one a person had just typed. `npm run dev` then produced no window, no error and no
-  // clue: the app booted perfectly, loaded its rail and its services, and hid.
-  //
-  // A development run is never the unattended login it is guarding against, so it never hides.
-  const startHidden = config.preferences.behaviour.startHidden && app.isPackaged;
-  if (startHidden) shell.win.hide();
+  if (pendingMailto) {
+    shell.openMailto(pendingMailto);
+    pendingMailto = null;
+  }
+});
 
-  ipcMain.handle('shell:get-state', () => shell?.state() ?? null);
-  ipcMain.handle('overlay:get-mode', () => shell?.overlayOpen ?? null);
+/**
+ * The app's own channels answer only the app's own screens.
+ *
+ * `shell:command` can do anything a person can in Settings — add a service, point sync at a repo,
+ * give Gmail custom JavaScript — and it used to answer any sender at all. The screens that hold
+ * the bridge are locked to this renderer now (`loadRoute`), and this is the second half: a frame
+ * showing anything else is ignored, and says so in the log.
+ */
+function fromApp(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, channel: string): boolean {
+  if (isInternalSender(event)) return true;
+  console.warn(`[ipc] ignored ${channel} from ${event.senderFrame?.url.slice(0, 80) ?? 'a closed frame'}`);
+  return false;
+}
+
+/**
+ * Whether a service message comes from the error or blocked page main put in the pane, rather than
+ * from the service's own page. Those pages are `data:` URLs we wrote; "Allow this host" and "Try
+ * again" are their buttons, and a page's own script has no business pressing them.
+ */
+const fromRecoveryPage = (event: Electron.IpcMainEvent): boolean =>
+  event.senderFrame?.url.startsWith('data:') === true;
+
+function registerIpc(): void {
+  ipcMain.handle('shell:get-state', (event) =>
+    fromApp(event, 'shell:get-state') ? (shell?.state() ?? null) : null,
+  );
+  ipcMain.handle('overlay:get-mode', (event) =>
+    fromApp(event, 'overlay:get-mode') ? (shell?.overlayOpen ?? null) : null,
+  );
   // Memory readout for Settings, so the hibernation setting has a visible consequence.
-  ipcMain.handle('app:metrics', () => {
+  ipcMain.handle('app:metrics', (event) => {
+    if (!fromApp(event, 'app:metrics')) return null;
     const metrics = app.getAppMetrics();
     return {
       processes: metrics.length,
@@ -131,7 +235,13 @@ app.whenReady().then(() => {
       ),
     };
   });
-  ipcMain.on('shell:command', (_event, command: Command) => {
+  ipcMain.on('shell:command', (event, command: unknown) => {
+    if (!fromApp(event, 'shell:command')) return;
+    // Shape-checked before it reaches dispatch — see core/commands.ts.
+    if (!isCommand(command)) {
+      console.warn(`[command] refused: ${commandProblem(command)}`);
+      return;
+    }
     // The renderer is a separate process, so an exception thrown here surfaces nowhere useful —
     // the click just appears to do nothing. Log the command and any failure explicitly.
     try {
@@ -165,6 +275,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('service:retry', (event) => {
+    if (!fromRecoveryPage(event)) return;
     const serviceId = shell?.serviceIdForContents(event.sender);
     if (serviceId) shell?.retryService(serviceId);
   });
@@ -172,6 +283,7 @@ app.whenReady().then(() => {
   // No payload: the host comes from what main last blocked for this sender's service. See the
   // preload's allowHost for why the page is not allowed to name it.
   ipcMain.on('service:allow-host', (event) => {
+    if (!fromRecoveryPage(event)) return;
     const serviceId = shell?.serviceIdForContents(event.sender);
     if (serviceId) shell?.allowBlockedHost(serviceId);
   });
@@ -196,134 +308,38 @@ app.whenReady().then(() => {
       console.error('[unread] failed:', err);
     }
   });
+}
 
-  // Without clearing `shell` on close, ⌘W would destroy the window while leaving a live-looking
-  // reference behind — `activate` would then no-op and the dock icon became a dead end.
-  app.on('activate', () => {
-    if (!shell) {
-      shell = new AppWindow();
-      trackWindow(shell);
-      publishTestHandle();
-      // Re-apply, or the rebuilt window has no global shortcut, no tray and no proxy. This was
-      // called once at boot and never again, so everything system-level died with the first ⌘W.
-      shell.applySystemPreferences();
-    } else {
-      shell.win.focus();
-    }
-  });
-});
-
-// --- session durability --------------------------------------------------------------------
-// Session cookies never reach disk, so without this a restart signs you out of anything that
-// doesn't issue a persistent cookie. See the Phase 0 findings in persist-cookies.ts.
+// Session durability, the background sweeps, and suspend/resume. See boot/maintenance.ts.
+startMaintenance(() => shell);
 
 /**
- * How long to extend a partition's session cookies by, or 0 to leave them alone.
+ * How long a quit waits for cookie promotion before going anyway.
  *
- * Several services can share one partition, so the *shortest* TTL wins — if any service in the
- * group opts out, the whole jar opts out. `sessionNotPersistable` forces 0: Phase 0 proved that
- * promoting Salesforce's `sid` achieves nothing because the org invalidates it server-side, so
- * extending it is pure downside.
+ * Unbounded, a `cookies.get` or `flushStore` that stalls — the log has network-service crashes in
+ * it — meant ⌘Q never finished, and the user's next move was Force Quit. Under the LaunchAgent
+ * that is an unsuccessful exit, so launchd started it straight back up. A normal promotion takes
+ * tens of milliseconds; three seconds is generous and still reads as "quitting", not "hung".
  */
-function ttlForPartition(partition: string): number {
-  const services = loadConfig().services.filter((svc) => {
-    // Same reason as `persistAll`: a service with a missing account throws rather than answering,
-    // and it is not this function's job to fail the whole partition over it.
-    try {
-      return partitionFor(svc) === partition;
-    } catch {
-      return false;
-    }
-  });
-  if (services.length === 0) return DEFAULT_COOKIE_TTL_DAYS;
+const QUIT_PERSIST_TIMEOUT_MS = 3_000;
 
-  return services.reduce((shortest, svc) => {
-    const entry = catalogById(svc.catalogId);
-    const ttl = entry?.sessionNotPersistable ? 0 : svc.cookieTtlDays ?? DEFAULT_COOKIE_TTL_DAYS;
-    return Math.min(shortest, ttl);
-  }, Number.POSITIVE_INFINITY);
-}
-
-async function persistAll(): Promise<void> {
-  // Per service, not `services.map(partitionFor)`. `partitionFor` throws on a service whose
-  // account is missing, and one throw here took out the whole loop — permanently, because it runs
-  // under `void` on an interval with nothing to report the rejection. Cookie promotion and storage
-  // flushing would then stop for *every* service, and the user finds out weeks later by being
-  // signed out of everything after a restart.
-  //
-  // `migrateConfig` now refuses a config that could produce this, so it should be unreachable.
-  // Keeping the guard anyway: the cost of being wrong is the durability of every session in the
-  // app, and this loop should degrade to "skip that one" rather than "stop".
-  const needed = new Set<string>();
-  for (const svc of loadConfig().services) {
-    try {
-      needed.add(partitionFor(svc));
-    } catch (err) {
-      console.error(`[session] skipping ${svc.name}:`, err);
-    }
-  }
-
-  for (const partition of pruneSessions(needed)) {
-    console.log(`[session] released ${partition} — no service uses it`);
-  }
-
-  for (const [partition, ses] of allLiveSessions()) {
-    const ttlDays = ttlForPartition(partition);
-    if (ttlDays > 0) await promoteSessionCookies(ses, { label: partition, ttlDays });
-    await flushStorage(ses);
-  }
-}
-
-setInterval(() => {
-  // The interval is fire-and-forget, so an unhandled rejection here is invisible. Catch it, or the
-  // only symptom of a broken persistence loop is lost sessions much later.
-  void persistAll().catch((err) => console.error('[session] persist failed:', err));
-}, 60_000);
-
-// Hibernation sweep. Frequent enough that a 1-minute timeout behaves as advertised, cheap enough
-// that it doesn't matter — the decision is pure arithmetic over a handful of services.
-setInterval(() => shell?.hibernateIdle(), 30_000);
-
-// Unread for sleeping services. The sweep is far cheaper than the interval suggests: it only
-// considers services with no live view *and* an endpoint rule, and each of those carries its own
-// interval floored at a minute. On a typical config it does nothing at all.
-setInterval(() => {
-  // Same reason as `persistAll`: this runs under `void` on a timer, where an unhandled rejection
-  // is invisible and the loop just stops.
-  void shell?.pollEndpoints().catch((err) => console.error('[endpoint] sweep failed:', err));
-}, 30_000);
-
-// --- power ------------------------------------------------------------------------------------
-// A closing lid is an unclean exit as far as unwritten session cookies are concerned, and views
-// that slept through it hold stale content and often a dead socket.
-
-let suspendedAt: number | null = null;
-
-powerMonitor.on('suspend', () => {
-  suspendedAt = Date.now();
-  console.log('[power] suspending — flushing sessions');
-  void persistAll().catch((err) => console.error('[power] suspend flush failed:', err));
-});
-
-powerMonitor.on('resume', () => {
-  const suspendedFor = suspendedAt ? Date.now() - suspendedAt : 0;
-  suspendedAt = null;
-  console.log(`[power] resumed after ${Math.round(suspendedFor / 1000)}s`);
-  shell?.refreshAfterWake(suspendedFor);
-});
-
-app.on('before-quit', (event) => {
+/**
+ * Quit, promoting session cookies first. Returns without quitting if the user cancels the confirm.
+ *
+ * `confirm: false` is for `--quit`, which a script sends: there is no one there to click the
+ * dialog, and a dialog nobody answers is a quit that never happens.
+ */
+function quitGracefully({ confirm }: { confirm: boolean }): void {
   if (isQuitting()) return;
-  event.preventDefault();
 
-  if (loadConfig().preferences.behaviour.confirmQuit) {
-    const { response } = { response: dialog.showMessageBoxSync({
+  if (confirm && loadConfig().preferences.behaviour.confirmQuit) {
+    const response = dialog.showMessageBoxSync({
       type: 'question',
       buttons: ['Quit', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
       message: 'Quit Hangar?',
-    }) };
+    });
     // Cancelling must leave the app fully usable — no half-quit state.
     if (response !== 0) return;
   }
@@ -334,9 +350,47 @@ app.on('before-quit', (event) => {
   // persistAll MUST finish before anything tears down sessions. It promotes session cookies to
   // persistent ones, which is the whole reason you stay signed in across a restart — disposing
   // first would sign the user out of everything, the exact failure Phase 1 exists to prevent.
-  void persistAll()
+  //
+  // "Finish" is bounded, though: see QUIT_PERSIST_TIMEOUT_MS. The minute-by-minute loop has already
+  // promoted everything older than a minute, so a timeout here loses at most that last minute.
+  const timeout = new Promise<void>((resolve) =>
+    setTimeout(() => {
+      console.warn(`[quit] cookie promotion still running after ${QUIT_PERSIST_TIMEOUT_MS}ms — quitting anyway`);
+      resolve();
+    }, QUIT_PERSIST_TIMEOUT_MS).unref()
+  );
+  void Promise.race([persistAll(), timeout])
     .catch((err) => console.error('[quit] cookie promotion failed:', err))
-    .finally(() => app.quit());
+    .finally(() => {
+      // Guarded, because a throw here skips the line after it: a failed write (a full disk, a
+      // profile deleted underneath us) left `app.quit()` uncalled and the app half-quit for good —
+      // the Force Quit this function exists to prevent. `process.on('exit')` flushes once more.
+      try {
+        flushConfig();
+      } catch (err) {
+        console.error('[quit] could not write pending config changes:', err);
+      }
+      app.quit();
+    });
+}
+
+/**
+ * Logout, restart or shutdown. "Confirm before quitting" is for ⌘Q, where a dialog saves you from a
+ * slip of the finger; asking during a logout just stops the logout, with macOS reporting that
+ * Hangar cancelled it. The system is ending the session, so quit the way `--quit` does.
+ */
+let systemEnding = false;
+powerMonitor.on('shutdown', () => {
+  systemEnding = true;
+  console.log('[power] the session is ending — quitting without asking');
+  quitGracefully({ confirm: false });
+});
+
+app.on('before-quit', (event) => {
+  // The second pass — `app.quit()` from `quitGracefully` itself — is let through.
+  if (isQuitting()) return;
+  event.preventDefault();
+  quitGracefully({ confirm: !systemEnding });
 });
 
 // macOS convention: closing the window doesn't quit. Also avoids Electron's default

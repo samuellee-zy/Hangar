@@ -1,26 +1,24 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   BaseWindow,
-  Notification,
+  View,
   WebContentsView,
   dialog,
   app,
   nativeTheme,
   screen,
   session,
-  shell,
   type WebContents,
 } from 'electron';
-import { catalogById } from '@shared/catalog';
+import { catalogById, resolveUrl } from '@shared/catalog';
 import {
-  addService,
   loadConfig,
-  makeCustomInstance,
-  makeInstance,
   updateConfig,
   updateConfigReturning,
   quarantinedConfigs,
+  configFilePath,
   onConfigSaved,
   saveConfig,
 } from '@main/platform/config';
@@ -38,63 +36,37 @@ import { DragLayer } from '@main/features/drag-layer';
 import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
+import { AttentionCenter } from '@main/window/attention';
+import { PreferenceEffects } from '@main/window/preference-effects';
+import { TileDrag } from '@main/window/tile-drag';
+import { route, type ShellContext } from '@main/window/commands';
+import { closePopOuts } from '@main/features/popout';
 import { deleteCachedIcon } from '@main/features/icons';
-import {
-  installWebContextMenu,
-  showFolderMenu,
-  showRailMenu,
-  showServiceMenu,
-} from '@main/features/context-menu';
-import { exportConfig, importConfig } from '@main/features/transfer';
+import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
-import { decideNotification, normaliseNotification } from '@core/notify/policy';
-import {
-  ALL_PREFERENCE_EFFECTS,
-  preferenceEffectFor,
-  trayWanted,
-  type PreferenceEffect,
-} from '@core/config/effects';
+import { expiredQuiet } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
+import { appBackground, windowButtonMetrics } from '@main/platform/native-chrome';
+import { railCanExpand } from '@shared/chrome';
 import {
-  UnreadCounts,
-  resolveUnreadRules,
-  unreadFromDom,
-  unreadFromTitle,
-} from '@core/notify/unread';
-import {
-  applyGlobalShortcut,
-  applyLoginItem,
-  applyProxy,
   releaseGlobalShortcut,
+  globalShortcutStatus,
+  onDownloadsChanged,
+  recentDownloads,
 } from '@main/platform/system';
-import { allLiveSessions, clearBlockedHost, hostBlockedFor } from '@main/platform/session';
-import { setAdBlocking } from '@main/platform/adblock';
-import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
+import { clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
+import { routable, routeTarget } from '@core/services/routing';
+import { canCompose, composeUrlFor } from '@shared/mailto';
+import { destroyTray, refreshTray } from '@main/features/tray';
 import { isQuitting } from '@main/platform/quit-state';
-import {
-  createFolder,
-  deleteFolder,
-  findFolder,
-  moveItemTo,
-  moveToFolder,
-} from '@core/workspace/folders';
 import { findOrphanPartitions } from '@core/runtime/permissions';
-import { isValidHost, sanitiseServicePatch } from '@core/services/patch';
-import { resetPreferences, setPreference } from '@core/config/preferences';
-import {
-  createWorkspace,
-  deleteWorkspace,
-  rehomeUnreachable,
-  renameWorkspace,
-  reorderWorkspaces,
-} from '@core/workspace/workspaces';
-import { closeSettingsWindow, openSettingsWindow } from '@main/features/settings-window';
+import { isValidHost } from '@core/services/patch';
+import { rehomeUnreachable } from '@core/workspace/workspaces';
+import { closeSettingsWindow } from '@main/features/settings-window';
 import { attachShortcuts } from '@main/window/shortcuts';
 import { refreshMenu } from '@main/boot/menu';
 import {
   DEFAULT_BINDINGS,
-  normalisePassthrough,
-  rebind,
   resolvePassthrough,
   type KeyContext,
 } from '@core/keyboard/keymap';
@@ -109,12 +81,13 @@ import { ConfigSync } from '@main/features/sync';
 import { readSyncBase, writeSyncBase } from '@main/platform/sync-base';
 import { PushManager } from '@main/features/push-manager';
 import { EndpointPoller } from '@main/features/endpoint-poll';
-import { extractNotification, firebaseConfigStatus, pushEligible } from '@core/push/policy';
-import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
+import { firebaseConfigStatus, pushEligible } from '@core/push/policy';
+import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
+import { resolveRepoPath } from '@core/config/sync';
+import { LOG_FILE } from '@main/platform/log-file';
 import type {
   Command,
   DomUnreadRule,
-  DragOrigin,
   OverlayMode,
   Rect,
   ServiceInstance,
@@ -135,20 +108,17 @@ import type {
  * keyboard routing, z-order — has to be coordinated here rather than in the renderer.
  */
 
-const DEFAULT_BOUNDS = { width: 1440, height: 940 };
-
 /**
- * Saved bounds are only honoured if they still land on a connected display — otherwise unplugging
- * an external monitor strands the window offscreen with no way to get it back.
+ * Saved bounds are only honoured if the window's title strip still lands on a connected display —
+ * otherwise unplugging an external monitor strands the window offscreen with no way to get it back.
+ * The rule itself is in core; this supplies the displays.
  */
-function restoreBounds(saved: WindowBounds | undefined) {
-  if (!saved) return DEFAULT_BOUNDS;
-  const onAnyDisplay = screen.getAllDisplays().some(({ workArea }) => {
-    const overlapsX = saved.x < workArea.x + workArea.width && saved.x + saved.width > workArea.x;
-    const overlapsY = saved.y < workArea.y + workArea.height && saved.y + saved.height > workArea.y;
-    return overlapsX && overlapsY;
-  });
-  return onAnyDisplay ? saved : DEFAULT_BOUNDS;
+function restoreBounds(saved: WindowBounds | undefined): WindowBounds {
+  return reachableBounds(
+    saved,
+    screen.getAllDisplays().map((d) => d.workArea),
+    screen.getPrimaryDisplay().workArea,
+  );
 }
 
 /**
@@ -182,14 +152,30 @@ export class AppWindow {
    * The last "edit this name" request. Never cleared — the nonce is what the rail keys off, so a
    * stale request re-broadcast with every other state change is inert.
    */
-  private renameRequest: { serviceId: string; nonce: number } = { serviceId: '', nonce: 0 };
+  private renameRequest: { id: string; nonce: number } = { id: '', nonce: 0 };
   /**
-   * Unread counts live here rather than on `ServiceRuntime`, so they survive hibernation and can
-   * be set for a service that was never loaded. See core/notify/unread.ts.
+   * Unread, banners, the badge and recent notifications — see attention.ts. The host is lazy (every
+   * member is read at call time), so it is safe to build before the constructor has run.
    */
-  private unread = new UnreadCounts();
-  /** Held so GC can't collect a banner before its click handler runs. */
-  private liveNotifications = new Set<Notification>();
+  private attention = new AttentionCenter({
+    drawnServiceIds: () => this.layout.drawnServiceIds(),
+    paneServiceIds: () => this.layout.panes.map((p) => p.serviceId),
+    isLive: (serviceId) => this.services.has(serviceId),
+    contentsFor: (serviceId) => this.contentsForService(serviceId),
+    windowOnScreen: () => this.windowOnScreen(),
+    sync: () => this.sync(),
+    focusService: (serviceId) => {
+      this.showWindow();
+      this.dispatch({ type: 'focus-service', serviceId });
+    },
+  });
+  /**
+   * Unread counts live in the attention centre rather than on `ServiceRuntime`, so they survive
+   * hibernation and can be set for a service that was never loaded. See core/notify/unread.ts.
+   */
+  private get unread() {
+    return this.attention.unread;
+  }
   private flashTimer: NodeJS.Timeout | null = null;
 
   /**
@@ -223,16 +209,12 @@ export class AppWindow {
       // 'hidden' rather than 'hiddenInset' so the traffic-light position is ours to control;
       // hiddenInset adds its own inset and left them straddling the rail's right edge.
       titleBarStyle: 'hidden',
-      // Initial placement only; relayout() repositions these whenever the rail moves.
-      trafficLightPosition: windowButtonPosition(
-        chromeFor(
-          loadConfig().preferences.appearance.railPosition,
-          loadConfig().preferences.appearance.railSize,
-          loadConfig().preferences.appearance.gutter,
-        ),
-      ),
-      backgroundColor: '#1b1b1f',
+      // Initial placement only; relayout() repositions these whenever the rail moves. The same
+      // chrome relayout uses, compact included, so they don't open in the rail and jump out of it.
+      trafficLightPosition: windowButtonPosition(this.chrome(), windowButtonMetrics()),
+      backgroundColor: appBackground(),
     });
+    nativeTheme.on('updated', this.repaintBackground);
 
     this.services = new ServiceManager(
       () => this.sync(),
@@ -243,7 +225,7 @@ export class AppWindow {
         const contents = this.findBar.contents;
         if (contents) safeSend(contents, 'find:result', { active, total });
       },
-      (serviceId, title) => this.handleTitle(serviceId, title),
+      (serviceId, title) => this.attention.handleTitle(serviceId, title),
     );
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
@@ -264,6 +246,8 @@ export class AppWindow {
       this.saveWindowBounds();
     });
     this.win.on('move', () => this.saveWindowBounds());
+    this.win.on('show', () => this.attention.acknowledgePanes());
+    this.win.on('restore', () => this.attention.acknowledgePanes());
     // The debounce means a window that's never moved would otherwise never record its bounds,
     // and a quit inside the debounce window would drop the last change.
     this.win.on('close', (event: Electron.Event) => {
@@ -271,7 +255,7 @@ export class AppWindow {
       // Hide rather than destroy, so the tray icon still leads somewhere.
       if (loadConfig().preferences.behaviour.closeToTray && !isQuitting()) {
         event.preventDefault();
-        this.win.hide();
+        this.hideWindow();
       }
     });
 
@@ -287,19 +271,19 @@ export class AppWindow {
         updateConfig((c) => {
           c.pushRegistrations = registrations;
         }),
-      deliver: (serviceId, message) => this.handlePushMessage(serviceId, message),
+      deliver: (serviceId, message) => this.attention.handlePushMessage(serviceId, message),
       log: (message) => console.log(`[push] ${message}`),
     });
 
     this.endpoints = new EndpointPoller(
       () => loadConfig().services.filter((svc) => !this.services.has(svc.id)),
-      (serviceId, count) => this.applyEndpointCount(serviceId, count),
+      (serviceId, count) => this.attention.applyEndpointCount(serviceId, count),
     );
 
     this.configSync = new ConfigSync({
       // Optional-chained: a config from before this preference existed has no `sync` section, and
       // reading through it unguarded threw inside a `void`-ed promise where nothing surfaced it.
-      repoPath: () => loadConfig().preferences.sync?.repoPath.trim() || null,
+      repoPath: () => resolveRepoPath(loadConfig().preferences.sync?.repoPath, os.homedir()),
       // Same optional chain, same reason: a config predating this preference has no `sync` section.
       // Defaulting to false is the safe direction — the guard stays on.
       allowPublicRepo: () => loadConfig().preferences.sync?.allowPublicRepo ?? false,
@@ -326,6 +310,8 @@ export class AppWindow {
     // The single funnel: every config write schedules a reconcile. Sync previously fired only from
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
+    setLinkRouter((url, fromServiceId) => this.routeLink(url, fromServiceId));
+    onDownloadsChanged(() => this.sync());
 
     // Safe to start here despite `onApplied` touching panes: `reconcile` awaits `git --version`
     // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
@@ -445,6 +431,11 @@ export class AppWindow {
       flashServiceId: this.flashServiceId,
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
+      about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
+      globalShortcutStatus: globalShortcutStatus(),
+      isDefaultMailApp: app.isPackaged && app.isDefaultProtocolClient('mailto'),
+      recentNotifications: this.attention.recentNotifications(),
+      downloads: recentDownloads(),
     });
   }
 
@@ -665,9 +656,38 @@ export class AppWindow {
     return loadConfig().preferences.keyboard?.bindings ?? DEFAULT_BINDINGS;
   }
 
+  /**
+   * Broadcast state to every surface — soon, once, and only where it changed.
+   *
+   * It was immediate, whole, and unconditional: every call sent the full state to every surface,
+   * and it is called on every page load start and stop, every resize event (through relayout) and
+   * every mutation. The rail, Settings and the overlay then re-rendered completely each time. Now
+   * calls within one frame collapse into one broadcast, and a surface is only sent a state that
+   * differs from the last one it received — per surface, so one that has just opened still gets
+   * the current state even if nothing changed.
+   *
+   * `state()` is still synchronous for anyone who needs it now; only the broadcast waits.
+   */
+  private syncScheduled: ReturnType<typeof setTimeout> | null = null;
+  private lastSent = new WeakMap<WebContents, string>();
+
   sync(): void {
+    if (this.syncScheduled) return;
+    this.syncScheduled = setTimeout(() => {
+      this.syncScheduled = null;
+      this.broadcast();
+    }, 16);
+  }
+
+  private broadcast(): void {
+    if (this.win.isDestroyed()) return;
     const state = this.state();
-    for (const wc of this.consumers) safeSend(wc, 'shell:state', state);
+    const signature = JSON.stringify(state);
+    for (const wc of this.consumers) {
+      if (this.lastSent.get(wc) === signature) continue;
+      this.lastSent.set(wc, signature);
+      safeSend(wc, 'shell:state', state);
+    }
     refreshTray(state, (c) => this.dispatch(c));
     this.refreshMenuIfRebound(state.preferences.keyboard?.bindings);
   }
@@ -694,8 +714,92 @@ export class AppWindow {
     if (!first) refreshMenu();
   }
 
+  /**
+   * A `mailto:` link from anywhere on the Mac: a new message in your chosen mail service.
+   *
+   * Falls back to the first mail service that can take one when none is chosen, so making Hangar
+   * the default email app and clicking an address does something the first time rather than
+   * nothing until a second setting is found.
+   */
+  openMailto(link: string): void {
+    const config = loadConfig();
+    const chosen = config.services.find((s) => s.id === config.preferences.behaviour.mailtoServiceId);
+    const svc = chosen && canCompose(chosen.catalogId) ? chosen : config.services.find((s) => canCompose(s.catalogId));
+    this.showWindow();
+    if (!svc) {
+      console.warn('[mailto] no mail service here can open a new message — add Gmail, Outlook or Yahoo');
+      this.dispatch({ type: 'open-settings' });
+      return;
+    }
+    const url = composeUrlFor(svc.catalogId, link);
+    if (!url) return;
+    this.dispatch({ type: 'focus-service', serviceId: svc.id });
+    this.contentsForService(svc.id)?.loadURL(url).catch(() => {
+      // Reported through did-fail-load.
+    });
+  }
+
+  /**
+   * A link leaving `fromServiceId`: opened in the service it belongs to, when link routing is on and
+   * one of yours matches (see core/services/routing.ts). Returns whether it took the link.
+   */
+  private routeLink(url: string, fromServiceId: string): boolean {
+    const config = loadConfig();
+    if (!config.preferences.behaviour.routeLinks) return false;
+    const target = routeTarget(url, routable(config.services, resolveUrl), fromServiceId);
+    if (!target) return false;
+    const name = config.services.find((s) => s.id === target)?.name ?? target;
+    console.log(`[nav] routed a link to ${name}`);
+    this.dispatch({ type: 'focus-service', serviceId: target });
+    const wc = this.contentsForService(target);
+    wc?.loadURL(url).catch(() => {
+      // Reported through did-fail-load, which decides what happens next.
+    });
+    return true;
+  }
+
+  /**
+   * Hide the window, leaving native fullscreen first if it's in it.
+   *
+   * `hide()` on a fullscreen window leaves its Space behind: an empty black desktop you are swiped
+   * into, with nothing on it, until you find your way out. Fullscreen has to be left first, and
+   * leaving it is animated, so the hide waits for it to finish.
+   */
+  hideWindow(): void {
+    if (this.win.isDestroyed()) return;
+    if (this.win.isFullScreen()) {
+      this.win.once('leave-full-screen', () => {
+        if (!this.win.isDestroyed()) this.win.hide();
+      });
+      this.win.setFullScreen(false);
+      return;
+    }
+    this.win.hide();
+  }
+
   showWindow(): void {
+    // Checked again here, not only at construction. A window closed to the tray on an external
+    // monitor that is then unplugged comes back from `show()` exactly where it was — macOS only
+    // rescues windows that are visible when the display goes — so "show" put it nowhere.
+    //
+    // Only for a window that *isn't* on screen, which is the case above and the only one. `activate`
+    // lands here on every Dock click and at launch, and correcting a visible window's bounds is a
+    // resize, and a resize is a relayout — which ends any tile drag in progress. On a CI runner whose
+    // display is smaller than the window, a late `activate` did exactly that, mid-drag.
+    const offScreen = !this.win.isVisible() || this.win.isMinimized();
+    // Already on screen: showing it is focusing it, which is all `activate` did before it learned
+    // to show a hidden window. Nothing else — `show()` re-orders the window and raises events, and
+    // `activate` can arrive at any moment, mid-drag included (it arrives late on CI).
+    if (!offScreen) {
+      this.win.focus();
+      return;
+    }
     if (this.win.isMinimized()) this.win.restore();
+    if (!this.win.isFullScreen()) {
+      const current = this.win.getBounds();
+      const reachable = restoreBounds(current);
+      if (!sameBounds(current, reachable)) this.win.setBounds(reachable);
+    }
     this.win.show();
     this.win.focus();
   }
@@ -734,6 +838,11 @@ export class AppWindow {
    * Attach exactly the visible views, in pane order, then keep the overlay on top. Detaching
    * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
    */
+  /** Follows the theme — the system's, or the preference's — as it changes. See `appBackground`. */
+  private readonly repaintBackground = (): void => {
+    if (!this.win.isDestroyed()) this.win.setBackgroundColor(appBackground());
+  };
+
   /** What the *panes* have to work around. */
   private chrome() {
     const appearance = loadConfig().preferences.appearance;
@@ -815,10 +924,12 @@ export class AppWindow {
     // them. Ending it is the honest answer: the alternative is a highlight over a pane that has
     // moved, and a drop that lands somewhere the user didn't aim. The layer is also attached above
     // the panes, and the `addChildView` calls below would bury it.
-    this.endTileDrag();
+    this.tileDrag.end('relayout');
     // Turning compact off while the rail is open would otherwise leave the flag set, and switching
     // it back on later would give a rail that was already expanded before it was ever collapsed.
-    if (!loadConfig().preferences.appearance.compactRail) this.railExpanded = false;
+    // Moving an open rail to the top or bottom is the same: the flag would outlive the only shape
+    // it means anything for, and the rail would draw full-size tiles in a strip sized for icons.
+    if (!railCanExpand(loadConfig().preferences.appearance)) this.railExpanded = false;
     // The find bar's target is set once on open, but focus can move underneath it — relayout then
     // moved the bar over the newly focused pane while it was still searching the old one. Closing
     // is the honest answer: the alternative is silently retargeting a search the user is mid-way
@@ -830,25 +941,33 @@ export class AppWindow {
     const { width, height } = this.win.getContentBounds();
     const chrome = this.chrome();
     const bounds = this.layout.bounds(chrome, width, height);
-    const visible = this.layout.visibleServiceIds();
+    // Drawn, not merely in a pane: behind a maximised pane the others keep their places but must
+    // come off the window, or they would sit under it — and hit-test — at their old rectangles.
+    const visible = this.layout.drawnServiceIds();
 
     for (const [serviceId, runtime] of this.services.all()) {
       if (!visible.has(serviceId)) this.win.contentView.removeChildView(runtime.view);
     }
 
-    for (const pane of this.layout.panes) {
+    // Looking at a pane is what marks it read — but only if anyone *can* look. Relayout runs on the
+    // hibernation sweep every 30s whatever the window is doing, so with the window closed to the
+    // tray every service in a pane had its unread wiped before anyone saw it. `show`/`restore`
+    // acknowledge the panes instead, once they are actually on screen.
+    const onScreen = this.windowOnScreen();
+    for (const pane of this.layout.drawn()) {
       const runtime = this.services.get(pane.serviceId);
       const rect = bounds.get(pane.id);
       if (!runtime || !rect) continue;
       // Idle time is measured as time off screen, so refresh the stamp while visible.
       this.services.markActive(pane.serviceId);
-      this.clearUnread(pane.serviceId);
+      if (onScreen) this.attention.acknowledge(pane.serviceId);
       this.win.contentView.addChildView(runtime.view);
       runtime.view.setBounds(rect);
       // Rounded card. Note Electron's caveat: the cut-out corners still capture clicks — harmless
       // here since nothing sits underneath them but the rail background.
       runtime.view.setBorderRadius(PANE_RADIUS);
     }
+    this.drawFocusRing(bounds, chrome.gutter);
 
     // A pane whose service has no runtime renders nothing, so treat that as empty too.
     const hasVisibleContent = this.layout.panes.some((p) => this.services.has(p.serviceId));
@@ -857,7 +976,7 @@ export class AppWindow {
     // Runtime reposition rather than recreating the window, which `titleBarStyle` would otherwise
     // require — see docs/decisions.md.
     try {
-      this.win.setWindowButtonPosition(windowButtonPosition(chrome));
+      this.win.setWindowButtonPosition(windowButtonPosition(chrome, windowButtonMetrics()));
     } catch {
       // Older Electron, or a platform without window buttons. Placement just stays as-is.
     }
@@ -896,11 +1015,12 @@ export class AppWindow {
    */
   private toggleRail(): void {
     if (this.dragLayer.draggingServiceId) return;
-    if (!loadConfig().preferences.appearance.compactRail) return;
     this.setRailExpanded(!this.railExpanded);
   }
 
   private setRailExpanded(expanded: boolean): void {
+    // Only a compact rail on a side opens; see `railCanExpand`.
+    if (expanded && !railCanExpand(loadConfig().preferences.appearance)) return;
     if (this.railExpanded === expanded) return;
     this.railExpanded = expanded;
     // A full relayout, because the panes reflow around the rail rather than sitting under it.
@@ -923,587 +1043,127 @@ export class AppWindow {
   }
 
   /** Returns whether anything happened — the keyboard layer uses this to decide whether to
-   *  swallow the keystroke. See CommandSink. */
+   *  swallow the keystroke. See CommandSink.
+   *
+   *  The handlers are in `commands/`, one file per concern; this resolves placeholders and looks
+   *  the type up. */
   dispatch(raw: Command): boolean {
     const command = this.resolve(raw);
     if (!command) return false;
-
-    switch (command.type) {
-      case 'focus-service':
-        this.overlay.close();
-        this.openService(command.serviceId);
-        // Without this, clicking a service that's already the focused pane changes nothing on
-        // screen and reads as a dead button — the reported bug.
-        this.flash(command.serviceId);
-        break;
-
-      case 'open-in-new-pane':
-        this.overlay.close();
-        this.openService(command.serviceId, { newPane: true });
-        break;
-
-      case 'split': {
-        // Split with the next service in the workspace that isn't already on screen.
-        const visible = this.layout.visibleServiceIds();
-        const next = this.activeServices(loadConfig().activeWorkspaceId).find(
-          (s) => !visible.has(s.id),
-        );
-        if (next) this.openService(next.id, { newPane: true });
-        break;
-      }
-
-      case 'focus-pane':
-        // Ignore a stale pane id rather than pointing focus at nothing.
-        if (!this.layout.find(command.paneId)) break;
-        this.layout.focusedPaneId = command.paneId;
-        this.focusActivePane();
-        this.saveLayout();
-        this.sync();
-        break;
-
-      case 'cycle-pane':
-        this.layout.cycleFocus(command.delta);
-        this.focusActivePane();
-        this.saveLayout();
-        this.sync();
-        break;
-
-      case 'close-pane':
-        // Closing the last pane means closing the window — otherwise ⌘W is a no-op and the window
-        // can't be dismissed from the keyboard at all.
-        if (this.layout.panes.length === 1) {
-          this.win.close();
-          break;
-        }
-        this.layout.close(command.paneId);
-        this.relayout();
-        this.saveLayout();
-        break;
-
-      case 'create-workspace': {
-        const id = updateConfigReturning((c) => createWorkspace(c, command.name));
-        this.dispatch({ type: 'set-workspace', workspaceId: id });
-        break;
-      }
-
-      case 'rename-workspace':
-        updateConfig((c) => renameWorkspace(c, command.workspaceId, command.name));
-        this.sync();
-        break;
-
-      case 'delete-workspace': {
-        const result = updateConfigReturning((c) => deleteWorkspace(c, command.workspaceId));
-        if (!result.deleted) break;
-        if (result.rehomed.length) {
-          console.log(`[workspace] rehomed ${result.rehomed.length} orphaned service(s)`);
-        }
-        // The active workspace may have changed under us; rebuild from whatever it is now.
-        this.layout.panes = [];
-        this.layout.focusedPaneId = null;
-        this.restoreLayout();
-        this.relayout();
-        break;
-      }
-
-      case 'sync-now':
-        void this.configSync.reconcile();
-        break;
-
-      case 'resolve-sync':
-        void this.configSync.resolve(command.winner);
-        break;
-
-      case 'reset-preferences': {
-        // Per section or wholesale. Until now a bad rail position or zoom was only recoverable by
-        // hand-editing config.json — which for a setting that can make the window unusable is not
-        // a recovery path at all.
-        updateConfig((c) => {
-          c.preferences = resetPreferences(c.preferences, command.section);
-        });
-        this.applyAllPreferenceEffects();
-        this.relayout();
-        this.sync();
-        break;
-      }
-
-      case 'reveal-path':
-        // Restricted to paths we actually surfaced. The renderer is a separate process and this is
-        // an IPC boundary — an arbitrary path from a message would be a way to probe the disk.
-        if (quarantinedConfigs().includes(command.path)) shell.showItemInFolder(command.path);
-        break;
-
-      case 'purge-orphan-partitions':
-        this.purgeOrphanPartitions();
-        break;
-
-      case 'reorder-workspaces':
-        updateConfig((c) => reorderWorkspaces(c, command.workspaceIds));
-        this.sync();
-        break;
-
-      case 'set-workspace':
-        // Save the outgoing workspace's arrangement before switching, so ⌘⌥1/⌘⌥2 round-trips.
-        this.saveLayout();
-        updateConfig((c) => {
-          c.activeWorkspaceId = command.workspaceId;
-        });
-        this.overlay.close();
-        this.layout.panes = [];
-        this.layout.focusedPaneId = null;
-        this.restoreLayout();
-        this.relayout();
-        break;
-
-      case 'navigate': {
-        const pane = this.layout.focused();
-        if (pane) this.services.navigate(pane.serviceId, command.direction);
-        break;
-      }
-
-      case 'open-palette':
-        // Toggle, but only against itself — ⌘K while the picker is open should switch to the
-        // palette rather than dismiss.
-        if (this.overlay.currentMode === 'palette') {
-          this.overlay.close();
-          this.focusActivePane();
-        } else {
-          this.openOverlay('palette');
-        }
-        break;
-
-      case 'open-connections':
-        this.openOverlay('connections');
-        break;
-
-      case 'close-overlay': {
-        // Reports false when nothing was open, so Escape falls through to the page.
-        const wasOpen = this.overlay.isOpen;
-        if (wasOpen) {
-          this.overlay.close();
-          this.focusActivePane();
-        }
-        return wasOpen;
-      }
-
-      case 'add-service': {
-        const svc = updateConfigReturning((c) =>
-          addService(
-            c,
-            makeInstance(c, command.catalogId, { forceNewAccount: command.forceNewAccount }),
-          ),
-        );
-        this.overlay.close();
-        this.openService(svc.id, { newPane: false });
-        this.flash(svc.id);
-        break;
-      }
-
-      case 'add-custom-service': {
-        const svc = updateConfigReturning((c) => addService(c, makeCustomInstance(c, command)));
-        this.overlay.close();
-        this.openService(svc.id, { newPane: false });
-        this.flash(svc.id);
-        break;
-      }
-
-      case 'move-item':
-        this.mutateWorkspace((w) => moveItemTo(w, command.activeId, command.overId));
-        break;
-
-      case 'toggle-rail':
-        this.toggleRail();
-        break;
-
-      case 'begin-tile-drag':
-        this.beginTileDrag(command.serviceId);
-        break;
-
-      case 'drag-tile-to':
-        this.moveTileDrag(command.from, command.x, command.y);
-        break;
-
-      case 'drop-tile':
-        this.dropTile(command.from, command.x, command.y);
-        break;
-
-      case 'cancel-tile-drag':
-        this.endTileDrag();
-        break;
-
-      case 'create-folder':
-        this.mutateWorkspace((w) => createFolder(w, command.name, command.serviceIds));
-        break;
-
-      case 'rename-folder':
-        this.mutateWorkspace((w) => {
-          const folder = findFolder(w, command.folderId);
-          if (folder) folder.name = command.name;
-        });
-        break;
-
-      case 'delete-folder':
-        this.mutateWorkspace((w) => deleteFolder(w, command.folderId));
-        break;
-
-      case 'toggle-folder':
-        this.mutateWorkspace((w) => {
-          const folder = findFolder(w, command.folderId);
-          if (folder) folder.collapsed = !folder.collapsed;
-        });
-        break;
-
-      case 'move-to-folder':
-        this.mutateWorkspace((w) => moveToFolder(w, command.serviceId, command.folderId));
-        break;
-
-      case 'show-folder-menu': {
-        const ws = this.activeWorkspace(loadConfig().activeWorkspaceId);
-        const folder = ws && findFolder(ws, command.folderId);
-        if (folder) showFolderMenu(this.win, folder, (c: Command) => this.dispatch(c));
-        break;
-      }
-
-      case 'rebind': {
-        // Revalidated here, not trusted from the renderer: `rebind` refuses an unknown action or an
-        // unbindable chord, and returns the map unchanged rather than throwing.
-        updateConfig((c) => {
-          c.preferences.keyboard.bindings = rebind(
-            c.preferences.keyboard.bindings,
-            command.actionId,
-            command.chord,
-          );
-        });
-        // `sync()` redraws the menu — see `refreshMenuIfRebound`, which is what makes an imported
-        // or synced config update it too.
-        this.sync();
-        break;
-      }
-
-      case 'update-service': {
-        // Validated rather than assigned straight through: this was a bare `Object.assign`, so any
-        // field and any value reached config verbatim. See `sanitiseServicePatch`.
-        const patch = sanitiseServicePatch(command.patch);
-        updateConfig((c) => {
-          const svc = c.services.find((s) => s.id === command.serviceId);
-          if (!svc) return;
-          Object.assign(svc, patch);
-          // Canonicalised on the way in — Settings sends what it captured, and a list holding
-          // `Meta+K` and `meta+k` would claim one chord twice and match neither reliably. Only
-          // when the patch actually carries it, so every other update leaves it alone.
-          if ('keyboardPassthrough' in patch) {
-            svc.keyboardPassthrough = normalisePassthrough(patch.keyboardPassthrough);
-          }
-        });
-        // Zoom applies live; CSS/JS and UA need a reload to take effect, so say so rather than
-        // silently doing half the job.
-        const runtime = this.services.get(command.serviceId);
-        const zoom = patch.zoom;
-        if (runtime && typeof zoom === 'number') runtime.view.webContents.setZoomFactor(zoom);
-        // Unread detection applies live too, and has to: the field is edited by someone looking at
-        // the page, and a selector you must reload to test is a selector nobody tunes. Muting also
-        // lands here, which is how it stops the page watching for a count it isn't allowed to set.
-        if ('unreadSelector' in patch || 'notificationLevel' in patch || 'notifications' in patch) {
-          // The old count came from the old rules, so it is now unattributable. Detection reports
-          // again within a frame or two if there is still something to report.
-          this.clearUnread(command.serviceId);
-          this.pushUnreadRules(command.serviceId);
-        }
-        this.sync();
-        break;
-      }
-
-      case 'rename-service':
-        updateConfig((c) => {
-          const svc = c.services.find((s) => s.id === command.serviceId);
-          if (svc) svc.name = command.name;
-        });
-        this.sync();
-        break;
-
-      case 'begin-rename-service': {
-        // The field replaces the name, so there has to be a name on screen to replace. A collapsed
-        // compact rail is icons only — open it first, or the request lands somewhere invisible.
-        if (loadConfig().preferences.appearance.compactRail && !this.railExpanded) {
-          this.setRailExpanded(true);
-        }
-        this.renameRequest = { serviceId: command.serviceId, nonce: this.renameRequest.nonce + 1 };
-        this.sync();
-        break;
-      }
-
-      case 'remove-service':
-        this.removeService(command.serviceId);
-        break;
-
-      case 'rename-account':
-        updateConfig((c) => {
-          const account = c.accounts.find((a) => a.id === command.accountId);
-          if (account) account.label = command.label;
-        });
-        this.sync();
-        break;
-
-      case 'sign-out-account':
-        void this.signOut(command.accountId);
-        break;
-
-      case 'open-find': {
-        const pane = this.layout.focused();
-        const wc = pane && this.services.get(pane.serviceId)?.view.webContents;
-        const rect = pane ? this.paneRect(pane.id) : null;
-        if (wc && rect && pane) this.findBar.open(wc, rect, pane.serviceId);
-        break;
-      }
-
-      case 'close-find':
-        this.findBar.close();
-        this.focusActivePane();
-        break;
-
-      case 'find':
-        this.findBar.search(command.query, {
-          forward: command.forward ?? true,
-          findNext: command.findNext ?? false,
-        });
-        break;
-
-      case 'zoom': {
-        const pane = this.layout.focused();
-        const svc = pane && loadConfig().services.find((s) => s.id === pane.serviceId);
-        const runtime = pane && this.services.get(pane.serviceId);
-        if (!svc || !runtime) break;
-        const base = svc.zoom || 1;
-        const next =
-          command.direction === 'reset'
-            ? loadConfig().preferences.behaviour.defaultZoom
-            : Math.min(
-                2,
-                Math.max(
-                  0.5,
-                  Number((base + (command.direction === 'in' ? 0.1 : -0.1)).toFixed(2)),
-                ),
-              );
-        runtime.view.webContents.setZoomFactor(next);
-        // Persisted per service, so it survives a reload and a restart.
-        updateConfig((c) => {
-          const target = c.services.find((s) => s.id === svc.id);
-          if (target) target.zoom = next;
-        });
-        this.sync();
-        break;
-      }
-
-      case 'print': {
-        const pane = this.layout.focused();
-        this.services.get(pane?.serviceId ?? '')?.view.webContents.print();
-        break;
-      }
-
-      case 'clear-unread':
-        this.clearUnread(command.serviceId);
-        this.sync();
-        break;
-
-      case 'set-preference': {
-        const before = loadConfig().preferences.appearance.theme;
-        updateConfig((c) => {
-          // Rejected silently when the path is unknown or the type is wrong — see setPreference.
-          if (!setPreference(c.preferences, command.path, command.value)) {
-            console.warn(`[preferences] rejected ${command.path}`);
-          }
-        });
-        const after = loadConfig().preferences.appearance.theme;
-        // Renderers read `prefers-color-scheme`, which Electron drives from themeSource.
-        if (after !== before) nativeTheme.themeSource = after;
-        this.applyPreferenceEffect(command.path);
-        // Appearance changes affect pane geometry, so relayout before telling anyone.
-        this.relayout();
-        break;
-      }
-
-      case 'reload-service': {
-        const runtime = this.services.get(command.serviceId);
-        if (runtime && !runtime.view.webContents.isDestroyed()) runtime.view.webContents.reload();
-        break;
-      }
-
-      case 'sleep-service':
-        this.sleep(command.serviceId);
-        this.relayout();
-        break;
-
-      case 'sleep-others': {
-        const keep = this.layout.visibleServiceIds();
-        for (const [serviceId] of [...this.services.all()]) {
-          if (!keep.has(serviceId)) this.sleep(serviceId);
-        }
-        this.relayout();
-        break;
-      }
-
-      case 'show-service-menu': {
-        const svc = loadConfig().services.find((s) => s.id === command.serviceId);
-        if (!svc) break;
-        const workspace = this.activeWorkspace(loadConfig().activeWorkspaceId);
-        const folders = (workspace?.items ?? []).filter((i) => i.kind === 'folder');
-        showServiceMenu(
-          this.win,
-          svc,
-          {
-            isVisible: this.layout.visibleServiceIds().has(svc.id),
-            isSleeping: !this.services.has(svc.id),
-            folders: folders.map((f) => ({ id: f.id, name: f.name })),
-            currentFolderId: folders.find((f) => f.serviceIds.includes(svc.id))?.id ?? null,
-          },
-          (c) => this.dispatch(c),
-        );
-        break;
-      }
-
-      case 'show-window':
-        this.showWindow();
-        break;
-
-      case 'export-config':
-        void exportConfig(this.win);
-        break;
-
-      case 'import-config':
-        void importConfig(this.win, () => {
-          // A fresh config means every view is stale — rebuild from scratch.
-          for (const [serviceId] of [...this.services.all()]) this.sleep(serviceId);
-          this.layout.panes = [];
-          this.layout.focusedPaneId = null;
-          this.restoreLayout();
-          this.relayout();
-        });
-        break;
-
-      case 'show-rail-menu':
-        showRailMenu(this.win, (c) => this.dispatch(c));
-        break;
-
-      case 'open-settings':
-        openSettingsWindow((wc) => this.registerConsumer(wc));
-        break;
-    }
-    return true;
+    return route(command, this.context);
   }
 
-  // --- tile drag --------------------------------------------------------------------------
-
   /**
-   * The geometry a drag is judged against, frozen at the lift.
-   *
-   * Frozen rather than recomputed per pointer move, and safe because `relayout()` ends any drag in
-   * progress — geometry shifting mid-drag would mean the highlight and the drop disagree, and the
-   * user only ever sees the highlight.
+   * What the command handlers may reach — see commands/context.ts. Getters for the members, so a
+   * handler always sees the current object, and closures for the methods, so AppWindow's own
+   * members stay private.
    */
-  private dragContext: (DropContext & { railOrigin: Rect }) | null = null;
-
-  /** A rail tile was lifted. Freeze the geometry and hand the content area to the drag layer. */
-  private beginTileDrag(serviceId: string): void {
-    if (!loadConfig().services.some((s) => s.id === serviceId)) return;
-    const { width, height } = this.win.getContentBounds();
-    const chrome = this.chrome();
-    const bounds = this.layout.bounds(chrome, width, height);
-    const content = contentArea(chrome, width, height);
-
-    this.dragContext = {
-      content,
-      panes: this.layout.panes.flatMap((pane) => {
-        const rect = bounds.get(pane.id);
-        return rect ? [{ paneId: pane.id, rect }] : [];
-      }),
-      // Whether another pane is possible is Layout's to say — a renderer re-deriving it from
-      // `MAX_PANES` would be a second copy of a rule only one of them enforces.
-      canOpenNewPane: !this.layout.isFull,
-      // The rail view's own rectangle, not the space the panes reserved for it. An expanded
-      // compact rail on the right edge starts further left than the reservation says, and every
-      // `from: 'rail'` position is translated through this.
-      railOrigin: this.railRect(width, height),
+  private readonly context: ShellContext = (() => {
+    // The getters need the instance, and inside a getter on an object literal `this` is the literal.
+    const self = this;
+    return {
+      get win() {
+        return self.win;
+      },
+      get layout() {
+        return self.layout;
+      },
+      get services() {
+        return self.services;
+      },
+      get overlay() {
+        return self.overlay;
+      },
+      get findBar() {
+        return self.findBar;
+      },
+      get configSync() {
+        return self.configSync;
+      },
+      dispatch: (c) => this.dispatch(c),
+      sync: () => this.sync(),
+      relayout: () => this.relayout(),
+      showWindow: () => this.showWindow(),
+      focusActivePane: () => this.focusActivePane(),
+      openOverlay: (mode) => this.openOverlay(mode),
+      openService: (id, options) => this.openService(id, options),
+      flash: (id) => this.flash(id),
+      saveLayout: () => this.saveLayout(),
+      rebuildPanes: () => this.rebuildPanes(),
+      paneRect: (id) => this.paneRect(id),
+      contentsForService: (id) => this.contentsForService(id),
+      activeWorkspace: (id) => this.activeWorkspace(id),
+      activeServices: (id) => this.activeServices(id),
+      mutateWorkspace: (mutate) => this.mutateWorkspace(mutate),
+      removeService: (id) => this.removeService(id),
+      sleep: (id) => this.sleep(id),
+      signOut: (id) => this.signOut(id),
+      purgeOrphanPartitions: () => this.purgeOrphanPartitions(),
+      registerConsumer: (wc) => this.registerConsumer(wc),
+      unreadOf: (id) => this.unread.get(id),
+      clearUnread: (id) => this.clearUnread(id),
+      pushUnreadRules: (id) => this.pushUnreadRules(id),
+      applyAllPreferenceEffects: () => this.effects.applyAll(),
+      applyPreferenceEffect: (path) => this.effects.applyFor(path),
+      toggleRail: () => this.toggleRail(),
+      beginRename: (id) => this.beginRename(id),
+      beginTileDrag: (id) => this.tileDrag.begin(id),
+      moveTileDrag: (from, x, y) => this.tileDrag.move(from, x, y),
+      dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
+      endTileDrag: () => void this.tileDrag.end('cancel'),
     };
-    this.dragLayer.begin(serviceId, content);
+  })();
+
+  /** Throws the current panes away and rebuilds them from the active workspace's saved layout. */
+  private rebuildPanes(): void {
+    this.layout.panes = [];
+    this.layout.focusedPaneId = null;
+    this.layout.maximisedPaneId = null;
+    this.restoreLayout();
   }
 
   /**
-   * A pointer position from one of the two renderers, in that renderer's own client coordinates.
-   *
-   * Translating here is the whole point of the arrangement: neither surface knows where it sits in
-   * the window, and only one of them needs to.
+   * Asks the rail to put an item's name into an editable field. The field replaces the name, so
+   * there has to be a name on screen to replace: a collapsed compact rail is icons only, so it is
+   * opened first, or the request would land somewhere invisible.
    */
-  private dragPoint(from: DragOrigin, x: number, y: number): { x: number; y: number } | null {
-    const context = this.dragContext;
-    if (!context) return null;
-    const origin = from === 'rail' ? context.railOrigin : context.content;
-    return { x: origin.x + x, y: origin.y + y };
-  }
-
-  private moveTileDrag(from: DragOrigin, x: number, y: number): void {
-    const context = this.dragContext;
-    const point = this.dragPoint(from, x, y);
-    if (!context || !point) return;
-    const drop = dropAt(context, point.x, point.y);
-    const rect = highlightFor(drop, context);
-    this.dragLayer.highlight(
-      rect && drop.kind !== 'none'
-        ? {
-            // Into the layer's coordinates. It sits exactly on the content area, so this is the
-            // same translation as above, backwards.
-            rect: { ...rect, x: rect.x - context.content.x, y: rect.y - context.content.y },
-            kind: drop.kind,
-          }
-        : null,
-    );
-  }
-
-  /**
-   * Detaches the layer and reports which service was in flight, or null if none was.
-   *
-   * Every exit from a drag comes through here, including the ones nobody asked for — a relayout, a
-   * teardown. The rail is told each time, because its dnd-kit drag may never see the release: if
-   * the pointer ended up over the layer's renderer, the rail is left holding a lifted tile with no
-   * way to put it down.
-   */
-  private endTileDrag(): string | null {
-    const serviceId = this.dragLayer.draggingServiceId;
-    this.dragLayer.end();
-    this.dragContext = null;
-    if (serviceId) safeSend(this.rail.webContents, 'drag:ended', null);
-    return serviceId;
-  }
-
-  /**
-   * The release. Which service is in flight comes from the layer, never from the message: the drag
-   * is main's state, and a `drop-tile` for a tile that was never lifted should do nothing at all.
-   */
-  private dropTile(from: DragOrigin, x: number, y: number): void {
-    const context = this.dragContext;
-    const point = this.dragPoint(from, x, y);
-    // A null service means this is the second message for one drag — typically the rail's own
-    // drag-end arriving after the layer already handled the release.
-    const serviceId = this.endTileDrag();
-    if (!serviceId || !context || !point) return;
-
-    const target = dropAt(context, point.x, point.y);
-    if (target.kind === 'replace') {
-      // Focus the pane, then `openService` *without* `newPane`: `Layout.show` replaces the focused
-      // pane's service, which is exactly "drop here" once the right pane is focused.
-      if (!this.layout.find(target.paneId)) return;
-      this.layout.focusedPaneId = target.paneId;
-      this.openService(serviceId);
-      this.flash(serviceId);
-    } else if (target.kind === 'new-pane') {
-      this.openService(serviceId, { newPane: true });
-      this.flash(serviceId);
+  private beginRename(id: string): void {
+    if (railCanExpand(loadConfig().preferences.appearance) && !this.railExpanded) {
+      this.setRailExpanded(true);
     }
+    this.renameRequest = { id, nonce: this.renameRequest.nonce + 1 };
+    this.sync();
   }
+
+  // --- tile drag: see tile-drag.ts ---------------------------------------------------------
+
+  private readonly tileDrag = (() => {
+    const self = this;
+    return new TileDrag({
+      get win() {
+        return self.win;
+      },
+      get layout() {
+        return self.layout;
+      },
+      get dragLayer() {
+        return self.dragLayer;
+      },
+      chrome: () => this.chrome(),
+      railRect: (width, height) => this.railRect(width, height),
+      railContents: () => this.rail.webContents,
+      openService: (id, options) => this.openService(id, options),
+      flash: (id) => this.flash(id),
+    });
+  })();
 
   /** Removes the service everywhere it's referenced, then tears down its view. */
   private removeService(serviceId: string): void {
     // Before the config write, or the registration row is orphaned with a live socket behind it.
     this.push.unsubscribe(serviceId);
-    this.unread.clear(serviceId);
+    // Through `clearUnread`, which recomputes the badge. Clearing the map directly left the Dock
+    // counting a service that no longer existed.
+    this.clearUnread(serviceId);
     deleteCachedIcon(serviceId);
 
     updateConfig((c) => removeServiceFromConfig(c, serviceId));
@@ -1580,7 +1240,32 @@ export class AppWindow {
   }
 
   /** Periodic sweep. Cheap enough to run often; the decision itself lives in hibernate.ts. */
+  /**
+   * Ends timed Do Not Disturb and timed mutes whose time is up. Runs on the 30-second sweep, so a
+   * quiet period ends within half a minute of when it said it would.
+   */
+  private expireQuietPeriods(): void {
+    const expired = expiredQuiet(loadConfig(), Date.now());
+    if (!expired.dnd && expired.services.length === 0) return;
+    updateConfig((c) => {
+      if (expired.dnd) {
+        c.preferences.notifications.dnd = false;
+        c.preferences.notifications.dndUntil = null;
+      }
+      for (const svc of c.services) {
+        if (!expired.services.includes(svc.id)) continue;
+        svc.notificationLevel = 'all';
+        delete svc.mutedUntil;
+      }
+    });
+    for (const serviceId of expired.services) this.pushUnreadRules(serviceId);
+    if (expired.dnd) console.log('[notify] Do Not Disturb ended on schedule');
+    this.sync();
+  }
+
   hibernateIdle(): void {
+    // First, and whatever the hibernation setting: the sweep is the only clock timed quiet has.
+    this.expireQuietPeriods();
     const config = loadConfig();
     const timeout = config.preferences.behaviour.hibernateAfterMinutes;
     if (timeout <= 0) return;
@@ -1631,108 +1316,26 @@ export class AppWindow {
     if (suspendedForMs >= LONG_SUSPEND_MS) this.push.reconnectAll();
   }
 
-  /**
-   * Boot, and again when `activate` rebuilds the window — preference *changes* go through
-   * `applyPreferenceEffect`.
-   *
-   * A deliberate subset, not an oversight, and the two omissions have reasons worth stating:
-   * `push` is already started by the constructor and starting it twice opens a second set of FCM
-   * sockets, which is how every notification once arrived twice; `spellcheck` is read when a
-   * session is created, and at this point none exist yet.
-   *
-   * Expressed as effect tags so the *how* lives in exactly one place. This was a fourth copy of
-   * `applyLoginItem` / `applyProxy` / shortcut / tray, and when the tray gained its `closeToTray`
-   * condition, this copy is the one that would have been missed.
-   */
-  applySystemPreferences(): void {
-    for (const effect of ['login-item', 'proxy', 'shortcut', 'tray'] as const) {
-      this.runEffect(effect);
-    }
-  }
+  // --- preference effects: see preference-effects.ts ----------------------------------------
 
-  /**
-   * Every preference effect at once, for a reset.
-   *
-   * Previously reset called `applySystemPreferences()`, which covers the login item, proxy,
-   * shortcut and tray — but *not* the two branches for push and spellcheck. So resetting with push
-   * enabled left the FCM sockets open while Settings reported push off, and live sessions kept the
-   * old spellcheck languages until restart.
-   *
-   * Iterates the effect tags themselves. It used to iterate a hand-written list of representative
-   * *paths*, under a comment claiming a new branch couldn't be forgotten here — it could, because
-   * that list was a second copy of the branch set with nothing tying the two together.
-   */
-  private applyAllPreferenceEffects(): void {
-    for (const effect of ALL_PREFERENCE_EFFECTS) this.runEffect(effect);
-    nativeTheme.themeSource = loadConfig().preferences.appearance.theme;
-  }
-
-  /**
-   * Only the effect the changed key actually needs. Re-running everything meant adjusting the rail
-   * size re-registered the global shortcut and kicked off an unawaited proxy fan-out across every
-   * session — harmless today, but exactly the shape that produces a race later.
-   */
-  private applyPreferenceEffect(path: string): void {
-    const effect = preferenceEffectFor(path);
-    if (effect) this.runEffect(effect);
-  }
-
-  /** Performs one effect. Which paths map to which effect is decided in core. */
-  private runEffect(effect: PreferenceEffect): void {
-    const prefs = loadConfig().preferences;
-    switch (effect) {
-      case 'login-item':
-        applyLoginItem(prefs);
-        return;
-
-      case 'proxy':
-        void applyProxy(allLiveSessions().values(), prefs);
-        return;
-
-      case 'adblock':
-        setAdBlocking(allLiveSessions().values(), prefs.network.blockAds);
-        return;
-
-      case 'shortcut':
-        this.applyShortcut(prefs.behaviour.globalShortcut);
-        return;
-
-      case 'tray':
-        // Symmetric: `destroyTray` existed and was never called, so the icon outlived its setting.
-        if (trayWanted(prefs))
-          ensureTray(
-            () => this.state(),
-            (c) => this.dispatch(c),
-          );
-        else destroyTray();
-        return;
-
-      case 'push':
-        // Switching push off must actually close the sockets, not just stop new subscriptions.
-        if (
-          prefs.notifications.push &&
-          firebaseConfigStatus(prefs.notifications.firebase) === 'ready'
-        ) {
-          this.push.start(loadConfig().services.map((s) => s.id));
-        } else {
-          this.push.stopAll();
-        }
-        return;
-
-      case 'spellcheck':
-        // Read once per session at creation, so existing sessions need telling.
-        for (const ses of allLiveSessions().values()) {
-          ses.setSpellCheckerLanguages(prefs.behaviour.spellcheckLanguages);
-        }
-        return;
-    }
-  }
-
-  private applyShortcut(accelerator: string | null): void {
-    applyGlobalShortcut(accelerator, () => {
-      if (this.win.isVisible() && !this.win.isMinimized()) this.win.hide();
-      else this.showWindow();
+  private readonly effects = (() => {
+    const self = this;
+    return new PreferenceEffects({
+      state: () => this.state(),
+      dispatch: (c) => this.dispatch(c),
+      get push() {
+        return self.push;
+      },
+      toggleWindow: () => {
+        if (this.win.isVisible() && !this.win.isMinimized()) this.hideWindow();
+        else this.showWindow();
+      },
     });
+  })();
+
+  /** Boot, and again when `activate` rebuilds the window. See `PreferenceEffects.applySystem`. */
+  applySystemPreferences(): void {
+    this.effects.applySystem();
   }
 
   /**
@@ -1744,7 +1347,7 @@ export class AppWindow {
    * is exactly where the bug was. Verified by reintroducing the bug and watching the test fail.
    */
   injectPush(serviceId: string, payload: { title: string; body: string }): void {
-    this.handlePushMessage(serviceId, payload);
+    this.attention.handlePushMessage(serviceId, payload);
   }
 
   /** Live service views. Used by the E2E teardown test to detect leaked views. */
@@ -1771,8 +1374,11 @@ export class AppWindow {
    * leaks. Nothing here was doing that.
    */
   dispose(): void {
+    nativeTheme.off('updated', this.repaintBackground);
     // Sockets and timers first: they can fire during teardown and would then touch a half-torn
     // window.
+    if (this.syncScheduled) clearTimeout(this.syncScheduled);
+    this.syncScheduled = null;
     this.push.stopAll();
     // An in-flight fetch resolving after teardown would call `applyDetectedUnread` on a window
     // whose views are gone.
@@ -1781,6 +1387,9 @@ export class AppWindow {
     this.flashTimer = null;
 
     releaseGlobalShortcut();
+    setLinkRouter(null);
+    onDownloadsChanged(null);
+    closePopOuts();
     destroyTray();
     closeSettingsWindow();
     // Drop the config hook, or a write after teardown schedules a reconcile against a window that
@@ -1845,76 +1454,14 @@ export class AppWindow {
     }
   }
 
-  /**
-   * A push arrived for a service. Routed through the same notification path as an in-page one, so
-   * DND, muting, unread counting and click-to-focus all behave identically — the transport
-   * shouldn't be visible in the behaviour.
-   */
-  private handlePushMessage(serviceId: string, message: unknown): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    const content = extractNotification(message, svc.name);
-    // A payload we can't read at all is dropped rather than shown as an empty banner.
-    if (!content) {
-      console.warn(`[push] unreadable payload for ${svc.name}`);
-      return;
-    }
-    this.handleNotification(serviceId, {
-      title: content.title,
-      body: content.body,
-      silent: false,
-    });
-  }
-
-  /**
-   * A service changed its title.
-   *
-   * Where the catalog declares a pattern, the title is treated as the *authoritative* unread count
-   * rather than another event to tally. That's a real difference: counting `new Notification()`
-   * calls only ever goes up, never reflects what you've already read elsewhere, and reads zero for
-   * a service whose browser notifications are off — Gmail showing "(5) Inbox" reported nothing.
-   *
-   * A title that stops matching means zero, which is how reading your mail on your phone clears
-   * the badge here.
-   */
-  private handleTitle(serviceId: string, title: string): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    this.applyDetectedUnread(svc, unreadFromTitle(title, catalogById(svc.catalogId)?.unread));
-  }
-
-  /**
-   * The DOM rules a service view should watch, answered when its preload asks on load.
-   *
-   * Resolved here rather than in the preload because it needs the config: which catalog entry this
-   * instance came from, and whether the user has overridden the selector.
-   */
-  /** Tells a live view to start watching a different set of rules. No-op if it isn't loaded. */
-  private pushUnreadRules(serviceId: string): void {
-    const contents = this.services.get(serviceId)?.view.webContents;
-    if (contents)
-      safeSend(contents, 'service:unread-rules-changed', this.unreadRulesFor(serviceId));
-  }
-
+  /** A service's unread rules, for its preload. Public for the IPC handler in boot/index.ts. */
   unreadRulesFor(serviceId: string): DomUnreadRule[] {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return [];
-    // A muted service isn't going to be allowed to set a count, so don't make its page watch every
-    // mutation to produce one.
-    if (svc.notificationLevel === 'muted' || !svc.notifications) return [];
-    return resolveUnreadRules(catalogById(svc.catalogId)?.unread, svc.unreadSelector);
+    return this.attention.unreadRulesFor(serviceId);
   }
 
-  /**
-   * A service view read its own badge. The probes are raw page output: the page-side code collects
-   * strings and `unreadFromDom` decides what they mean, so the rule semantics stay in a pure
-   * function rather than in a serialised closure no test can reach.
-   */
+  /** A service's page read its own badge. Public for the IPC handler in boot/index.ts. */
   handleUnreadProbes(serviceId: string, probes: unknown): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    const rules = resolveUnreadRules(catalogById(svc.catalogId)?.unread, svc.unreadSelector);
-    this.applyDetectedUnread(svc, unreadFromDom(rules, probes));
+    this.attention.handleUnreadProbes(serviceId, probes);
   }
 
   /**
@@ -1927,91 +1474,56 @@ export class AppWindow {
     return this.endpoints.sweep();
   }
 
-  private applyEndpointCount(serviceId: string, count: number): void {
-    const svc = loadConfig().services.find((s) => s.id === serviceId);
-    // Raced with the service being deleted, or with it waking up — in which case its own page is
-    // about to report, and the endpoint's answer is the staler of the two.
-    if (!svc || this.services.has(serviceId)) return;
-    this.applyDetectedUnread(svc, count);
-  }
-
-  /**
-   * Records an absolute count from detection — a title pattern or a DOM rule.
-   *
-   * `null` means the rule had nothing to say, which is not zero: a service we cannot read keeps
-   * whatever count it has rather than being silently cleared.
-   */
-  private applyDetectedUnread(svc: ServiceInstance, detected: number | null): void {
-    if (detected === null) return;
-
-    // Muting and the per-service toggle still win: an unread count is an interruption of a
-    // quieter kind, and opting out should mean opting out of both.
-    if (svc.notificationLevel === 'muted' || !svc.notifications) return;
-
-    if (this.unread.get(svc.id) === detected) return;
-    this.unread.set(svc.id, detected);
-    this.updateBadge();
-    this.sync();
-  }
-
-  /**
-   * A service fired a notification. Attribution is the whole reason the preload wraps the
-   * constructor rather than letting Electron route it directly.
-   */
+  /** A service fired a notification. Public for the IPC handler and the E2E suite. */
   handleNotification(serviceId: string, raw: unknown): void {
-    // `unknown`, because one caller is an IPC handler fed by a page. See `normaliseNotification`.
-    const payload = normaliseNotification(raw);
-    const config = loadConfig();
-    const svc = config.services.find((s) => s.id === serviceId);
-    // Deliberately no runtime check. A hibernated service has no runtime by definition, and a Web
-    // Push exists precisely to reach you then — requiring one dropped every push this feature was
-    // built for. See docs/decisions.md #56.
-    if (!svc) return;
+    this.attention.handleNotification(serviceId, raw);
+  }
 
-    const decision = decideNotification({
-      enabled: config.preferences.notifications.enabled,
-      dnd: config.preferences.notifications.dnd,
-      level: svc.notificationLevel ?? 'all',
-      serviceEnabled: svc.notifications,
-      inVisiblePane: this.layout.visibleServiceIds().has(serviceId),
-      // A pane inside a window you closed to the tray is not something you're looking at.
-      windowVisible: !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized(),
-    });
-
-    if (decision.count) this.unread.increment(serviceId);
-
-    if (decision.banner) {
-      const notification = new Notification({
-        title: payload.title || svc.name,
-        body: payload.body,
-        silent: payload.silent || !config.preferences.notifications.sound,
-      });
-      // Clicking should land you on the thing that pinged you.
-      notification.on('click', () => {
-        this.showWindow();
-        this.dispatch({ type: 'focus-service', serviceId });
-      });
-      notification.show();
-      // Retained until it's dismissed: the object is otherwise only referenced by this local, so
-      // GC can collect it before the click handler ever fires and click-to-focus does nothing.
-      this.liveNotifications.add(notification);
-      notification.on('close', () => this.liveNotifications.delete(notification));
+  /**
+   * A ring around the focused pane, when there is more than one to tell apart.
+   *
+   * Only the rail tile said which pane had focus, so with two Gmails side by side ⌘W and ⌘F were a
+   * guess. A plain coloured view just behind the focused pane, two pixels larger, in that service's
+   * colour — drawn in the gutter, so it needs one at least that wide.
+   */
+  private focusRing: View | null = null;
+  private drawFocusRing(bounds: Map<string, { x: number; y: number; width: number; height: number }>, gutter: number): void {
+    const focused = this.layout.focused();
+    const rect = focused ? bounds.get(focused.id) : undefined;
+    if (!rect || bounds.size < 2 || gutter < 2) {
+      this.focusRing?.setVisible(false);
+      return;
     }
-
-    this.updateBadge();
-    this.sync();
+    if (!this.focusRing) {
+      this.focusRing = new View();
+      // Index 0: beneath everything, so it shows only around the pane's edge.
+      this.win.contentView.addChildView(this.focusRing, 0);
+    }
+    const svc = loadConfig().services.find((s) => s.id === focused!.serviceId);
+    const colour = svc?.color ?? catalogById(svc?.catalogId ?? '')?.color ?? '#8a8a96';
+    const ring = 2;
+    this.focusRing.setBounds({
+      x: rect.x - ring,
+      y: rect.y - ring,
+      width: rect.width + ring * 2,
+      height: rect.height + ring * 2,
+    });
+    this.focusRing.setBorderRadius(PANE_RADIUS + ring);
+    this.focusRing.setBackgroundColor(/^#[0-9a-f]{6}$/i.test(colour) ? `${colour}cc` : '#8a8a96cc');
+    this.focusRing.setVisible(true);
   }
 
-  /** macOS hides the badge at 0, so it must be *set* to 0 rather than skipped. */
-  private updateBadge(): void {
-    app.setBadgeCount(this.unread.total());
+  /** Whether the window is somewhere a person could be looking at it. */
+  private windowOnScreen(): boolean {
+    return !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized();
   }
 
-  /** Looking at a service is what marks it read — the only signal we reliably have. */
   private clearUnread(serviceId: string): void {
-    if (this.unread.get(serviceId) === 0) return;
-    this.unread.clear(serviceId);
-    this.updateBadge();
+    this.attention.clearUnread(serviceId);
+  }
+
+  private pushUnreadRules(serviceId: string): void {
+    this.attention.pushUnreadRules(serviceId);
   }
 
   /** Every workspace mutation goes through here so the sync is never forgotten. */

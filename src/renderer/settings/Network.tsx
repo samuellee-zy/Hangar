@@ -25,10 +25,14 @@ export function Network({ network }: { network: Preferences['network'] }) {
           <li className="pref">
             <span className="pref-label">
               <span className="pref-name">Host and port</span>
-              <span className="pref-note">Applied when you finish editing</span>
+              <span className="pref-note">
+                Applied when you finish editing. Until both are set, the system proxy is used
+              </span>
             </span>
             <span style={{ display: 'flex', gap: 8 }}>
               <CommitOnBlur
+                aria-label="Proxy host"
+                placeholder="proxy.example.com"
                 value={network.proxy.host}
                 onCommit={(host) =>
                   window.hangar.send({ type: 'set-preference', path: 'network.proxy.host', value: host })
@@ -40,6 +44,7 @@ export function Network({ network }: { network: Preferences['network'] }) {
               <CommitOnBlur
                 className="field"
                 type="number"
+                aria-label="Proxy port"
                 min={0}
                 max={65535}
                 style={{ width: 82 }}
@@ -77,6 +82,8 @@ export function Downloads({ downloads }: { downloads: Preferences['downloads'] }
             <span className="pref-note">Blank uses your system Downloads folder</span>
           </span>
           <CommitOnBlur
+            aria-label="Downloads folder"
+            placeholder="~/Downloads"
             value={downloads.folder ?? ''}
             onCommit={(folder) =>
               window.hangar.send({
@@ -86,6 +93,14 @@ export function Downloads({ downloads }: { downloads: Preferences['downloads'] }
               })
             }
           />
+          {/* A picker as well as the field: typing a path by hand is how the sync repo ended up
+              holding a `~` nothing expanded. */}
+          <button
+            className="secondary"
+            onClick={() => window.hangar.send({ type: 'choose-folder', purpose: 'downloads' })}
+          >
+            Choose…
+          </button>
         </li>
       </ul>
     </section>

@@ -34,25 +34,23 @@ jobs:
           node-version: 24
           cache: npm
 
-      - run: npm ci
-
-      # typecheck (app + tests), the vitest unit suite, and the dependency-cruiser boundary rules
-      # between core/, main/ and shared/. None of this needs the Electron binary.
-      - run: npm run check
-
-      # ~180 MB, and it does not change between runs of the same Electron version.
+      # ~180 MB, and it does not change between runs of the same Electron version. Restored
+      # *before* `npm ci`, because our postinstall is what downloads it — see below.
       - name: Cache the Electron binary
         uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      # Electron 43 has no postinstall — it ships an explicit `install-electron` bin instead, so a
-      # clean `npm ci` leaves node_modules/electron with no binary and no path.txt. Running the
-      # `electron` CLI downloads on demand, but Playwright's `_electron.launch` resolves through
-      # path.txt and would fail before anything triggered that. Hence an explicit, idempotent step.
-      - name: Download the Electron binary
-        run: npx install-electron
+      # Electron 43 has no postinstall of its own — it ships an explicit `install-electron` bin
+      # instead, so without ours a clean `npm ci` left node_modules/electron with no binary and no
+      # path.txt, and Playwright's `_electron.launch` failed before anything downloaded it. Our
+      # package.json now runs `install-electron` as its postinstall, idempotently.
+      - run: npm ci
+
+      # typecheck (app + tests), the vitest unit suite, and the dependency-cruiser boundary rules
+      # between core/, main/ and shared/. None of this needs the Electron binary.
+      - run: npm run check
 
       # Builds into out/ first — the Playwright harness launches out/main/index.js directly, so
       # without the build it would fail on a missing file rather than on anything real.
@@ -61,6 +59,27 @@ jobs:
       # never fires, and shutdown. The worst bug this project has shipped lived in exactly that
       # gap and passed every unit test.
       - run: npm run test:e2e
+
+      # Everything gated on `app.isPackaged` — icons served from `process.resourcesPath`, the launch
+      # agent, the production context menu — is invisible to the unpackaged E2E run above, and the
+      # bundle's contents are decided by electron-builder's `files` allowlist, not by the code. So
+      # package it for real and check what went in. Unsigned: CI has no identity, and the shape of
+      # the bundle doesn't depend on one.
+      - name: Package, and check the bundle has what the app loads at runtime
+        run: |
+          # The app icon is generated, not committed (build/ is gitignored), and electron-builder
+          # swaps in Electron's own icon without failing when it's missing.
+          npm run icon
+          npx electron-builder --mac dir --arm64 -c.mac.identity=null
+          resources=dist/mac-arm64/Hangar.app/Contents/Resources
+          test -f "$resources/icon.icns"
+          # Upstream icon licence, and a brand icon, outside the asar where icons.ts looks.
+          test -f "$resources/assets/icons/NOTICE"
+          test -f "$resources/assets/icons/gmail.svg"
+          # The ad blocker loads its preload from inside the archive; missing, it fails at runtime.
+          # `--no-install`: our own devDependency, never whatever npx would fetch under that name.
+          npx --no-install asar list "$resources/app.asar" | grep -q '@ghostery/adblocker-electron-preload'
+          npx --no-install asar list "$resources/app.asar" | grep -q '^/out/main/index.js$'
 
       # trace: 'retain-on-failure' means this only has content when something broke, which is the
       # only time anyone wants to download it.

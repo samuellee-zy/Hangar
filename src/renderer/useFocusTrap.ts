@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 
 /**
  * Keeps Tab inside a dialog.
@@ -14,10 +14,15 @@ import { useEffect, useRef } from 'react';
  * Focus restoration crosses a `WebContentsView` boundary, so main is the only place that can do it.
  */
 export function useFocusTrap<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
+  const detach = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    const container = ref.current;
+  // A callback ref, not `useRef` plus a mount-only effect. The effect ran once, on the first
+  // render — and `AddConnection` renders nothing until state arrives, which is always *after* the
+  // first render. So the trap looked for its container, found null, and never looked again: Tab
+  // walked straight out of the picker. A callback ref runs whenever the element actually mounts.
+  return useCallback((container: T | null) => {
+    detach.current?.();
+    detach.current = null;
     if (!container) return;
 
     const focusable = () =>
@@ -46,8 +51,6 @@ export function useFocusTrap<T extends HTMLElement>() {
     };
 
     container.addEventListener('keydown', onKeyDown);
-    return () => container.removeEventListener('keydown', onKeyDown);
+    detach.current = () => container.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  return ref;
 }

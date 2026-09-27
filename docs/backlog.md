@@ -4,10 +4,13 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after **Phase 6** (stability audit: config-sync lifecycle, teardown, renderer split),
-plus the long-running work: crash resilience, waking from sleep, and launch at login without a
-signature. Enforced module boundaries, a packaged DMG verified end to end, and every shipped control
-does something.
+Last updated after **Phase 7** (2026-09-26): the installed app ran with no reachable window, which
+led to removing `startHidden`, fixing the Dock and tray routes back, and a one-command signed local
+install — [decisions #96](decisions.md). A full audit of what remains is **§13**; it supersedes the
+older lists below wherever they overlap.
+
+Before that, **Phase 6** (stability audit: config-sync lifecycle, teardown, renderer split), plus
+the long-running work: crash resilience, waking from sleep, and launch at login without a signature.
 
 **Test counts are deliberately not written here.** They drifted three times — this page once claimed
 327 in one place and 262 in another while the suite ran 392, then said 700 while it ran 690. Run
@@ -221,7 +224,8 @@ Not bugs; things that will look like bugs later.
 
 ## 8. Suggested order
 
-If picking this up fresh:
+If picking this up fresh: §13 is mostly closed, and what remains in it is listed there with the
+reason each is open. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -310,5 +314,167 @@ ones hardened with tests. The one worth naming is the first.
   open-source binary cannot hold, or somewhere to keep a personal token that git sync will not
   publish ([decisions #91](decisions.md)).
 - **V8 snapshots** — measure first; startup may already be fine.
-- **Signing** — ruled out. Note that Homebrew ends support for casks failing Gatekeeper on
-  **1 Sept 2026**, so a cask is no longer a signing-free distribution route.
+- **Developer ID signing** — ruled out. Homebrew ended support for casks failing Gatekeeper on
+  **1 Sept 2026**, so a cask is no longer a signing-free distribution route. (Local builds *are*
+  signed now, ad-hoc or with a self-signed certificate — [packaging.md](packaging.md).)
+
+---
+
+## 13. Phase 7 audit (2026-09-26) — what is still open
+
+A read-through of main, preload, renderer, packaging and docs, done after the reachability fix
+(#96). Each item names where it lives and what the fix is. Severity: **P1** is wrong behaviour or a
+hole a page can reach; **P2** is cost, polish, or latent. Nothing in this section is fixed yet.
+
+### 13.1 Security (P1) — closed
+
+All of it, in [decisions #97](decisions.md): the internal screens are locked to the app's renderer
+and IPC answers only their frames; `openExternal` takes an allowlist of schemes and a rate limit;
+subframe redirects are left alone; permissions are judged per requesting frame and re-read per
+request; screen sharing works, through a picker; `file:` custom connections are refused in main;
+the blocked page's Allow can't be pressed by the page; `customJs` stays out of git sync; exports
+drop push keys; "open when complete" won't run a program; service views use `safeDialogs`.
+
+Deliberately kept: **Toggle Developer Tools stays in the View menu** of the packaged app. Finding an
+unread selector (§8, [unread-selectors.md](unread-selectors.md)) is done with DevTools open on a
+real signed-in page, and this is an app you build for yourself.
+
+### 13.2 Reliability (P1) — closed
+
+All of it, in [decisions #98](decisions.md): ad blocking covers every session; the offline reload
+loop is bounded and "no internet" reloads by itself when the network returns; an unhandled
+rejection is a log line, not a modal dialog; the app's own screens recover from a renderer crash
+and child-process crashes are logged; the global shortcut survives a rebuilt window; custom CSS and
+JS apply on reload; the proxy reverts to System and a half-filled manual proxy no longer cuts the
+network; unread survives a hidden window and the badge follows a removed service; hiding a
+fullscreen window leaves fullscreen first; the log rotates, is written for Finder launches too, and
+Electron's own warnings have their query strings removed; logout no longer stops on the quit
+confirmation.
+
+### 13.3 UI bugs (P1) — closed
+
+In [decisions #99](decisions.md): folders rename in place in an opened panel, from a Folders section
+in Settings otherwise, and a new folder asks for its name straight away; a reloaded rail no longer
+reopens the last rename; destructive buttons in Settings take two clicks and the harmless ones stop
+looking dangerous; the Add Connection focus trap engages; number fields can be typed into; allowed
+hosts are editable for every service; the sync path expands `~`; the tray, the palette and the
+rail's spoken count see every workspace, and focusing a service elsewhere switches to it; the
+remove dialog says what removal does.
+
+### 13.4 Performance (P2) — mostly closed
+
+In [decisions #100](decisions.md): state broadcasts are coalesced and sent only where they changed
+(30 → ≤2 for a resize storm, with a test); the quarantine listing is cached; cookie promotion runs
+only for partitions that gained a session cookie; config writes are debounced and flushed on quit
+and exit; the live-notification set is capped; React and dnd-kit are build inputs, not shipped
+dependencies.
+
+Still open, deliberately:
+
+- **Background throttling stays off** on service views. Throttling an off-screen view slows its
+  timers, and the unread probe in the service preload runs on one — the count would lag by up to a
+  minute. Worth measuring the battery cost before trading freshness for it.
+- **Visible panes still don't hibernate while the window is hidden.** Doing it would make every
+  show a reload of whatever was on screen.
+- The overlay, find bar and drag views are kept after first use on purpose: they are reused, and
+  rebuilding one per open would cost a renderer load each time.
+
+### 13.5 Accessibility (P2) — closed
+
+In [decisions #101](decisions.md): every input and glyph-only button has an accessible name; the
+tiles reorder with ⌥ and an arrow, and drag announcements use names and the real keys; the palette
+is a combobox over a listbox (#99); `prefers-reduced-motion` stops the looping animations; the
+refused-shortcut message is an alert and the find-bar count is a status region.
+
+Still open from §4.3: pane landmark roles, and a real VoiceOver pass — both need the app running
+under VoiceOver rather than more code first.
+
+### 13.6 Structure (P2) — mostly done
+
+`app-window.ts` went from ~2,500 lines to ~1,540, with no behaviour change, along the seams it
+already had:
+
+- `window/commands/` — the ~650-line `dispatch` switch became six handler files by concern behind
+  a `ShellContext` listing exactly what a handler may reach; `dispatch` is a lookup, and a test
+  checks every command type has exactly one handler.
+- `core/commands.ts` — a schema for every command, checked where commands arrive over IPC, that
+  `satisfies` the `Command` union so a new type without an entry does not compile.
+- `window/attention.ts` — unread, banners, the badge, push delivery, recent notifications.
+- `window/preference-effects.ts` and `window/tile-drag.ts`.
+- `boot/maintenance.ts` — the background loops and suspend/resume, out of the entry point.
+
+Each is built by AppWindow with a small host of getters and closures, so its own members stay
+private. What is left in AppWindow is the composition itself — window, rail, panes, `relayout`,
+`sync`, lifecycle. A `WindowController` (bounds, show/hide, focus ring) is the one further cut that
+would still pay; `relayout` is the centre everything else calls and is better left where it is.
+
+### 13.7 UI/UX enhancements — mostly done
+
+Shipped: first-run starters and a nothing-open list (empty view); a ⌘/ shortcut sheet; shortcut
+hints read from the live keymap; tile tooltips with ⌘N and ⌥-click; 99+ badges and a sleeping mark;
+a workspace switcher in the rail; tile menu Mark read / Mute ▸ / Copy address / Move to workspace /
+Open in separate window; timed DND; a picker with alias search, no-results, Enter and arrow keys;
+Settings in groups with search, per-service start page / colour / TTL / UA / CSS / JS, About with
+real paths, folder pickers, a recorded global shortcut with status, and rows that say when they do
+nothing; maximise-pane (⌘⇧↵) and a focus ring. Decisions #99–#101 and the commit log carry the
+detail.
+
+Not done:
+
+- **Resizable splitters, pane headers, drag-to-swap panes.** Layout is still columns or 2×2 with
+  equal cells. Ratios would live in `Layout` and persist with the layout; headers need a view per
+  pane in the chrome.
+- **Import from Rambox or Ferdium.** Rambox 2 keeps services in its account and in browser
+  storage, not in a file (its `Settings.json` has only app settings); Ferdium keeps them in SQLite,
+  which needs a native dependency. Worth doing against a real export, not a guessed format.
+- **A per-service loading splash.** The tile's pulse says "waking"; the pane itself is blank until
+  the first paint.
+- **Undo toasts.** Destructive actions confirm instead (two-click buttons, #99).
+- **A "blocked host" toast.** Not needed: the blocked page already offers Allow in the one case
+  that matters (a sign-in step), and an external link opening in the browser is not a failure.
+- **Spelling languages.** The preference and its effect exist, but `setSpellCheckerLanguages` is a
+  no-op on macOS — the system spellchecker picks the language — so a control would do nothing here.
+
+### 13.8 Capabilities — mostly done
+
+Shipped: link routing to the service a link belongs to (opt-in); Hangar as the default email app,
+composing in Gmail, Outlook or Yahoo; notification history in the tray; pop-out windows; a
+downloads list; self-hosted variants through a per-service start page (which brings its host with
+it).
+
+Not done:
+
+- **Browser extensions.** `session.loadExtension` exists, but Electron implements only part of the
+  extension API and not native messaging, which is how 1Password and Bitwarden talk to their
+  desktop apps. The popular ones would load and not work.
+- **Several tabs within one service.** A service is one view today; this is a data-model change
+  (a service owning an ordered list of views) through the pane, rail and hibernation code.
+- **Quiet hours per service, and scheduled workspaces.** Timed mute (#99-era) is the mechanism;
+  a schedule is a recurring version of it evaluated on the same 30-second sweep.
+
+### 13.9 Catalog — done for now
+
+`cloud.microsoft` on every Microsoft 365 entry, with a test; 19 new entries (Google Messages and
+Voice, Webex, YouTube and YouTube Music, Threads, Mastodon, Bitbucket, Azure DevOps, HubSpot,
+Intercom, Front, Canva, iCloud / Yahoo / Zoho / HEY / Tuta mail, Microsoft 365); `aliases` for
+search. The new entries have no vendored icon yet (they capture a favicon on first load) —
+`npm run icons` with slugs added, from a machine with network. Monday and Loom still have no icon
+upstream, and unread selectors for Notion, Jira, Confluence, Trello, Asana, ClickUp and Monday still
+need a real signed-in page each (§8).
+
+### 13.10 Tests
+
+Added in Phase 7: the reachability, quit and bounds tests (#96); rail navigation and IPC-sender
+tests (#97); crash recovery, hidden-window unread and broadcast-storm tests (#98, #100); link
+routing, mailto, pop-out, notification history and maximise tests; and unit tests for every new
+pure rule. Each new E2E test was run against its bug put back.
+
+Still open: axe checks on the renderer surfaces; the Settings window under Playwright; an opt-in
+catalog test that follows redirects (would have caught Notion and `cloud.microsoft`, needs network).
+One unit test failed once and never again in a dozen runs; which one was not captured.
+
+### 13.11 Housekeeping
+
+`spikes/google-login/sessions` is ~808 MB of **real cookie jars** (gitignored, but live
+credentials on disk); `out-check/` and the stale August DMGs in `dist/` can go.
+

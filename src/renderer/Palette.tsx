@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { fuzzy } from './fuzzy';
 import { useFocusTrap } from './useFocusTrap';
 import { useShellState } from './useShellState';
@@ -23,14 +23,34 @@ export function Palette() {
   // doing here.
   useEffect(() => inputRef.current?.focus(), []);
 
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-${i}`;
+
   const results = useMemo(() => {
     if (!state) return [];
-    const services = state.services
+    // Every workspace, this one first. It searched the active workspace only, so ⌘K could not
+    // reach a service anywhere else — `focus-service` switches workspace for one that lives there.
+    const home = new Map<string, string>();
+    for (const ws of state.workspaces) {
+      for (const item of ws.items) {
+        const ids = item.kind === 'service' ? [item.id] : item.serviceIds;
+        for (const id of ids) if (!home.has(id)) home.set(id, ws.name);
+      }
+    }
+    const here = new Set(state.services.map((s) => s.id));
+    const services = [...state.allServices]
+      .sort((a, b) => Number(here.has(b.id)) - Number(here.has(a.id)))
       .filter((s) => fuzzy(query, s.name))
-      .map((s) => ({ kind: 'service' as const, id: s.id, label: s.name, hint: 'Open' }));
+      .map((s) => ({
+        kind: 'service' as const,
+        id: s.id,
+        label: s.name,
+        hint: here.has(s.id) ? 'Open' : (home.get(s.id) ?? 'Open'),
+        unread: s.unread,
+      }));
     const workspaces = state.workspaces
       .filter((w) => fuzzy(query, w.name))
-      .map((w) => ({ kind: 'workspace' as const, id: w.id, label: w.name, hint: 'Workspace' }));
+      .map((w) => ({ kind: 'workspace' as const, id: w.id, label: w.name, hint: 'Workspace', unread: 0 }));
     return [...services, ...workspaces];
   }, [state, query]);
 
@@ -84,10 +104,18 @@ export function Palette() {
         ref={trapRef}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* A combobox over a listbox, so a screen reader hears which result is highlighted as the
+            arrows move — the highlight was a class name and nothing else. */}
         <input
           ref={inputRef}
           className="palette-input"
           placeholder="Jump to a service or workspace…"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={results[index] ? optionId(index) : undefined}
+          aria-label="Jump to a service or workspace"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -95,19 +123,25 @@ export function Palette() {
           }}
           onKeyDown={onKeyDown}
         />
-        <ul className="palette-results">
+        <ul className="palette-results" id={listId} role="listbox" aria-label="Results">
           {results.map((item, i) => (
             <li
               key={`${item.kind}:${item.id}`}
+              id={optionId(i)}
+              role="option"
+              aria-selected={i === index}
               className={i === index ? 'is-active' : ''}
               onMouseEnter={() => setIndex(i)}
               onClick={(e) => run(i, e.metaKey)}
             >
               <span>{item.label}</span>
+              {item.unread > 0 && <span className="palette-unread">{item.unread}</span>}
               <span className="palette-hint">{item.hint}</span>
             </li>
           ))}
-          {results.length === 0 && <li className="palette-empty">No matches</li>}
+          {/* Only once there is state to have searched: before it arrives, "No matches" was a
+              claim about data that hadn't loaded yet. */}
+          {state && results.length === 0 && <li className="palette-empty">No matches</li>}
         </ul>
         <footer className="palette-footer">
           <kbd>↵</kbd> open · <kbd>⌘↵</kbd> open in new pane · <kbd>esc</kbd> dismiss

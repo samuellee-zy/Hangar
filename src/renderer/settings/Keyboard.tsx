@@ -16,7 +16,7 @@ import type { ShellState } from '@shared/types';
  */
 
 /** Listens for one keystroke. Escape or a click elsewhere gives up. */
-function ChordCapture({
+export function ChordCapture({
   onCapture,
   onCancel,
 }: {
@@ -77,7 +77,12 @@ export function Keyboard({ state }: { state: ShellState }) {
           Click a shortcut and press the new one. Taking a chord that another action already has
           unbinds it there, rather than leaving two actions on one key and one of them losing.
         </p>
-        {refused && <p className="hint refused">{refused}</p>}
+        {/* An alert: the chord you pressed was just refused, and the reason is only on screen. */}
+        {refused && (
+          <p className="hint refused" role="alert">
+            {refused}
+          </p>
+        )}
         <ul className="rows keys">
           {state.keyboard.actions.map((action) => (
             <li key={action.id}>
@@ -184,7 +189,7 @@ function Passthrough({ state }: { state: ShellState }) {
                 />
               ) : (
                 <button
-                  className="danger"
+                  className="secondary"
                   title={`Leave a chord to ${svc.name}`}
                   onClick={() => setCapturing(svc.id)}
                 >

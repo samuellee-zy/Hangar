@@ -94,6 +94,7 @@ export function isBindable(chord: Chord | null): chord is Chord {
 }
 
 export type ActionId =
+  | 'shortcuts'
   | 'palette'
   | 'add-connection'
   | 'settings'
@@ -103,6 +104,7 @@ export type ActionId =
   | 'zoom-out'
   | 'zoom-reset'
   | 'split'
+  | 'maximise-pane'
   | 'close-pane'
   | 'focus-prev-pane'
   | 'focus-next-pane'
@@ -130,6 +132,15 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'open-settings' },
     menu: 'app',
     defaultChord: primaryChord(','),
+  },
+  // A sheet of every shortcut, read from the live keymap — so it can't advertise a chord you have
+  // since moved, which the hard-coded hints around the app did.
+  {
+    id: 'shortcuts',
+    label: 'Keyboard shortcuts',
+    command: { type: 'open-shortcuts' },
+    menu: 'app',
+    defaultChord: primaryChord('/'),
   },
   {
     id: 'add-connection',
@@ -197,6 +208,13 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     menu: 'view',
     group: true,
     defaultChord: primaryChord('\\'),
+  },
+  {
+    id: 'maximise-pane',
+    label: 'Maximise pane',
+    command: { type: 'toggle-maximise-pane' },
+    menu: 'view',
+    defaultChord: primaryChord('enter', { shift: true }),
   },
   {
     id: 'focus-prev-pane',

@@ -1,5 +1,6 @@
 import { Text, Toggle } from '../PreferenceControls';
 import type { Preferences, SyncStatus } from '@shared/types';
+import { ConfirmButton } from '../ConfirmButton';
 
 /**
  * Turns the sync state into something worth reading. An opaque "error" helps nobody.
@@ -52,6 +53,18 @@ export function Sync({
           value={sync.repoPath}
           placeholder="~/code/dotfiles"
         />
+        <li className="pref">
+          <span className="pref-label">
+            <span className="pref-name">Choose the repository</span>
+            <span className="pref-note">A folder that is already a git repository with a remote</span>
+          </span>
+          <button
+            className="secondary"
+            onClick={() => window.hangar.send({ type: 'choose-folder', purpose: 'sync' })}
+          >
+            Choose…
+          </button>
+        </li>
         <Toggle
           name="Allow a public repository"
           note="Off by default. Hangar refuses to sync into a repo that answers an anonymous request, because the file lists your services, account labels and any custom URLs — no credentials, but not for strangers."
@@ -99,24 +112,24 @@ function ConflictResolution() {
             <span className="pref-name">Keep this machine's</span>
             <span className="pref-note">Overwrites the repo. Discards what the other machine changed.</span>
           </span>
-          <button
-            className="danger"
-            onClick={() => window.hangar.send({ type: 'resolve-sync', winner: 'local' })}
+          <ConfirmButton
+            confirmLabel="Overwrite the repo?"
+            onConfirm={() => window.hangar.send({ type: 'resolve-sync', winner: 'local' })}
           >
             Keep local
-          </button>
+          </ConfirmButton>
         </li>
         <li className="pref">
           <span className="pref-label">
             <span className="pref-name">Keep the repo's</span>
             <span className="pref-note">Overwrites this machine. Discards changes made here since the last sync.</span>
           </span>
-          <button
-            className="danger"
-            onClick={() => window.hangar.send({ type: 'resolve-sync', winner: 'remote' })}
+          <ConfirmButton
+            confirmLabel="Overwrite this machine?"
+            onConfirm={() => window.hangar.send({ type: 'resolve-sync', winner: 'remote' })}
           >
             Keep repo
-          </button>
+          </ConfirmButton>
         </li>
       </ul>
     </>

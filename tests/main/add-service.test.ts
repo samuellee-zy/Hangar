@@ -29,7 +29,7 @@ describe("adding a catalog service", () => {
     assert.ok(config.services.length > 0);
     assert.ok(config.accounts.length > 0);
     assert.ok(config.preferences?.appearance, 'preferences are part of a fresh config');
-    assert.equal(config.version, 4);
+    assert.equal(config.version, 5);
   });
 
   it('adding Drive reuses the existing Google account — no second sign-in', () => {
@@ -86,6 +86,13 @@ describe("adding a custom connection", () => {
     const svc = makeCustomInstance(config, { name: 'UK', url: 'https://foo.example.co.uk/' });
     assert.deepEqual(svc.allowedHosts, ['foo.example.co.uk']);
     assert.ok(!svc.allowedHosts.includes('co.uk'));
+  });
+
+  it('A NON-WEB URL IS REFUSED IN MAIN — a file: URL made an allowlist of [\'\'] that matched everything', () => {
+    // The Add Connection form checks too, but IPC is the boundary, not the form.
+    for (const url of ['file:///etc/passwd', 'data:text/html,hi', 'about:blank', 'javascript:alert(1)', 'http://']) {
+      assert.throws(() => makeCustomInstance(config, { name: 'Bad', url }), /http\(s\) URL/, url);
+    }
   });
 
   it('a custom connection gets an isolated account of its own', () => {

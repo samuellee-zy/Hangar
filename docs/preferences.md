@@ -4,11 +4,13 @@ Everything configurable, reachable from the gear in the rail or ⌘,.
 
 ## How it works
 
-`main/preferences.ts` holds `DEFAULT_PREFERENCES`, and **the defaults are the schema**. Two
+`core/config/preferences.ts` holds `DEFAULT_PREFERENCES`, and **the defaults are the schema**. Two
 consequences worth understanding before adding a setting:
 
 **A stored config is merged onto the defaults.** A key added in a later version can never be missing
-at runtime, and an older build ignores keys it doesn't know. That's what makes the v2→v3 migration
+at runtime, and an older build ignores keys it doesn't know. The reverse holds too: a key the
+defaults no longer define is dropped on load, which is how removing `startHidden` needed no
+migration. That's what makes the v2→v3 migration
 purely additive.
 
 **`setPreference` validates against the defaults rather than trusting the renderer.** `set-preference`
@@ -17,7 +19,7 @@ corrupt config on disk. Unknown paths, type mismatches, non-nullable nulls, arra
 writes to a *branch* rather than a leaf are all rejected and logged.
 
 Adding a setting is: add it to `Preferences` in `shared/types.ts`, add its default, render a control
-in `Settings.tsx`. No migration needed.
+in the matching `renderer/settings/*.tsx` section. No migration needed.
 
 ## Appearance
 
@@ -26,7 +28,7 @@ in `Settings.tsx`. No migration needed.
 | Rail position | `left` · `right` · `top` · `bottom`. Repositions the rail and relayouts panes |
 | Rail size | Thickness in px on whichever edge |
 | Show labels | Service names under icons. Suppressed in compact and horizontal rails |
-| Compact rail | Collapses to a 48px sliver and expands over the panes on hover — see below |
+| Compact rail | A 48px strip that still shows every icon; on a left or right rail the chevron opens a 180px panel with names, and the panes reflow around it — see below. A top or bottom rail has no room for names, so it stays a strip |
 | Theme | `system` · `light` · `dark` via `nativeTheme.themeSource` |
 | Density | Tile spacing |
 | Pane gutter | Space around each pane, 0–24px |
@@ -45,8 +47,7 @@ renderer honours a plain media query.
 | Hibernate after | Minutes idle before a background service is unloaded. **0 = never** |
 | Launch at login | Writes a user LaunchAgent, which needs no signature where `setLoginItemSettings` did ([decisions #93](decisions.md)). Ignored in development — an unpackaged binary would register Electron, not Hangar. **Applies from the next login** |
 | Relaunch if it stops unexpectedly | Adds `KeepAlive` to the same job, so launchd restarts Hangar after a crash or Force Quit but never after a deliberate quit. Needs launch at login, since launchd can only supervise what it started |
-| Start hidden | Launch to the tray rather than a window |
-| Close to tray | Closing the window hides it instead of quitting |
+| Close to tray | Closing the window hides it instead of quitting. The Dock icon, Window → Show Hangar, the Dock menu and the tray all bring it back. (There is no "start hidden": [decisions #96](decisions.md)) |
 | Global shortcut | One accelerator to summon/hide. The only `globalShortcut` in the app — everything else goes through `before-input-event` |
 | Confirm before quitting | Shows a Quit/Cancel dialog on ⌘Q |
 | Default zoom | Applied to newly added services; existing ones keep their own |
@@ -169,11 +170,13 @@ come back holding whatever chord it used to have and clearing a shortcut would s
 A string is a scalar, so `''` replaces — and it stays legible in a config people resolve git
 conflicts in. [keyboard.md](keyboard.md) covers what can't be rebound and why.
 
-**Compact rail expands over the panes, not beside them.** The panes reserve the 48px sliver whether
-or not the rail is open, so hovering never reflows them; the rail view simply grows to `Rail size`
-in front of them and shrinks back on leave. The rail reports the pointer, main decides — including
-refusing while a tile is being dragged, since leaving the rail is the first move of a drag onto a
-pane. [decisions #88](decisions.md) has the reasoning.
+**Compact rail opens on a click, and the panes make room.** Collapsed it is 48px and still draws every
+tile, so switching service stays one click; on a left or right rail the chevron opens a 180px panel
+with names (a top or bottom rail has no chevron — there is no room beside its icons for a name), and
+the panes are laid out against whichever width it currently is — the rail is never over a pane, so it
+never swallows a click meant for one. It used to expand over the panes on hover, and could not be
+made to close reliably: the pointer leaves into a different `WebContentsView`, which gets no leave
+event. [decisions #88](decisions.md) and [#95](decisions.md) have the reasoning.
 
 ## Export and import
 

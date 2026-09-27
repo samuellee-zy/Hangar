@@ -228,7 +228,7 @@ Generalising `Layout` to four edges was easy; the window buttons were not. They 
 to live somewhere:
 
 - **left** — inside the rail, centred.
-- **top** — inset at the rail's left end, reading as a toolbar.
+- **top** — inset at the rail's left end, reading as a toolbar. Compact too; see #102.
 - **right / bottom** — the rail is nowhere near the top-left, so a 38px chrome strip is reserved.
 
 `setWindowButtonPosition()` moves them at runtime, so changing position doesn't recreate the window
@@ -1794,6 +1794,10 @@ compensating for anything any more.
 
 ### `startHidden` applies to a launch, not to every start
 
+> **Superseded by [#96](#96-an-unreachable-window-is-worse-than-a-window-at-login).** The setting
+> has been removed. The reasoning below held for development runs and missed what it did to the
+> installed app.
+
 Reported as "nothing is loaded when I run `npm run dev`". Nothing was wrong with the build: the
 probe log showed a complete, healthy boot — window bounds restored on-screen at 1440×940, the rail
 renderer finished loading 0.33s in, Teams committed its URL at 4.65s — and `focusedWindow: false`
@@ -1901,3 +1905,356 @@ existing behaviour and needs nothing added now that the background does not also
 
 The traffic-light reasoning above is unchanged and now has a second reason to hold: 48px is still
 under the 52pt span, so the top strip is reserved in both states either way.
+
+## 96. An unreachable window is worse than a window at login
+
+Reported as "it doesn't open up at all even though it's running". It was running: main, four
+renderers, GPU and network service, a healthy boot in the log. It had no visible window, and nothing
+the user did could produce one. Four things combined, and the first is the one this repo's own docs
+recommended:
+
+1. **`startHidden` hid every packaged start.** The note above gated it on `app.isPackaged`, which
+   fixed `npm run dev` and left every launch of the installed app hidden. `docs/packaging.md` told
+   you to turn it on.
+2. **`activate` only focused.** A Dock click, a Finder double-click and a Spotlight launch of a
+   running app all arrive as `activate`, and its handler called `win.focus()` when a window existed.
+   Focusing a hidden window does nothing visible. `second-instance` had been fixed to call
+   `showWindow()` for exactly this reason — "relaunching from Spotlight looked like the app had
+   died" — but on macOS LaunchServices activates the running copy rather than starting a second
+   one, so `second-instance` never fires for any of those.
+3. **The tray was blank.** Its icon was an SVG handed to `nativeImage.createFromDataURL`, which
+   decodes PNG and JPEG and nothing else. With no unread its title was `''` too: a zero-width item.
+   The tray was the route back every other part of the design leaned on ("the tray is what makes
+   close to tray and start hidden safe to offer"), and it could not be seen or clicked.
+4. **Force Quit made it worse.** Under the LaunchAgent with relaunch-on-crash, a force quit is an
+   unsuccessful exit, so launchd started it again 30 seconds later — hidden. The log has three boots
+   in the same minute.
+
+**What changed.**
+
+- **`startHidden` is gone**, not re-gated. The precise condition — "this start came from the login
+  item" — is detectable (a flag in the plist's `ProgramArguments`), but the setting's whole value is
+  one window you didn't ask for at login, and its failure mode is an app you can't reach. Those are
+  not comparable costs. Close to tray stays: it hides a window you *just* closed, and the ways back
+  now work. The stored key is dropped by `withDefaults`, which keeps only keys the defaults define,
+  so no migration was needed.
+- **`ensureShell()`** is the single way to put a window in front of the user — build one if there
+  is none, then `showWindow()`. `activate`, `second-instance` and the menu's "Show Hangar" all call
+  it, so they cannot drift apart again.
+- **Every route back is registered before the window is built**, and each preference effect is
+  wrapped on its own. A throw from `new Tray()` in `applySystemPreferences` used to escape boot
+  before `activate` or any IPC handler existed.
+- **The tray glyph is pixels** (`features/tray-glyph.ts`), rasterised from signed distances at 1x
+  and 2x, with a warning in the log if the image is ever empty.
+- **More than one way back**: Window → Show Hangar, and the Dock icon's right-click menu, neither of
+  which depends on the menu bar having room for the tray.
+- **Bounds are re-checked on show**, not only at construction, and the check itself is stricter
+  (`core/workspace/window-bounds.ts`): the title strip must be on a display, not any one pixel of
+  the window, and the size is clamped to the display. A window closed to the tray on a monitor that
+  is later unplugged used to come back from `show()` exactly where it was.
+- **Quit is bounded.** Cookie promotion gets three seconds, not forever, so a stalled flush no
+  longer turns ⌘Q into Force Quit into a launchd relaunch.
+
+**Signing, found on the way.** `npm run dist` passes `identity=null`, which makes electron-builder
+skip signing entirely, and Electron 43 documents that macOS does not deliver notifications to an
+unsigned app. Nothing logged it — `Notification` has a `failed` event and nothing listened. It does
+now, and `npm run install:local` signs every local build: with a self-signed "Hangar Local"
+certificate if `npm run cert:local` has made one, ad-hoc otherwise. Ad-hoc is a hash of the bundle,
+so camera and microphone grants are asked again after each rebuild; the certificate is the same
+identity every time. See docs/packaging.md.
+
+**Installing over a running copy.** The installed copy is usually the launchd job, so it cannot
+simply be killed — that is a crash, and launchd restarts it mid-copy. `Hangar --quit` asks the
+running copy to quit through the single-instance handoff: no confirm dialog, cookies promoted, exit
+0. It travels as the lock's `additionalData` rather than a parsed argv, and with nothing running a
+`--quit` exits before boot rather than starting the app it was meant to stop.
+
+**One more guard.** Every packaged copy rewrote the LaunchAgent to point at itself on boot, so trying
+out a build straight from `dist/` repointed login at the build directory. Only a copy in an
+Applications folder may claim it now (`isInstalledCopy`).
+
+## 97. The app's own screens hold the bridge, so they may only show the app
+
+The rail, Settings, the overlay, the find bar, the drag layer and the empty view all load
+`sidebar.cjs`, which gives them `window.hangar` — and `send` takes any command there is: add a
+service, point sync at a repo, give Gmail custom JavaScript. Service views had navigation guards
+from the start (#94); these had none. Dragging a link onto the rail navigated the rail to that page
+with the bridge still in it, and `shell:command` answered whatever sent it.
+
+**Two halves, because either alone is one bug from nothing.**
+
+- **The screens are locked** in `loadRoute`, the one place every internal screen is loaded — which
+  is also why Settings now goes through it rather than loading itself, the way it had come to be the
+  one screen that would have missed this. `will-navigate` and `will-redirect` are refused for any
+  URL that isn't this renderer, `window.open` goes to the browser (through the same filter as
+  everything else) and never to a window that would inherit the preload, and `<webview>` is refused.
+  "This renderer" is the dev server's origin in development and the exact path of `index.html` in a
+  build — the path, not the scheme, because dropping a file is a navigation to `file:` too.
+- **IPC checks the frame.** `shell:*`, `overlay:get-mode` and `app:metrics` answer only when
+  `senderFrame.url` is the app, and log what they ignored. The frame and not the webContents,
+  because a webContents is a container and what matters is the document in it when it sent.
+
+**Everything that leaves goes through `openExternalSafely`.** Four call sites handed URLs straight
+to `shell.openExternal`, which opens whatever handles the scheme: `file:` launches apps,
+`x-apple.systempreferences:` opens System Settings, `smb:` mounts shares. Now an allowlist — the
+web, mail and phone links, and the meeting and desktop apps a web service legitimately hands off to
+— and five opens per ten seconds per source, so a page opening popups on a timer produces five tabs
+and a log line. The rejection that a missing handler produces (`zoommtg:` with no Zoom) is caught;
+it used to reach the unhandled-rejection guard and become a modal dialog.
+
+**Permissions are the requesting frame's, not the partition's.** The handler captured whichever
+service first created the partition, so an embed inside Slack got the camera because Slack is in
+the catalog, and a second service on the same Google account was judged as the first. Now each
+webContents is registered to its service as its guards attach (popups included), the request's own
+URL has to be on that service's allowlist, and the service is read fresh from config — so toggling
+camera and microphone takes effect on the next request rather than after a restart. A third-party
+frame gets fullscreen, pointer lock and sanitised clipboard writes, and nothing else.
+
+**Screen sharing works now**, and never on a page's say-so: a display-media handler asks, every time,
+in a native dialog listing screens and then windows. Without a handler `getDisplayMedia` just failed,
+so the `display-capture` grant had never done anything.
+
+**Smaller holes, same theme:**
+
+- `will-redirect` ignored `isMainFrame`, so any iframe redirecting off the allowlist was cancelled
+  and bounced to the browser — a tab opening for something nobody clicked.
+- A `file:` custom connection had an allowlist of `['']`, and the empty host matched every `file:`,
+  `data:` and `about:` URL. Main refuses non-web custom URLs now, and `isAllowedHost` ignores empty
+  entries and accepts only web URLs.
+- The blocked page's Allow button carried no argument by design (#94), but the host it meant stayed
+  armed after "Back to …", so the service's own script could call `__hangar.allowHost()` later.
+  Allow and Try again are honoured only from our `data:` pages now, and the host is forgotten as
+  soon as the pane navigates anywhere else.
+- `customJs` no longer travels through git sync: anyone who can push to the repo could otherwise run
+  script in a signed-in page on every machine that pulls. CSS still travels; it can restyle a page,
+  not act as you.
+- Export leaves out `pushRegistrations`, which hold the private keys for this machine's pushes.
+- "Open when complete" shows scripts, apps and installers in Finder instead of opening — opening one
+  is running it, and a page chooses what it downloads.
+- Service views and their popups use `safeDialogs`, so a page looping `alert()` can be stopped.
+
+Both e2e tests in `security.spec.ts` were checked by removing the guard each covers: each fails
+without it.
+
+## 98. Failing well: bounded retries, logged rejections, screens that come back
+
+A pass over what the app does when something goes wrong, driven by what the log actually showed.
+
+**The reload loop.** Offline, one pane reloaded every second for as long as the network was gone —
+627 consecutive failures on a single Teams sign-in URL, 96% of a 1 MB log. The backoff (1s, 2s, 4s,
+then the error page) never advanced because `did-finish-load` reset it, and Chromium fires
+`did-finish-load` for the error page it commits after a failed navigation. So every failure was
+followed by a "success". The count is now forgiven only by a load that stays up for thirty seconds
+(`attemptsSoFar`, `HEALTHY_AFTER_MS`), which is pure and has a test replaying the old sequence.
+`ERR_INTERNET_DISCONNECTED` no longer retries on a timer at all — retrying while the OS reports no
+network cannot succeed — but shows the offline page at once and polls `net.isOnline()` to reload
+itself when the network is back.
+
+**Rejections are log lines.** The `unhandledRejection` handler rethrew, which ended in
+`showErrorBox`: modal and synchronous, so the main process stopped until someone clicked OK. With the
+window closed to the tray there was nobody to click it. A `zoommtg:` link on a Mac without Zoom was
+enough. Uncaught *exceptions* keep the dialog — that is our own synchronous code being wrong, and
+Electron's behaviour to preserve. The floating promises that were most likely to reject now carry
+their own `.catch` with context: sign-out, export, import, push reconnect.
+
+**Ad blocking covered one account.** ghostery registers two global IPC handlers on every session's
+enable, and `ipcMain.handle` throws on the second — after marking the session enabled and before
+installing its network listeners. The second and later accounts were never blocked, never retried,
+and the log said so on every boot. Disabling one removed the handlers for all. The handlers delegate
+to the shared engine, so clearing them before each enable and restoring them after a disable is the
+whole fix (`adblock-sessions.ts`, tested against a fake that fails the same way).
+
+**The app's own screens recover from crashes.** Service views always reloaded after a renderer
+crash; the rail, Settings and the overlays never did, and a dead rail was a blank strip until quit.
+`loadRoute` gives them the same recovery, three times a minute at most. GPU and network-service
+crashes are logged with their reason and exit code.
+
+**Things that were silently wrong:**
+
+- The global shortcut compared the chord only, so a rebuilt window was told it was already
+  registered and kept the old window's handler — or none, once dispose had released it.
+- Custom CSS and JS were read from the service as it was when its view was built, so an edit applied
+  only after a sleep and wake.
+- "System" proxy meant "leave whatever is there", so leaving a work proxy kept it until restart; and
+  picking "http" applied `http://:0` before a host was typed, cutting every service off.
+- The hibernation sweep's relayout marked pane services read whatever the window was doing, so with
+  the window closed to the tray, messages were wiped before anyone saw them. Panes are acknowledged
+  on `show` and `restore` instead.
+- Removing a service cleared its unread without recomputing the badge.
+- Hiding a fullscreen window left an empty black Space; it leaves fullscreen first now.
+- "Confirm before quitting" stopped logout and shutdown. `powerMonitor`'s `shutdown` quits without
+  asking.
+
+**The log.** It is launchd's `StandardOutPath` and nothing ever rotated it; a Finder launch logged
+nowhere; and Electron's own "Failed to load URL" warnings wrote full sign-in URLs into it, email
+address and `state` included. It is rotated at boot past 5 MB (copy-and-truncate, because launchd
+holds it open in append mode), teed with timestamps for launches whose stdout isn't the file, and
+Node's default warning printer is replaced by one that redacts query strings.
+
+Each new E2E test — the crashed rail, unread in a hidden window — was checked against the bug put
+back. The first draft of each passed anyway: one polled before the crash happened, the other
+triggered a sweep that returns early when hibernation is off. Both now fail without the fix.
+
+## 99. UI that does what it says
+
+The P1 UI findings from the audit, each a control that promised something and didn't deliver it.
+
+- **Folders could not be renamed.** Right-click ▸ Rename… opened Settings, which had no folders, and
+  nothing ever sent `rename-folder`. `renameRequest` is now `{ id, nonce }` for any rail item, the
+  opened panel edits a folder's name in place exactly as it does a service's, and Settings has a
+  Folders section for rails with no room for a field. A new folder asks for its name immediately
+  when the rail can edit in place — only then, because elsewhere that would throw Settings open
+  every time. `rename-folder` searches every workspace, since Settings lists them all.
+- **A reloaded rail reopened the last rename.** Main never clears a request, and the rail seeded its
+  "last handled" nonce from state at mount — always null. It now adopts whatever request arrives
+  with its first state as already handled. That mattered more once the rail started recovering
+  from crashes (#98).
+- **Destructive buttons were one click.** Remove, Sign out, Delete workspace, Reset all, Delete
+  unused sessions and both sync resolutions are `ConfirmButton`s: the first click arms and relabels
+  ("Remove Gmail?"), a second within four seconds acts, and a pause, Escape or leaving the button
+  disarms it. Two clicks rather than a dialog: nothing is blocked, and a modal's default button is
+  exactly what gets dismissed by reflex. Add, Export, Import and Default were styled `danger` for
+  want of anything else and turned red under the pointer; they are `secondary` now.
+- **The Add Connection focus trap never engaged.** It attached in a mount-only effect, and the picker
+  renders nothing until state arrives — after the first render. A callback ref attaches when the
+  element does. The test that shows it fails against the old hook.
+- **Number fields clamped per keystroke,** so the "7" of "72" in a field with a minimum of 56 became
+  56 on the spot and a rail size could not be typed. `NumberField` holds the text, applies a value
+  once it is valid and has settled for 250ms (so the spinner still feels live), and clamps on blur.
+- **Allowed hosts were read-only** while two hints said to add them there. Every service now has a
+  field for extra hosts, additive over its catalog list; main keeps only valid hostnames, and the
+  field showing back what was accepted is the feedback.
+- **`~/code/dotfiles` — the placeholder — failed as typed,** and a relative path resolved against `/`
+  in a Finder launch. `resolveRepoPath` expands `~` and resolves relative paths from home.
+- **The tray, the palette and the rail's spoken count saw one workspace** while the Dock badge saw
+  all of them. `allServices` is projected into full views now, those three read it, and
+  `focus-service` switches to the workspace a service lives in rather than dropping it into this
+  one's panes. The palette labels a service elsewhere with its workspace's name, and is a combobox
+  over a listbox so the highlighted result is announced.
+
+## 100. Doing less: broadcasts, cookies and writes only when something changed
+
+Three loops did their full work whether or not anything had happened.
+
+**State broadcasts.** `sync()` sent the whole state to every surface immediately, and it runs on
+every page load start and stop, every mutation, and — through relayout — every resize event.
+Dragging the window's edge re-rendered the rail, the overlay and Settings sixty times a second with
+an identical state, and each broadcast also listed the data folder for quarantined configs. Now
+calls within a frame collapse into one, a surface is sent a state only if it differs from the last
+one *that surface* received (so a surface that has just opened is never starved), and the
+quarantine listing is cached for a minute — it only changes at boot. `state()` is still synchronous
+for callers that need it now. An E2E test resizes the window thirty times and counts what the rail
+receives: thirty before, at most two after.
+
+**Cookie promotion.** Every minute, every partition had every cookie read and its session cookies
+re-written, and its storage flushed — the log shows the same seven cookies promoted over and over.
+Promotion only exists for *session* cookies, so each session now marks itself when one is set
+(`cookies.on('changed')`), and the minute loop promotes only those; storage is flushed for everyone
+every fifth minute. Our own promotion writes persistent cookies, which don't mark anything, so it
+cannot keep itself busy. Quit and suspend still do everything.
+
+**Config writes.** Every change was a synchronous copy, write, fsync and rename — every pane focus,
+every push message, every step of a drag. Everything reads the in-memory copy, so the disk write
+now waits 300ms and a burst becomes one. Quit flushes before `app.quit()`, and a synchronous
+`process.on('exit')` flushes for every other ordinary exit; only a hard kill can lose the last 300ms.
+
+Also: the set holding notifications alive for click-to-focus is capped at fifty, because one left
+in Notification Center never closes; and React and dnd-kit moved to `devDependencies` — Vite
+bundles them into the renderer, so as dependencies they were shipped a second time, unused, inside
+the asar. dependency-cruiser's no-dev-deps rule now exempts `src/renderer/` for that reason.
+
+**Not done, on purpose.** Background throttling stays off for service views: the unread probe runs
+on a timer inside the page, and throttling would let the count lag by up to a minute. That trade
+wants a battery measurement first, not a guess.
+
+## 101. Names, keys and motion
+
+The accessibility findings from the audit, all of them small and all of them the difference between
+a control a screen reader can use and one it can't.
+
+- **About fifteen controls had no accessible name**: the global shortcut, the proxy host and port,
+  the downloads folder, every workspace, connection and account name field, per-service zoom
+  (titled "Zoom" — a title is not a name), the Add Connection search and custom URL/name fields, and
+  the find bar's input and its ↑ ↓ ✕ buttons, which a screen reader read as the glyphs. All are
+  labelled now, and the glyphs are hidden behind real names.
+- **Reordering from the keyboard used a key macOS takes.** dnd-kit's lift is on ⌃Space so that Space
+  can open a tile (#25), and ⌃Space is also the default shortcut for switching input source: with
+  two keyboard layouts, reordering never reached the rail. ⌥↑/⌥↓ (⌥←/→ on a horizontal rail) now
+  moves the focused tile one step without lifting it, and a status region says where it went. The
+  handler stops the key even at the end of a list, because a folder member's wrapper is inside the
+  folder's and the folder would otherwise move instead.
+- **Drag announcements said the wrong thing.** dnd-kit's defaults told you to press Space — which
+  opens the service — and named the tile by its id, a UUID. The instructions now give the keys that
+  work, and the announcements use the tile's name.
+- **Nothing honoured "Reduce motion".** The loading pulse and waking shimmer looped for as long as a
+  service was loading. Under `prefers-reduced-motion` every animation and transition collapses to
+  its end state; none of them carry information that isn't also shown statically.
+- **Two messages were only visible**: the refused-shortcut explanation is an alert now, and the
+  find-bar's match count is a status region, read out as it changes.
+
+## 102. The rail and main agree on where the traffic lights are
+
+A compact rail along the top drew the traffic lights over its first two tiles. Main decided they
+didn't fit — a 48px rail is under the 52pt span, the test that is right for a *left* rail — and put
+them where the top strip goes. But a top rail has no strip above it, so nothing was reserved, and the
+rail hid its own spacer for any compact rail on the strength of a comment saying the strip would hold
+them. Two places, each deciding from half the facts.
+
+- **One decision, shared.** `railHostsWindowButtons` in `src/shared/chrome.ts` is what main lays the
+  window out by and what the rail's spacer is shown by. A top rail always holds the lights: the span
+  runs *along* it, so all it needs is the strip's height.
+- **A horizontal compact rail doesn't open.** Opening puts names beside the icons, and a top or bottom
+  rail has no room beside them — the chevron grew the strip into a 180px band of the same icons,
+  flush against the window edge. `railCanExpand` refuses it in main and hides the chevron in the
+  rail, and `railSizes` ignores the flag, so one left over from a side rail can't do it either.
+- **The real button size.** macOS 26 draws the traffic lights larger — 14pt buttons in a 60pt span,
+  not 12pt in 52pt — and Electron doesn't report it. Laid out for the old size they sat 10pt from a
+  left rail's edge and 2pt from the other. Main picks the metrics by OS version.
+- **The window's background follows the theme.** It shows wherever no view is drawn — the strip
+  holding the traffic lights, the gutters between panes — and was fixed dark, so a light theme had a
+  black band across the top of a light rail.
+- **Horizontal rails were unfinished**: the first tile sat flush against the window's rounded corner,
+  and the focus bar, drawn in the margin outside the tile, was clipped by a container the height of
+  the tile — a top or bottom rail showed no focus at all. On a bottom rail it now faces the content,
+  as the side rails' bars do.
+
+## 103. Being on screen doesn't read a count the page reported
+
+Relayout marked every visible pane read, and so did showing the window. That is the only signal
+there is for a count we tally from notifications — but a page that draws its own badge reports only
+when the number *changes*. Clear its 3 because the pane was on screen and it stays at 0 while Gmail
+still says 3, until the next message moves it. At launch it raced the first report, which is how the
+badge test failed one run in five.
+
+`AttentionCenter` remembers which services' counts came from the page (a DOM rule, a title pattern,
+an endpoint), and passive acknowledgement — relayout, show, restore — leaves those alone. Marking a
+service read by hand, muting it or changing its rules still clears everything, and forgets where the
+count came from so the next report starts afresh.
+
+## 104. Keeping PR #3 honest: a Start page that stays, a quit that can't hang, a drag main can't end
+
+Four things the Phase 8 review found, fixed before the branch merges.
+
+- **Start pages were erased on every launch.** `migrateConfig` dropped `url` from every catalog
+  service — correct when only older builds wrote it, as copies of the catalog's URL that went stale
+  with the next catalog fix (#48's Notion). Settings → Connections now sets it on purpose, and the
+  next launch put a self-hosted GitLab back on gitlab.com. Config v5 makes the strip a migration:
+  a pre-v5 file loses the field, since no earlier build could have written a choice that survived a
+  relaunch, and from v5 only a value identical to the catalog's goes.
+- **A quit could stop halfway.** `quitGracefully` flushes the config and then calls `app.quit()`,
+  both inside a `.finally`; a throw from the flush skipped the quit and left the app half-quit —
+  the Force Quit #96 exists to prevent. The flush is guarded now.
+- **The E2E suite couldn't say why the app wouldn't quit.** CI reported a sync test as a 60-second
+  hook timeout and nothing else. The harness now keeps the app's own output, bounds a quit at 15
+  seconds and kills it, and prints that output when a test fails. Under the harness a fatal error
+  logs and exits rather than raising a modal nobody will click. Scratch directories are deleted with
+  retries, because a `git` the app started can outlive the app for a moment.
+- **A rail drag no longer involves main until it leaves the rail.** Telling main at the lift
+  attached the drag layer for every reorder and every drop onto a folder, and anything that relaid
+  the window out mid-gesture ended the drag from outside: the folder test's intermittent CI failure.
+  Now the rail hands a drag over only when the pointer crosses its edge, and main logs why any drag
+  it ended stopped.
+
+Also: density renders as `density-*`, not `is-*`. Its value `compact` produced `is-compact`, which is
+the collapsed compact rail's class, so a 72px rail on compact density took on every compact-rail
+rule.

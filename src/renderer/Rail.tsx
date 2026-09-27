@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { brightenForDark } from './accent';
+import { badgeText } from './badge';
+import { withChord } from './chords';
 import { CommitOnBlur } from './CommitOnBlur';
 import { FolderTile } from './FolderTile';
 import { ServiceIcon } from './ServiceIcon';
 import { SortableRailList, SortableTile } from './SortableRail';
 import { useShellState } from './useShellState';
+import { railCanExpand, railHostsWindowButtons, smallestRailSize } from '@shared/chrome';
 import type { RailItem, ServiceView } from '@shared/types';
 
 /**
@@ -36,25 +39,38 @@ export function Rail() {
   // Right-click ▸ Rename… arrives here, from main. Keyed on the nonce and not the id: every other
   // state broadcast carries the same request along with it, and reacting to those would reopen an
   // edit the moment you finished one.
-  const actedOnNonce = useRef(state?.renameRequest?.nonce ?? 0);
+  //
+  // `null` until the first state arrives, which is adopted as already handled. Main never clears a
+  // request, so a rail that reloads — after a crash, now that it recovers from one — would otherwise
+  // find the last one waiting and reopen an edit nobody asked for. Initialising from state at mount
+  // could not catch that: state is always null on the first render.
+  const actedOnNonce = useRef<number | null>(null);
   const request = state?.renameRequest;
   const appearance = state?.preferences.appearance;
+  const hasState = state !== null;
   useEffect(() => {
-    if (!request || !appearance || request.nonce === actedOnNonce.current) return;
+    if (!hasState) return;
+    if (actedOnNonce.current === null) {
+      actedOnNonce.current = request?.nonce ?? 0;
+      return;
+    }
+    if (!request?.id || !appearance || request.nonce === actedOnNonce.current) return;
     actedOnNonce.current = request.nonce;
     // Only a vertical compact rail has a panel to put the field in. An ordinary 72px rail has no
-    // room for a text field and a horizontal one has no room for a name at all, so those keep the
-    // old behaviour rather than dropping the request on the floor.
-    const horizontal = appearance.railPosition === 'top' || appearance.railPosition === 'bottom';
-    if (appearance.compactRail && !horizontal) setRenamingId(request.serviceId);
+    // room for a text field and a horizontal one has no room for a name at all, so those send you
+    // to Settings — which lists both services and folders — rather than dropping the request.
+    if (railCanExpand(appearance)) setRenamingId(request.id);
     else window.hangar.send({ type: 'open-settings' });
-  }, [request, appearance]);
+  }, [hasState, request, appearance]);
 
   if (!state) return null;
 
   const visible = new Set(state.panes.map((p) => p.serviceId));
   const focusedServiceId = state.panes.find((p) => p.id === state.focusedPaneId)?.serviceId;
   const { railPosition, showLabels, density, compactRail } = state.preferences.appearance;
+  // A compact rail on a side opens into a labelled panel; one along the top or bottom has no room
+  // for names, so it stays a strip of icons with no chevron to offer anything else.
+  const canExpand = railCanExpand(state.preferences.appearance);
   // Collapsed, a compact rail is the icons and nothing else — every service still one click away.
   const compact = compactRail && !state.railExpanded;
   // Top and bottom lay the rail out as a row; the tile treatment is otherwise identical.
@@ -65,7 +81,19 @@ export function Rail() {
   const panel = compactRail && state.railExpanded && !horizontal;
   const labelled = panel || (showLabels && !compact && !horizontal);
   const byId = new Map(state.services.map((s) => [s.id, s]));
-  const totalUnread = state.services.reduce((sum, s) => sum + s.unread, 0);
+  // ⌘1–9 follow the flattened visual order, which is what `services` is.
+  const position = new Map(state.services.slice(0, 9).map((s, i) => [s.id, i + 1]));
+  // Every workspace, like the Dock badge: a message in another workspace is still one to hear about.
+  const totalUnread = state.allServices.reduce((sum, s) => sum + s.unread, 0);
+
+  // The workspace switcher, when there is more than one to switch between. Its badge is unread in
+  // the *other* workspaces — the ones whose tiles aren't on this rail to show their own.
+  const workspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+  const here = new Set(state.services.map((s) => s.id));
+  const unreadElsewhere = state.allServices
+    .filter((s) => !here.has(s.id))
+    .reduce((sum, s) => sum + s.unread, 0);
+  const switcher = state.workspaces.length > 1 && workspace;
   const send = window.hangar.send;
 
   // Every draggable row in visual order, open folders' members included. One flat list because
@@ -165,7 +193,7 @@ export function Rail() {
             .join(', ')}
           // Identity lives in the accent and the icon; the tile surface carries state only.
           style={{ ['--accent' as string]: brightenForDark(svc.color) }}
-          title={
+          title={[
             svc.sleeping
               ? `${svc.name} — asleep, click to wake`
               : svc.loading
@@ -174,8 +202,13 @@ export function Rail() {
                   // nothing. The one thing not discoverable there is that it can be edited.
                   panel
                   ? `${svc.name} — double-click to rename`
-                  : svc.name
-          }
+                  : svc.name,
+            // The two ways to reach a tile that nothing on screen mentions.
+            position.has(svc.id) ? `⌘${position.get(svc.id)}` : null,
+            '⌥-click to open beside',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
           onContextMenu={(e) => {
             e.preventDefault();
             send({ type: 'show-service-menu', serviceId: svc.id });
@@ -205,7 +238,7 @@ export function Rail() {
               twice is worse than once. The live region below handles the *change*. */}
           {svc.unread > 0 && (
             <span className="rail-badge" aria-hidden="true">
-              {svc.unread}
+              {badgeText(svc.unread)}
             </span>
           )}
         </button>
@@ -220,7 +253,10 @@ export function Rail() {
         'rail',
         `is-${railPosition}`,
         horizontal ? 'is-horizontal' : 'is-vertical',
-        `is-${density}`,
+        // `density-`, not `is-`: density's values are 'comfortable' and 'compact', and `is-compact`
+        // is the collapsed compact rail. Sharing the prefix gave a 72px rail on compact density
+        // every compact-rail rule — 36px tiles, no divider, a focus bar adrift in the margin.
+        `density-${density}`,
         compact ? 'is-compact' : '',
         panel ? 'is-panel' : '',
         state.railExpanded ? 'is-expanded' : '',
@@ -242,15 +278,52 @@ export function Rail() {
       // Only when open, and only on the background: `closest('button')` lets every tile, the
       // footer and the chevron handle their own clicks first.
     >
-      {/* Clear of the traffic lights, and the window's drag handle. A compact rail never holds the
-          traffic lights — `chromeFor` puts them in the top strip whichever way it is sized — so
-          there is nothing to clear and the strip would only be dead space. */}
-      <div className="rail-drag" hidden={compactRail} />
+      {/* Clear of the traffic lights, and the window's drag handle — present exactly when main put
+          them in this rail, decided by the same function main used. Guessing from `compactRail`
+          alone is what drew them over a compact top rail's first two tiles. */}
+      <div
+        className="rail-drag"
+        hidden={!railHostsWindowButtons(railPosition, smallestRailSize(state.preferences.appearance))}
+      />
+
+      {switcher && (
+        <button
+          className="rail-item rail-workspace"
+          aria-label={[
+            `Workspace ${workspace.name}`,
+            unreadElsewhere > 0 ? `${unreadElsewhere} unread in other workspaces` : null,
+            'switch workspace',
+          ]
+            .filter(Boolean)
+            .join(', ')}
+          title={`${workspace.name} — switch workspace (⌘⌥1…9)`}
+          onClick={() => send({ type: 'show-workspace-menu' })}
+        >
+          <span className="rail-workspace-mark" aria-hidden="true">
+            {workspace.name.trim().slice(0, 2).toUpperCase() || '··'}
+          </span>
+          {panel && (
+            <span className="rail-label" aria-hidden="true">
+              {workspace.name}
+            </span>
+          )}
+          {unreadElsewhere > 0 && (
+            <span className="rail-badge is-elsewhere" aria-hidden="true">
+              {badgeText(unreadElsewhere)}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* The tiles are drawn in both states. Only the labels come and go. */}
       <SortableRailList
         ids={rows}
         horizontal={horizontal}
+        nameOf={(id) => {
+          if (byId.has(id)) return byId.get(id)!.name;
+          const folder = state.railItems.find((item) => item.id === id);
+          return folder?.kind === 'folder' ? `folder ${folder.name}` : 'item';
+        }}
         onMove={({ activeId, overId }) => send({ type: 'move-item', activeId, overId })}
         canDropOnPane={(id) => byId.has(id)}
       >
@@ -278,12 +351,41 @@ export function Rail() {
               <SortableTile key={item.id} id={item.id}>
                 {({ setNodeRef, style, handleProps }) => (
                   <div ref={setNodeRef} style={style} {...handleProps} className="rail-slot">
-                    <FolderTile
-                      folder={item}
-                      members={folderMembers}
-                      onToggle={() => send({ type: 'toggle-folder', folderId: item.id })}
-                      onContextMenu={() => send({ type: 'show-folder-menu', folderId: item.id })}
-                    />
+                    {panel && renamingId === item.id ? (
+                      // Same shape and the same two hazards as a service's rename above: the field
+                      // replaces the button, and keydown must not reach the draggable.
+                      <div className="rail-row">
+                        <div
+                          className="rail-rename"
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          onBlur={() => setRenamingId(null)}
+                        >
+                          <span className="rail-rename-folder" aria-hidden="true">
+                            ▦
+                          </span>
+                          <CommitOnBlur
+                            className="rail-rename-field"
+                            autoFocus
+                            aria-label={`Rename folder ${item.name}`}
+                            value={item.name}
+                            onCommit={(name) =>
+                              send({ type: 'rename-folder', folderId: item.id, name })
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <FolderTile
+                        folder={item}
+                        members={folderMembers}
+                        labelled={panel}
+                        onToggle={() => send({ type: 'toggle-folder', folderId: item.id })}
+                        onContextMenu={() => send({ type: 'show-folder-menu', folderId: item.id })}
+                      />
+                    )}
                     {!item.collapsed && (
                       // `group` is what makes the members read as *inside* the folder rather
                       // than as siblings that happen to follow it.
@@ -337,7 +439,7 @@ export function Rail() {
       <div className="rail-footer">
         <button
           className="rail-item rail-add"
-          title="Add a connection (⌘N)"
+          title={withChord(state, 'Add a connection', 'add-connection')}
           aria-label="Add a connection"
           onClick={() => send({ type: 'open-connections' })}
         >
@@ -353,7 +455,7 @@ export function Rail() {
         {/* ⌘, works but is undiscoverable — the gear is how most people will find Settings. */}
         <button
           className="rail-item rail-add rail-settings"
-          title="Settings (⌘,)"
+          title={withChord(state, 'Settings', 'settings')}
           aria-label="Settings"
           onClick={() => send({ type: 'open-settings' })}
         >
@@ -364,7 +466,7 @@ export function Rail() {
             </span>
           )}
         </button>
-        {compactRail && (
+        {canExpand && (
           <button
             className="rail-chevron"
             title={compact ? 'Show the rail' : 'Hide the rail'}

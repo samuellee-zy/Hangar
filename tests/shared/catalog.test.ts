@@ -86,6 +86,22 @@ describe('host allowlists', () => {
     }
   });
 
+  it('MICROSOFT 365 FOLLOWS ITS MOVE TO cloud.microsoft — every entry, not only Teams', () => {
+    // Outlook is moving to outlook.cloud.microsoft and office.com to m365.cloud.microsoft. An entry
+    // missing the domain bounces its own redirect to the browser, as Notion's .so → .com move did.
+    const cases: [string, string][] = [
+      ['outlook', 'https://outlook.cloud.microsoft/mail/'],
+      ['onedrive', 'https://onedrive.cloud.microsoft/'],
+      ['sharepoint', 'https://m365.cloud.microsoft/launch/sharepoint'],
+      ['mstodo', 'https://to-do.cloud.microsoft/tasks/'],
+      ['mstodo', 'https://to-do.live.com/tasks/'],
+      ['m365', 'https://m365.cloud.microsoft/'],
+    ];
+    for (const [catalogId, url] of cases) {
+      expect(isAllowedHost({ catalogId } as ServiceInstance, url), `${catalogId}: ${url}`).toBe(true);
+    }
+  });
+
   it('Teams allows consumer Teams, not just the work one', () => {
     // The bug this pins: a personal Microsoft account is routed to teams.live.com, which is a
     // separate app rather than a redirect of teams.microsoft.com. It was refused, so the pane

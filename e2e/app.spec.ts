@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { launch, seedConfig, type Harness } from './harness';
+import { launch, seedConfig, tearDown, type Harness } from './harness';
 
 /**
  * Sixteen tests covering what unit tests structurally cannot: real windows, real `WebContentsView`
@@ -13,8 +13,8 @@ import { launch, seedConfig, type Harness } from './harness';
  */
 
 let h: Harness;
-test.afterEach(async () => {
-  await h?.close();
+test.afterEach(async ({}, testInfo) => {
+  await tearDown(h, testInfo);
 });
 
 test('boots, renders the rail, and loads a service into the first pane', async () => {
@@ -24,9 +24,13 @@ test('boots, renders the rail, and loads a service into the first pane', async (
   // Two services plus the add and settings buttons.
   expect(await rail.locator('.rail-item').count()).toBeGreaterThanOrEqual(2);
 
-  // The pane is a separate WebContentsView, so it's its own page.
-  const pane = await h.app.windows().find((w) => w.url().includes('127.0.0.1'));
-  expect(pane, 'a service should have loaded').toBeTruthy();
+  // The pane is a separate WebContentsView, so it's its own page — which Playwright learns about on
+  // its own schedule, hence a poll rather than a single look.
+  await expect
+    .poll(() => h.app.windows().some((w) => w.url().includes('127.0.0.1')), {
+      message: 'a service should have loaded',
+    })
+    .toBeTruthy();
 });
 
 test('the overlay stops eating clicks once closed', async () => {
@@ -323,10 +327,31 @@ test('DRAGGING A TILE ONTO A FOLDER FILES IT THERE, AND DRAGGING IT OUT TAKES IT
       return g.__hangarShell?.state().railItems;
     });
 
+  /**
+   * Where an element is once it has stopped moving. Main's state changes before the rail has
+   * re-rendered and dnd-kit has finished animating the drop, so a box measured the moment the
+   * state poll passes can belong to the layout before — and the next drag then starts on the
+   * wrong tile.
+   */
+  const settledBox = async (selector: string) => {
+    const locator = rail.locator(selector).first();
+    await expect(locator).toBeVisible();
+    let last = JSON.stringify(await locator.boundingBox());
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify(await locator.boundingBox());
+        const still = now === last;
+        last = now;
+        return still;
+      }, { intervals: [100] })
+      .toBe(true);
+    return (await locator.boundingBox())!;
+  };
+
   /** A real pointer drag, in steps — dnd-kit ignores anything under its 5px activation distance. */
   const drag = async (from: string, to: string) => {
-    const start = await rail.locator(from).first().boundingBox();
-    const end = await rail.locator(to).first().boundingBox();
+    const start = await settledBox(from);
+    const end = await settledBox(to);
     if (!start || !end) throw new Error(`no box for ${from} → ${to}`);
     await rail.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
     await rail.mouse.down();
@@ -367,8 +392,10 @@ test('A COMPACT RAIL OPENS ON THE CHEVRON AND GIVES THE WIDTH BACK WHEN SHUT', a
   };
 
   await expect.poll(width).toBe(48);
+  // Polled: the rail settling says nothing about whether the pane's page has registered with
+  // Playwright yet, and on a slower runner it hadn't.
+  await expect.poll(paneWidth, { message: 'a service should have loaded' }).toBeTruthy();
   const paneCollapsed = await paneWidth();
-  expect(paneCollapsed, 'a service should have loaded').toBeTruthy();
 
   // Hovering must do nothing at all. The rail used to open here and then depend on a `pointerleave`
   // that Chromium does not deliver when the pointer crosses into a pane's view, so it stayed open
@@ -484,8 +511,13 @@ test('A REBOUND CHORD TAKES EFFECT, AND THE OLD ONE STOPS WORKING', async () => 
   ).toBe(false);
 
   // And it is on disk, not just in memory — a rebind that doesn't survive a restart isn't one.
-  const stored = JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
-  expect(stored.preferences.keyboard.bindings.palette).toBe('meta+j');
+  // Polled: writes are debounced (config.ts, WRITE_DEBOUNCE_MS).
+  await expect
+    .poll(() => {
+      const stored = JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
+      return stored.preferences.keyboard.bindings.palette;
+    })
+    .toBe('meta+j');
 });
 
 test('A SERVICE KEEPS THE CHORDS ON ITS PASSTHROUGH LIST', async () => {
@@ -569,6 +601,22 @@ test('A BADGE IN THE PAGE BECOMES THE COUNT, AND GOES DOWN AGAIN', async () => {
   const page = h.app.windows().find((w) => w.url().includes('/badge'))!;
 
   await expect.poll(unread, { timeout: 15_000 }).toBe(3);
+
+  // Being on screen doesn't read it. Relayout, and showing the window, marked every visible pane
+  // read — right for a count we tally, wrong for one the page reports, because the page only
+  // reports a *change*: the 3 became 0 and stayed there while the page still said 3. At launch
+  // that raced the first report, which is how this test failed one run in five.
+  await h.app.evaluate(async () => {
+    const shell = (globalThis as never as {
+      __hangarShell: { relayout: () => void; win: { hide: () => void }; showWindow: () => void };
+    }).__hangarShell;
+    shell.relayout();
+    shell.win.hide();
+    await new Promise((r) => setTimeout(r, 200));
+    shell.showWindow();
+    await new Promise((r) => setTimeout(r, 600));
+  });
+  expect(await unread(), 'a count the page reported survives the pane being looked at').toBe(3);
 
   // The observer, not just the initial read: nobody reloads a chat app to find out they have mail.
   await page.evaluate(() => {
@@ -723,4 +771,143 @@ test('the footer buttons sit in the same centred column as the tiles', async () 
   for (const button of centres.buttons) {
     expect(Math.abs(button - centres.tiles[0]!)).toBeLessThanOrEqual(0.5);
   }
+});
+
+test('A RESIZE STORM DOES NOT BROADCAST A STORM — the rail is sent state only when it changes', async () => {
+  // Every resize event relays out, and every relayout ended in a full broadcast to every surface:
+  // dragging the window's edge re-rendered the rail, the overlay and Settings sixty times a second
+  // with an identical state each time.
+  h = await launch();
+  const rail = await h.rail();
+  await rail.waitForTimeout(500);
+
+  await rail.evaluate(() => {
+    const g = window as unknown as { __received: number; hangar: { onState: (f: () => void) => void } };
+    g.__received = 0;
+    g.hangar.onState(() => g.__received++);
+  });
+
+  await h.app.evaluate(async () => {
+    const shell = (globalThis as never as { __hangarShell: { win: Electron.BaseWindow } }).__hangarShell;
+    const { width, height } = shell.win.getBounds();
+    for (let i = 0; i < 30; i++) {
+      shell.win.setSize(width - (i % 2) * 20, height);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    shell.win.setSize(width, height);
+  });
+  await rail.waitForTimeout(500);
+
+  const received = await rail.evaluate(() => (window as unknown as { __received: number }).__received);
+  expect(received, `${received} broadcasts for 30 resizes that changed nothing it draws`).toBeLessThanOrEqual(2);
+});
+
+test('WITH LINK ROUTING ON, A LINK TO ANOTHER OF YOUR SERVICES OPENS THERE — not in the browser', async () => {
+  // One fixture server under two names: service "one" lives on 127.0.0.1, service "two" on
+  // localhost. A link from one to two's host is off one's allowlist, so it leaves one — and with
+  // routing on it should land in two's pane rather than being handed to the system browser.
+  h = await launch((origin) => {
+    const localhost = origin.replace('127.0.0.1', 'localhost');
+    const config = seedConfig(origin, { preferences: { behaviour: { routeLinks: true } } }) as {
+      services: Array<{ id: string; url: string; allowedHosts: string[] }>;
+    };
+    config.services[1]!.url = `${localhost}/unread`;
+    config.services[1]!.allowedHosts = ['localhost'];
+    return config;
+  });
+  await h.rail();
+  const localhost = h.fixture.origin.replace('127.0.0.1', 'localhost');
+
+  const opened = await h.app.evaluate(async ({ shell, webContents }, target) => {
+    const openedExternally: string[] = [];
+    const original = shell.openExternal;
+    shell.openExternal = async (url: string) => {
+      openedExternally.push(url);
+    };
+    const one = webContents.getAllWebContents().find((c) => c.getURL().startsWith('http://127.0.0.1'));
+    await one?.executeJavaScript(`window.open(${JSON.stringify(target)}, '_blank'); true`);
+    await new Promise((r) => setTimeout(r, 2500));
+    shell.openExternal = original;
+    const two = webContents.getAllWebContents().find((c) => c.getURL().startsWith(target));
+    return { openedExternally, landedIn: two?.getURL() ?? null };
+  }, `${localhost}/unread/routed`);
+
+  expect(opened.openedExternally, 'it must not have gone to the browser').toEqual([]);
+  expect(opened.landedIn).toBe(`${localhost}/unread/routed`);
+});
+
+test('POPPING A SERVICE OUT GIVES IT A WINDOW OF ITS OWN, signed in, and sleeps the pane copy', async () => {
+  h = await launch();
+  await h.rail();
+
+  const result = await h.app.evaluate(async ({ BrowserWindow, session }) => {
+    const shell = (globalThis as never as {
+      __hangarShell: { dispatch: (c: unknown) => boolean; state: () => { services: { id: string; sleeping: boolean }[] } };
+    }).__hangarShell;
+    // A cookie in the service's jar, to prove the window shares it rather than starting signed out.
+    await session.fromPartition('persist:acct-one').cookies.set({ url: 'http://127.0.0.1/', name: 'who', value: 'me' });
+    shell.dispatch({ type: 'pop-out-service', serviceId: 'one' });
+    await new Promise((r) => setTimeout(r, 1500));
+    const popped = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('One'));
+    const cookies = popped ? await popped.webContents.session.cookies.get({ name: 'who' }) : [];
+    return {
+      opened: Boolean(popped),
+      signedIn: cookies[0]?.value === 'me',
+      paneAsleep: shell.state().services.find((s) => s.id === 'one')?.sleeping ?? false,
+    };
+  });
+
+  expect(result.opened, 'a window titled after the service').toBe(true);
+  expect(result.signedIn, 'the same session as the pane').toBe(true);
+  expect(result.paneAsleep, 'only one copy running').toBe(true);
+});
+
+test('A NOTIFICATION YOU MISSED IS KEPT IN RECENT — one you were looking at is not', async () => {
+  h = await launch();
+  await h.rail();
+  const recent = await h.app.evaluate(async () => {
+    const shell = (globalThis as never as {
+      __hangarShell: {
+        handleNotification: (id: string, p: unknown) => void;
+        state: () => { recentNotifications?: { serviceId: string; title: string }[] };
+      };
+    }).__hangarShell;
+    // "two" is loaded but not in a pane, so it counts; "one" is on screen in the first pane.
+    shell.handleNotification('two', { title: 'Missed this', body: 'while away' });
+    shell.handleNotification('one', { title: 'Saw this', body: 'on screen' });
+    return shell.state().recentNotifications ?? [];
+  });
+  expect(recent.map((n) => n.title)).toEqual(['Missed this']);
+});
+
+test('MAXIMISING A PANE TAKES THE OTHER OFF THE WINDOW — and the focus ring marks the focused one', async () => {
+  h = await launch();
+  await h.rail();
+
+  const result = await h.app.evaluate(async ({ webContents }) => {
+    const shell = (globalThis as never as {
+      __hangarShell: { win: Electron.BaseWindow; dispatch: (c: unknown) => boolean; focusRing: Electron.View | null };
+    }).__hangarShell;
+    shell.dispatch({ type: 'split' });
+    await new Promise((r) => setTimeout(r, 2000));
+    const attachedPanes = () =>
+      shell.win.contentView.children.filter((v) =>
+        'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().startsWith('http://127.0.0.1'),
+      ).length;
+    const split = attachedPanes();
+    const ringWithTwo = Boolean(shell.focusRing?.getVisible());
+    shell.dispatch({ type: 'toggle-maximise-pane' });
+    await new Promise((r) => setTimeout(r, 300));
+    const maximised = attachedPanes();
+    const ringWithOne = Boolean(shell.focusRing?.getVisible());
+    shell.dispatch({ type: 'toggle-maximise-pane' });
+    await new Promise((r) => setTimeout(r, 300));
+    return { split, maximised, restored: attachedPanes(), ringWithTwo, ringWithOne, _: webContents.getAllWebContents().length };
+  });
+
+  expect(result.split).toBe(2);
+  expect(result.maximised, 'the hidden pane must be detached, not left underneath').toBe(1);
+  expect(result.restored).toBe(2);
+  expect(result.ringWithTwo, 'two panes: the focused one is marked').toBe(true);
+  expect(result.ringWithOne, 'one pane drawn: nothing to tell apart').toBe(false);
 });

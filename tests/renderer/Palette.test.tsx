@@ -28,11 +28,12 @@ const svc = (id: string, name = id): ServiceView =>
     unread: 0,
   }) as ServiceView;
 
+const here = [svc('gmail', 'Gmail'), svc('slack', 'Slack'), svc('notion', 'Notion')];
 const state = (over: Partial<ShellState> = {}): ShellState =>
   ({
-    services: [svc('gmail', 'Gmail'), svc('slack', 'Slack'), svc('notion', 'Notion')],
+    services: here,
     railItems: [],
-    allServices: [],
+    allServices: here,
     preferences: DEFAULT_PREFERENCES,
     orphanPartitions: [],
     quarantinedConfigs: [],
@@ -61,7 +62,7 @@ describe('dialog semantics', () => {
 
   it('focuses the input on open, so you can type immediately', async () => {
     await renderPalette();
-    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+    expect(document.activeElement).toBe(screen.getByRole('combobox'));
   });
 });
 
@@ -117,7 +118,7 @@ describe('the focus trap', () => {
 describe('search and selection', () => {
   it('filters services by subsequence', async () => {
     await renderPalette();
-    await userEvent.type(screen.getByRole('textbox'), 'slk');
+    await userEvent.type(screen.getByRole('combobox'), 'slk');
     expect(screen.getByText('Slack')).toBeInTheDocument();
     expect(screen.queryByText('Notion')).not.toBeInTheDocument();
   });
@@ -158,14 +159,14 @@ describe('search and selection', () => {
     // put, pointing past the end — the highlight vanished and Enter silently did nothing.
     await renderPalette();
     for (let i = 0; i < 3; i++) await userEvent.keyboard('{ArrowDown}');
-    await userEvent.type(screen.getByRole('textbox'), 'notion');
+    await userEvent.type(screen.getByRole('combobox'), 'notion');
     await userEvent.keyboard('{Enter}');
     expect(sent).toContainEqual({ type: 'focus-service', serviceId: 'notion' });
   });
 
   it('Enter on an empty result set does nothing rather than throwing', async () => {
     await renderPalette();
-    await userEvent.type(screen.getByRole('textbox'), 'zzzzz');
+    await userEvent.type(screen.getByRole('combobox'), 'zzzzz');
     await userEvent.keyboard('{Enter}');
     expect(sent.filter((c) => (c as { type: string }).type !== 'close-overlay')).toEqual([]);
   });
@@ -174,5 +175,40 @@ describe('search and selection', () => {
     await renderPalette();
     await userEvent.keyboard('{Escape}');
     expect(sent).toContainEqual({ type: 'close-overlay' });
+  });
+});
+
+describe('every workspace', () => {
+  it('A SERVICE IN ANOTHER WORKSPACE IS FOUND, labelled with where it lives — ⌘K could not reach it', async () => {
+    const figma = svc('figma', 'Figma');
+    await renderPalette(
+      state({
+        allServices: [...here, figma],
+        workspaces: [
+          { id: 'w1', name: 'Work', items: here.map((s) => ({ kind: 'service' as const, id: s.id })) },
+          { id: 'w2', name: 'Design', items: [{ kind: 'service', id: 'figma' }] },
+        ],
+      }),
+    );
+    await userEvent.type(screen.getByRole('combobox'), 'figma');
+    const option = screen.getByRole('option', { name: /Figma/ });
+    expect(option).toHaveTextContent('Design');
+    await userEvent.keyboard('{Enter}');
+    expect(sent).toContainEqual({ type: 'focus-service', serviceId: 'figma' });
+  });
+
+  it('the highlighted result is announced as the selected option', async () => {
+    await renderPalette();
+    const input = screen.getByRole('combobox');
+    const selected = screen.getAllByRole('option').find((o) => o.getAttribute('aria-selected') === 'true');
+    expect(selected).toBeTruthy();
+    expect(input).toHaveAttribute('aria-activedescendant', selected!.id);
+  });
+
+  it('says nothing about matches before the state has arrived', async () => {
+    setShellState(null as never);
+    render(<Palette />);
+    await act(async () => {});
+    expect(screen.queryByText('No matches')).not.toBeInTheDocument();
   });
 });

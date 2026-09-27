@@ -1,8 +1,9 @@
 import { app, globalShortcut, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { safeToAutoOpen } from '@core/runtime/downloads';
 import { applyLaunchAgent } from '@main/platform/launch-agent';
-import type { Preferences, ProxyConfig } from '@shared/types';
+import type { DownloadEntry, Preferences, ProxyConfig } from '@shared/types';
 
 /**
  * Preferences that reach outside the app — the login item, the proxy, download handling and the
@@ -24,33 +25,43 @@ import type { Preferences, ProxyConfig } from '@shared/types';
  * mechanisms at once would be worse than either: on a signed build they are two independent
  * registrations, and login would start Hangar twice with the single-instance lock discarding one.
  * So this is now a single line, and the read-back honesty moves with it.
- *
- * `startHidden` no longer has anything to do here — `setLoginItemSettings`' `openAsHidden` was only
- * ever a hint to that mechanism, and boot/index.ts hides the window itself on any launch.
  */
 export function applyLoginItem(prefs: Preferences): boolean {
   return applyLaunchAgent(prefs);
 }
 
-/** Chromium's proxy rule format. `system` means "don't set one" — the default already is. */
-export function proxyRules(proxy: ProxyConfig): { mode?: 'direct'; proxyRules?: string } | null {
+export type ProxySetting = { mode: 'system' | 'direct' } | { proxyRules: string };
+
+/**
+ * What to hand `session.setProxy`.
+ *
+ * Always *something*. `system` used to return null and `applyProxy` returned early on null, which
+ * made "system" mean "leave whatever is there" — so switching from a work proxy back to System left
+ * every open service on the work proxy until restart. It is `mode: 'system'` now, which actively
+ * restores it.
+ *
+ * A manual proxy without a host and port also falls back to the system's. Picking "http" in
+ * Settings writes the mode before you have typed anything, and applying that as `http://:0` cut
+ * every service off the network until the host was filled in.
+ */
+export function proxyRules(proxy: ProxyConfig): ProxySetting {
   switch (proxy.mode) {
     case 'system':
-      return null;
+      return { mode: 'system' };
     case 'none':
       return { mode: 'direct' };
     case 'http':
-      return { proxyRules: `http://${proxy.host}:${proxy.port}` };
     case 'socks4':
-      return { proxyRules: `socks4://${proxy.host}:${proxy.port}` };
-    case 'socks5':
-      return { proxyRules: `socks5://${proxy.host}:${proxy.port}` };
+    case 'socks5': {
+      const host = proxy.host.trim();
+      if (!host || !(proxy.port > 0 && proxy.port <= 65535)) return { mode: 'system' };
+      return { proxyRules: `${proxy.mode}://${host}:${proxy.port}` };
+    }
   }
 }
 
 export async function applyProxy(sessions: Iterable<Electron.Session>, prefs: Preferences): Promise<void> {
   const rules = proxyRules(prefs.network.proxy);
-  if (!rules) return;
   for (const ses of sessions) {
     try {
       await ses.setProxy(rules);
@@ -77,6 +88,54 @@ const downloadHandlerAttached = new WeakSet<Electron.Session>();
  * Downloads land in the configured folder without a prompt unless asked otherwise. Attaching per
  * session rather than globally, because each service has its own. Idempotent — see above.
  */
+/**
+ * Recent downloads, for the tray and Settings. A file used to land silently — no progress, and no
+ * way back to it afterwards short of opening the Downloads folder and hunting.
+ */
+const recent: DownloadEntry[] = [];
+let downloadsChanged: (() => void) | null = null;
+let nextDownloadId = 0;
+
+/** Newest first, at most ten. */
+export const recentDownloads = (): DownloadEntry[] => recent.slice(0, 10);
+export const onDownloadsChanged = (listener: (() => void) | null): void => {
+  downloadsChanged = listener;
+};
+export const downloadPath = (id: string): string | null => recent.find((d) => d.id === id)?.path || null;
+
+function track(item: Electron.DownloadItem): void {
+  const entry: DownloadEntry = {
+    id: String(++nextDownloadId),
+    name: item.getFilename(),
+    path: item.getSavePath(),
+    state: 'progressing',
+    received: 0,
+    total: item.getTotalBytes(),
+    at: Date.now(),
+  };
+  recent.unshift(entry);
+  recent.length = Math.min(recent.length, 20);
+  // Progress is throttled to whole percents; every chunk would be a broadcast per few KB.
+  let lastPercent = -1;
+  item.on('updated', () => {
+    entry.received = item.getReceivedBytes();
+    entry.total = item.getTotalBytes();
+    entry.path = item.getSavePath() || entry.path;
+    const percent = entry.total ? Math.floor((entry.received / entry.total) * 100) : -1;
+    if (percent !== lastPercent) {
+      lastPercent = percent;
+      downloadsChanged?.();
+    }
+  });
+  item.once('done', (_e, state) => {
+    entry.state = state;
+    entry.path = item.getSavePath() || entry.path;
+    entry.received = item.getReceivedBytes();
+    downloadsChanged?.();
+  });
+  downloadsChanged?.();
+}
+
 export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Preferences): void {
   if (downloadHandlerAttached.has(ses)) return;
   downloadHandlerAttached.add(ses);
@@ -89,10 +148,19 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
       // twice silently destroyed the first copy. Reproduce it ourselves.
       item.setSavePath(uniqueDownloadPath(folder, item.getFilename()));
     }
+    track(item);
     item.once('done', (_e, state) => {
-      if (state === 'completed' && prefs.openOnComplete) {
-        void shell.openPath(item.getSavePath());
+      if (state !== 'completed' || !prefs.openOnComplete) return;
+      const saved = item.getSavePath();
+      // Never *run* something because a page downloaded it — see `safeToAutoOpen`.
+      if (!safeToAutoOpen(path.basename(saved))) {
+        console.log(`[download] not opening ${path.basename(saved)} automatically — it would run`);
+        shell.showItemInFolder(saved);
+        return;
       }
+      shell.openPath(saved).then((error) => {
+        if (error) console.warn(`[download] could not open ${path.basename(saved)}: ${error}`);
+      }, () => {});
     });
   });
 }
@@ -103,21 +171,52 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
  * their own keys — see docs/keyboard.md.
  */
 let registered: string | null = null;
+let registeredToggle: (() => void) | null = null;
+
+/**
+ * How the last attempt to register went, for Settings to show. "Taken" and "invalid" used to go to
+ * the log and nowhere else, so a shortcut that another app already owned just silently didn't work.
+ */
+export type GlobalShortcutStatus = 'off' | 'active' | 'taken' | 'invalid';
+let status: GlobalShortcutStatus = 'off';
+export const globalShortcutStatus = (): GlobalShortcutStatus => status;
 
 export function applyGlobalShortcut(accelerator: string | null, toggle: () => void): void {
-  if (registered === accelerator) return;
+  // Same chord *and* same handler. The chord alone was the check, so after ⌘W rebuilt the window
+  // the new one's `applySystemPreferences` was told "already registered" — and the shortcut kept
+  // calling the old, disposed window's toggle, or nothing at all once dispose had released it.
+  if (registered === accelerator && registeredToggle === toggle) return;
+  registeredToggle = null;
   if (registered) globalShortcut.unregister(registered);
   registered = null;
+  status = 'off';
   if (!accelerator) return;
   try {
-    if (globalShortcut.register(accelerator, toggle)) registered = accelerator;
-    else console.warn(`[shortcut] ${accelerator} is already taken by another app`);
+    if (globalShortcut.register(accelerator, toggle)) {
+      registered = accelerator;
+      registeredToggle = toggle;
+      status = 'active';
+    } else {
+      status = 'taken';
+      console.warn(`[shortcut] ${accelerator} is already taken by another app`);
+    }
   } catch (err) {
+    status = 'invalid';
     console.error('[shortcut] invalid accelerator:', err);
   }
 }
 
-export const releaseGlobalShortcut = () => globalShortcut.unregisterAll();
+/**
+ * Forgets the registration as well as removing it — otherwise the next `applyGlobalShortcut` with
+ * the same chord believed it was still registered and did nothing, and the rebuilt window had no
+ * shortcut at all.
+ */
+export const releaseGlobalShortcut = () => {
+  globalShortcut.unregisterAll();
+  registered = null;
+  registeredToggle = null;
+  status = 'off';
+};
 
 export { session };
 

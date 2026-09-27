@@ -43,6 +43,10 @@ Two invariants, both pinned by `check:folders`:
 - **Folders never nest.** `moveToFolder` only resolves service ids, so a folder id isn't found; the
   drag path guards it separately, landing a dragged folder beside the one it was aimed at.
 
+**Renaming**: in an opened compact rail, right-click → Rename… edits the name in place, and a new
+folder asks for one straight away. Anywhere else, Settings → Folders lists every folder in every
+workspace ([decisions #99](decisions.md)).
+
 **Ungroup keeps the services**, promoting them to the top level in place. There is no "delete folder
 and contents" — that's two destructive operations wearing one label.
 
@@ -92,9 +96,12 @@ Custom connections have no vendored logo, so their icon comes from the page's ow
 ## Managing
 
 Settings (⌘,) is split into named sections. **Connections** renames and removes services;
-**Accounts** renames one and signs it out, which clears that partition's cookie jar and reloads every
-service using it; **Per-service** holds the zoom, hibernation and media overrides; **Unread badges**
-covers the counts, including the endpoint asked on a service's behalf while it sleeps.
+**Folders** renames folders; **Accounts** renames one and signs it out, which clears that
+partition's cookie jar and reloads every service using it; **Allowed hosts** shows where each
+service may navigate and takes extra hosts — a sign-in provider's domain, most often; **Per-service**
+holds the zoom, hibernation and media overrides; **Unread badges** covers the counts, including the
+endpoint asked on a service's behalf while it sleeps. Remove, Sign out and the other destructive
+buttons take two clicks: the first asks, the second does it.
 
 Right-click a tile for the same things without the trip: Open, Open in new pane, Move to folder,
 Add another account, Reload, Put to sleep, Remove.

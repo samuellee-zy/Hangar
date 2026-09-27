@@ -81,6 +81,15 @@ export const LOCAL_PREFERENCE_PATHS = [
   'behaviour.relaunchOnCrash',
 ] as const;
 
+/**
+ * Fields of a *service* that stay on this machine, though the service itself travels.
+ *
+ * | Field | Why |
+ * | --- | --- |
+ * | `customJs` | **Code that runs inside a signed-in page.** Synced, anyone who can push to the repo — or a repo that is later made public and forked — can run script in your Gmail on every machine that pulls. CSS can restyle a page; this can read it and act as you. It is written by hand on the machine that needs it. |
+ */
+export const LOCAL_SERVICE_FIELDS = ['customJs'] as const;
+
 export type PortableConfig = Pick<Config, (typeof PORTABLE_KEYS)[number]>;
 
 /* ------------------------------------------------------------------------------------------------
@@ -242,15 +251,30 @@ export function portable(config: Config): PortableConfig {
   for (const path of LOCAL_PREFERENCE_PATHS) {
     result = withPath(result, `preferences.${path}`, undefined);
   }
+  for (const svc of (result as PortableConfig).services ?? []) {
+    for (const field of LOCAL_SERVICE_FIELDS) delete svc[field];
+  }
   return result as PortableConfig;
 }
 
-/** Puts this machine's own values back over an incoming config. */
+/**
+ * Puts this machine's own values back over an incoming config: the local preference leaves, and the
+ * local-only fields of each service that exists on both sides. A service new to this machine
+ * arrives without them, which is the point — it has none here yet.
+ */
 export function restoreLocalPreferences(incoming: PortableConfig, local: Config): PortableConfig {
   let result: unknown = structuredClone(incoming);
   for (const path of LOCAL_PREFERENCE_PATHS) {
     const mine = getPath(local.preferences, path);
     result = withPath(result, `preferences.${path}`, mine);
+  }
+  const localById = new Map(local.services.map((svc) => [svc.id, svc]));
+  for (const svc of (result as PortableConfig).services ?? []) {
+    const mine = localById.get(svc.id);
+    for (const field of LOCAL_SERVICE_FIELDS) {
+      if (mine?.[field] !== undefined) svc[field] = mine[field];
+      else delete svc[field];
+    }
   }
   return result as PortableConfig;
 }
@@ -414,4 +438,21 @@ export function validateIncoming(
   }
 
   return { ok: true, config: candidate as PortableConfig };
+}
+
+/**
+ * The repo path as typed, made absolute.
+ *
+ * The placeholder in Settings is `~/code/dotfiles`, and typing exactly that failed: the path was used
+ * verbatim, `~` is a shell expansion and not a directory, and sync reported "not a git repository".
+ * A relative path was worse — resolved against the process's working directory, which for a
+ * Finder-launched app is `/`. Both now mean what someone typing them means: from the home folder.
+ */
+export function resolveRepoPath(raw: string | undefined, home: string): string | null {
+  const typed = (raw ?? '').trim();
+  if (!typed) return null;
+  if (typed === '~') return home;
+  if (typed.startsWith('~/')) return `${home.replace(/\/+$/, '')}/${typed.slice(2)}`;
+  if (typed.startsWith('/')) return typed;
+  return `${home.replace(/\/+$/, '')}/${typed}`;
 }

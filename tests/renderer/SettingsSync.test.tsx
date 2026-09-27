@@ -40,6 +40,8 @@ describe('resolving a conflict', () => {
     renderSync(conflict);
 
     await userEvent.click(screen.getByRole('button', { name: 'Keep local' }));
+    expect(sent, 'one click only arms it').not.toContainEqual({ type: 'resolve-sync', winner: 'local' });
+    await userEvent.click(screen.getByRole('button', { name: 'Overwrite the repo?' }));
 
     expect(sent).toContainEqual({ type: 'resolve-sync', winner: 'local' });
   });
@@ -48,6 +50,7 @@ describe('resolving a conflict', () => {
     renderSync(conflict);
 
     await userEvent.click(screen.getByRole('button', { name: 'Keep repo' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Overwrite this machine?' }));
 
     expect(sent).toContainEqual({ type: 'resolve-sync', winner: 'remote' });
   });

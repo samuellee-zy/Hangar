@@ -9,13 +9,31 @@ import { decidePermission, findOrphanPartitions } from '@core/runtime/permission
 
 
 const ask = (permission, over = {}) =>
-  decidePermission({ permission, isCatalogService: true, allowMedia: false, ...over });
+  decidePermission({ permission, fromService: true, isCatalogService: true, allowMedia: false, ...over });
 
 describe("baseline, granted to anything", () => {
 
   it('notifications, fullscreen, sanitized clipboard write and pointer lock are allowed', () => {
     for (const p of ['notifications', 'fullscreen', 'clipboard-sanitized-write', 'pointerLock']) {
       assert.equal(ask(p, { isCatalogService: false }), true, `${p} should be allowed`);
+    }
+  });
+});
+
+describe('the requesting frame', () => {
+
+  it('AN IFRAME FROM ANOTHER ORIGIN GETS NO HARDWARE, CLIPBOARD OR NOTIFICATIONS — even inside a catalog service', () => {
+    // The partition's handler used to answer for the service whatever frame asked: an ad or an
+    // embed inside Slack got the camera because Slack is in the catalog.
+    for (const p of ['media', 'display-capture', 'clipboard-read', 'notifications']) {
+      assert.equal(ask(p, { fromService: false }), false, `${p} from a third-party frame`);
+      assert.equal(ask(p, { fromService: false, allowMedia: true }), false, `${p}, even with allowMedia`);
+    }
+  });
+
+  it('an embed may still go fullscreen, lock the pointer and write to the clipboard', () => {
+    for (const p of ['fullscreen', 'pointerLock', 'clipboard-sanitized-write']) {
+      assert.equal(ask(p, { fromService: false, isCatalogService: false }), true, p);
     }
   });
 });

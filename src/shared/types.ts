@@ -96,6 +96,12 @@ export interface CatalogEntry {
    * declaring a slug that 404s is indistinguishable from a typo. `initials` covers it.
    */
   icon?: string;
+  /**
+   * Other names people search for. The picker matched the display name only, so "twitter" found
+   * nothing and "microsoft" didn't find Outlook. The provider is searched too; this is for the
+   * names that aren't a provider — a rebrand, a product's old name, an obvious synonym.
+   */
+  aliases?: string[];
   /** Last-resort fallback when there's no vendored logo and no captured favicon yet. */
   initials: string;
   /** Brand hex. Lifted for dark backgrounds at render time — see renderer/accent.ts. */
@@ -215,6 +221,13 @@ export interface ServiceInstance {
    */
   notificationLevel?: 'all' | 'muted';
   /**
+   * When a timed mute ends, epoch ms. Set together with `notificationLevel: 'muted'`, which is what
+   * everything actually reads — this is only the alarm clock that turns it back to `'all'`. So a
+   * timed mute behaves exactly like a manual one until it expires, and nothing that checks for
+   * `'muted'` needs to know timers exist.
+   */
+  mutedUntil?: number;
+  /**
    * Lets a custom connection use the microphone, camera and screen share. Catalog services get
    * these by provenance; a URL the user typed has to ask.
    */
@@ -324,8 +337,11 @@ export interface Preferences {
      * because launchd can only supervise a process it started — see core/config/launch-agent.ts.
      */
     relaunchOnCrash: boolean;
-    startHidden: boolean;
     closeToTray: boolean;
+    /** Open a link that leaves a service in another of your services when it belongs there. */
+    routeLinks: boolean;
+    /** The mail service a `mailto:` link opens a compose in, or `''` for none. */
+    mailtoServiceId: string;
     confirmQuit: boolean;
     defaultZoom: number;
     spellcheckLanguages: string[];
@@ -378,7 +394,7 @@ export type SyncStatus =
   | { state: 'error'; detail: string };
 
 export interface Config {
-  version: 4;
+  version: 5;
   preferences: Preferences;
   accounts: Account[];
   services: ServiceInstance[];
@@ -407,14 +423,29 @@ export type ServiceView = ServiceInstance & {
   unread: number;
 };
 
+export interface DownloadEntry {
+  id: string;
+  name: string;
+  /** Where it was saved, once known. */
+  path: string;
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
+  received: number;
+  /** 0 when the server didn't say. */
+  total: number;
+  at: number;
+}
+
 /** Everything the rail renders. The renderer holds no state of its own — it draws this. */
 export interface ShellState {
   /** Services in the active workspace, flattened in visual order — drives ⌘1..9 and the palette. */
   services: ServiceView[];
   /** The active workspace's rail tree: top-level services and folders, in order. */
   railItems: RailItem[];
-  /** Every service, including those outside the active workspace — Settings edits all of them. */
-  allServices: ServiceInstance[];
+  /**
+   * Every service, including those outside the active workspace — Settings edits all of them, and
+   * the tray, palette and spoken unread count read them so another workspace's messages are seen.
+   */
+  allServices: ServiceView[];
   preferences: Preferences;
   /**
    * Partition directories no account references. Derived at runtime, surfaced in Settings, and
@@ -439,14 +470,28 @@ export interface ShellState {
    */
   flashServiceId?: string | null;
   /**
-   * A request from main that the rail put a service's name into an editable field.
+   * A request from main that the rail put a service's or a folder's name into an editable field.
+   * `id` is the rail item's id; service and folder ids never collide.
    *
    * Carries a nonce rather than being a plain id because it is an *event*, not a state: asking to
-   * rename the same service twice running is two requests, and an id alone cannot tell the second
+   * rename the same item twice running is two requests, and an id alone cannot tell the second
    * from a re-broadcast of the first. Main never has to clear it, and the rail acts only when the
    * nonce changes — so an unrelated broadcast arriving mid-edit cannot restart the edit.
    */
-  renameRequest?: { serviceId: string; nonce: number } | null;
+  renameRequest?: { id: string; nonce: number } | null;
+  /** For Settings → About: the running version and where its files really are. */
+  about?: { version: string; configPath: string; logPath: string };
+  /** Whether macOS sends `mailto:` links to Hangar. */
+  isDefaultMailApp?: boolean;
+  /**
+   * The last few notifications, newest first. In memory only: nothing about what your services
+   * said is ever written to disk or synced.
+   */
+  recentNotifications?: Array<{ serviceId: string; title: string; body: string; at: number }>;
+  /** Recent downloads, newest first. */
+  downloads?: DownloadEntry[];
+  /** Whether the global shortcut actually registered — "taken" means another app owns it. */
+  globalShortcutStatus?: 'off' | 'active' | 'taken' | 'invalid';
   panes: Pane[];
   focusedPaneId: string | null;
   activeWorkspaceId: string | null;
@@ -504,6 +549,20 @@ export type Command =
   | { type: 'set-workspace'; workspaceId: string }
   | { type: 'navigate'; direction: 'back' | 'forward' }
   | { type: 'open-palette' }
+  | { type: 'open-shortcuts' }
+  /** `until` null with `on` true is "until I turn it off". */
+  | { type: 'set-dnd'; on: boolean; until: number | null }
+  /** `until` null unmutes; a number mutes until then. */
+  | { type: 'mute-service'; serviceId: string; until: number | null }
+  | { type: 'mark-read'; serviceId: string }
+  | { type: 'reveal'; what: 'config' | 'log' }
+  | { type: 'make-default-mail-app' }
+  | { type: 'pop-out-service'; serviceId: string }
+  | { type: 'toggle-maximise-pane' }
+  | { type: 'reveal-download'; id: string }
+  /** Opens a folder picker and writes the choice to that preference. */
+  | { type: 'choose-folder'; purpose: 'downloads' | 'sync' }
+  | { type: 'move-to-workspace'; serviceId: string; workspaceId: string }
   | { type: 'open-connections' }
   | { type: 'close-overlay' }
   | { type: 'add-service'; catalogId: string; forceNewAccount?: boolean }
@@ -511,6 +570,7 @@ export type Command =
   | { type: 'rename-service'; serviceId: string; name: string }
   /** Ask the rail to edit this service's name in place, opening the rail first if it is collapsed. */
   | { type: 'begin-rename-service'; serviceId: string }
+  | { type: 'begin-rename-folder'; folderId: string }
   | { type: 'remove-service'; serviceId: string }
   | { type: 'rename-account'; accountId: string; label: string }
   | { type: 'sign-out-account'; accountId: string }
@@ -537,6 +597,7 @@ export type Command =
   | { type: 'sleep-service'; serviceId: string }
   | { type: 'show-service-menu'; serviceId: string }
   | { type: 'show-rail-menu' }
+  | { type: 'show-workspace-menu' }
   | { type: 'create-folder'; name: string; serviceIds?: string[] }
   | { type: 'rename-folder'; folderId: string; name: string }
   | { type: 'delete-folder'; folderId: string }
@@ -588,7 +649,7 @@ export type Command =
   | { type: 'update-service'; serviceId: string; patch: Partial<ServiceInstance> };
 
 /** What the overlay is currently being used for. One view, three jobs. */
-export type OverlayMode = 'palette' | 'connections';
+export type OverlayMode = 'palette' | 'connections' | 'shortcuts';
 
 /**
  * The nonce exists so reopening the overlay in the *same* mode still remounts the renderer.

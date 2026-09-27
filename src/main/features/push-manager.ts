@@ -111,7 +111,9 @@ export class PushManager {
       if (client && credentials) return toSubscription(credentials);
       // Stored but not connected — connect now and return the stored keys.
       if (credentials) {
-        void this.connect(existing);
+        this.connect(existing).catch((err: unknown) =>
+          this.deps.log(`${serviceId}: reconnect failed — ${String(err)}`),
+        );
         return toSubscription(credentials);
       }
     }

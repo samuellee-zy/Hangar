@@ -44,6 +44,28 @@ function backfillService(svc: StoredService): ServiceInstance {
   } as ServiceInstance;
 }
 
+/** The version `migrateConfig` produces. v5: a catalog service's `url` is the user's own Start page. */
+export const CONFIG_VERSION = 5;
+
+/**
+ * A catalog service's `url`, kept only when it is a Start page someone chose.
+ *
+ * Builds before v5 copied the catalog's URL into every service, and a copy goes stale the moment
+ * the catalog is corrected — Notion's move from `.so` to `.com` sent every copied Notion to Safari.
+ * So until v5 the field was dropped on every load, which was safe only while nothing could set it.
+ * Settings → Connections can now: a self-hosted GitLab or Jira keeps its own address, and dropping
+ * it reverted the service to the catalog URL at the next launch.
+ *
+ * So the strip is a migration, not a habit. A config from before v5 loses whatever is there — no
+ * build before it could have written a real choice that survived a relaunch — and from v5 on only a
+ * value identical to the catalog's goes, since it is a copy and carries no choice at all.
+ */
+function withoutCopiedUrl(svc: ServiceInstance, fromVersion: number): ServiceInstance {
+  const entry = catalogById(svc.catalogId);
+  if (!entry || svc.url === undefined) return svc;
+  return fromVersion < 5 || svc.url === entry.url ? { ...svc, url: undefined } : svc;
+}
+
 export function migrateConfig(raw: unknown): Config {
   if (!raw || typeof raw !== 'object') throw new Error('config is not an object');
   const parsed = raw as StoredConfig;
@@ -86,18 +108,15 @@ export function migrateConfig(raw: unknown): Config {
     );
   }
 
+  const fromVersion = parsed.version ?? 0;
   return {
-    version: 4,
+    version: CONFIG_VERSION,
     // v2 → v3 added preferences (additive). v3 → v4 turns each workspace's flat serviceIds array
-    // into an ordered RailItem tree; migrateWorkspaceV3 is a no-op if it's already v4.
+    // into an ordered RailItem tree; migrateWorkspaceV3 is a no-op if it's already v4. v4 → v5
+    // stops discarding Start pages — see withoutCopiedUrl.
     preferences: withDefaults(parsed.preferences),
     accounts: migrated.accounts,
-    // Drop URLs copied from the catalog by older builds so those services pick up catalog fixes.
-    // Safe only while there's no UI for editing a service URL — when Settings gains one this must
-    // become a versioned migration that preserves genuine overrides.
-    services: migrated.services.map((svc) =>
-      catalogById(svc.catalogId) ? { ...svc, url: undefined } : svc
-    ),
+    services: migrated.services.map((svc) => withoutCopiedUrl(svc, fromVersion)),
     workspaces: (parsed.workspaces ?? []).map(migrateWorkspaceV3),
     activeWorkspaceId: parsed.activeWorkspaceId ?? parsed.workspaces?.[0]?.id ?? null,
     layouts: parsed.layouts ?? {},

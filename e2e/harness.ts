@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { _electron as electron, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { startFixtureServer, type FixtureServer } from './fixture-server';
 
 /**
@@ -16,7 +16,38 @@ export interface Harness {
   userData: string;
   /** The rail's renderer. Most assertions about the UI go through this. */
   rail: () => Promise<Page>;
+  /** The main process's own output, oldest first — the `[sync]`, `[drag]`… lines. */
+  log: () => string;
+  /**
+   * Quits the app, and fails if it won't. A hang is bounded (see `QUIT_TIMEOUT_MS`) and killed, and
+   * the error carries the app's last output — a quit that never finished used to surface only as
+   * Playwright's 60-second hook timeout, with nothing to say what the app was doing.
+   */
   close: (options?: { keepProfile?: boolean }) => Promise<void>;
+}
+
+/** Generous: a normal quit — cookie promotion included — takes well under a second. */
+const QUIT_TIMEOUT_MS = 15_000;
+
+/** How much of the app's output to keep. Enough to see the last few operations, not a whole run. */
+const LOG_LINES = 400;
+
+/**
+ * For each spec's `afterEach`. When a test failed, the app's own output goes into the report and
+ * onto the console — CI's log is often the only thing that can be read afterwards.
+ */
+export async function tearDown(h: Harness | undefined, testInfo: TestInfo): Promise<void> {
+  if (!h) return;
+  if (testInfo.status !== testInfo.expectedStatus) {
+    const log = h.log();
+    await testInfo.attach('main-process.log', { body: log, contentType: 'text/plain' });
+    console.error(`--- main process, last output (${testInfo.title}) ---\n${tail(log, 60)}`);
+  }
+  await h.close();
+}
+
+function tail(log: string, lines: number): string {
+  return log.split('\n').slice(-lines).join('\n');
 }
 
 let seq = 0;
@@ -45,7 +76,7 @@ export function seedConfig(origin: string, over: Record<string, unknown> = {}) {
   };
 
   return {
-    version: 4,
+    version: 5,
     accounts: [
       { id: 'acct-one', label: 'One', provider: 'custom', partition: 'persist:acct-one' },
       { id: 'acct-two', label: 'Two', provider: 'custom', partition: 'persist:acct-two' },
@@ -117,16 +148,24 @@ export async function launch(
     env: {
       ...inherited,
       HANGAR_USER_DATA: userData,
-      // Keep the diagnostic probe out of the way — it drives the app itself and would race the
-      // test.
-      HANGAR_PROBE: '',
+      // Tells the app no one is at the screen: see `reportFatal`.
+      HANGAR_E2E: '1',
     },
   });
+
+  const output: string[] = [];
+  const keep = (chunk: Buffer) => {
+    for (const line of chunk.toString('utf8').split('\n')) if (line.trim()) output.push(line);
+    if (output.length > LOG_LINES) output.splice(0, output.length - LOG_LINES);
+  };
+  app.process().stdout?.on('data', keep);
+  app.process().stderr?.on('data', keep);
 
   return {
     app,
     fixture,
     userData,
+    log: () => output.join('\n'),
     rail: async () => {
       // Windows arrive in load order; the rail is the shell's own renderer, identified by its
       // route hash rather than by position, which is not stable.
@@ -139,9 +178,25 @@ export async function launch(
       throw new Error(`no rail window; saw ${app.windows().map((w) => w.url()).join(', ')}`);
     },
     close: async ({ keepProfile = false } = {}) => {
-      await app.close().catch(() => {});
+      let timer: NodeJS.Timeout | undefined;
+      const quit = await Promise.race([
+        // An app that already exited — the --quit tests — rejects here, which is a quit too.
+        app.close().then(
+          () => true,
+          () => true
+        ),
+        new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), QUIT_TIMEOUT_MS))),
+      ]);
+      clearTimeout(timer);
+      if (!quit) app.process().kill('SIGKILL');
       await fixture.close();
-      if (!keepProfile) fs.rmSync(userData, { recursive: true, force: true });
+      if (!keepProfile) fs.rmSync(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      if (!quit) {
+        throw new Error(
+          `the app did not quit within ${QUIT_TIMEOUT_MS / 1000}s and was killed. Its last output:\n` +
+            tail(output.join('\n'), 80)
+        );
+      }
     },
   };
 }

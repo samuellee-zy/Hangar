@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AddConnection } from './AddConnection';
 import { Palette } from './Palette';
+import { ShortcutSheet } from './ShortcutSheet';
 import type { OverlayOpen } from '@shared/types';
 
 /**
@@ -43,5 +44,7 @@ export function OverlayRoot() {
   // Keyed on the nonce too: reopening in the same mode must still remount, or the picker keeps the
   // service list it fetched the first time it ever opened.
   const key = `${open.mode}:${open.nonce}`;
-  return open.mode === 'connections' ? <AddConnection key={key} /> : <Palette key={key} />;
+  if (open.mode === 'connections') return <AddConnection key={key} />;
+  if (open.mode === 'shortcuts') return <ShortcutSheet key={key} />;
+  return <Palette key={key} />;
 }

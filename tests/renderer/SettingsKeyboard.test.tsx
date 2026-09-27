@@ -11,9 +11,9 @@ import userEvent from '@testing-library/user-event';
 import { Keyboard } from '../../src/renderer/settings/Keyboard';
 import { sent } from './setup';
 import { DEFAULT_PREFERENCES } from '../../src/core/config/preferences';
-import type { ServiceInstance, ShellState } from '../../src/shared/types';
+import type { ServiceView, ShellState } from '../../src/shared/types';
 
-const svc = (id: string, over: Partial<ServiceInstance> = {}): ServiceInstance =>
+const svc = (id: string, over: Partial<ServiceView> = {}): ServiceView =>
   ({
     id,
     catalogId: 'slack',
@@ -22,8 +22,13 @@ const svc = (id: string, over: Partial<ServiceInstance> = {}): ServiceInstance =
     notifications: true,
     hibernate: true,
     zoom: 1,
+    initials: 'SL',
+    color: '#4A154B',
+    loading: false,
+    sleeping: false,
+    unread: 0,
     ...over,
-  }) as ServiceInstance;
+  }) as ServiceView;
 
 const state = (over: Partial<ShellState> = {}): ShellState =>
   ({

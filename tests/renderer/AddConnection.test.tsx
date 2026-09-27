@@ -157,3 +157,79 @@ describe('adding a second account', () => {
     });
   });
 });
+
+describe('the focus trap', () => {
+  it('TAB STAYS IN THE PICKER — the trap was set up before the picker existed, and never engaged', async () => {
+    // Bait outside the dialog, or `dialog.contains(activeElement)` is trivially true (see the
+    // Palette tests for how that once let a disabled trap pass).
+    const before = document.createElement('button');
+    before.textContent = 'before';
+    document.body.prepend(before);
+
+    // State arrives after the first render, exactly as it does in the app.
+    setShellState(state());
+    render(<AddConnection />);
+    await act(async () => {});
+    const after = document.createElement('button');
+    after.textContent = 'after';
+    document.body.append(after);
+
+    const dialog = screen.getByRole('dialog');
+    for (const shift of [false, true]) {
+      (dialog.querySelector('input') as HTMLElement).focus();
+      for (let i = 0; i < 60; i++) {
+        await userEvent.tab({ shift });
+        expect(document.activeElement, `escaped after ${i + 1} (shift: ${shift})`).not.toBe(before);
+        expect(document.activeElement, `escaped after ${i + 1} (shift: ${shift})`).not.toBe(after);
+      }
+    }
+    before.remove();
+    after.remove();
+  });
+});
+
+describe('searching', () => {
+  const render_ = async () => {
+    setShellState(state());
+    render(<AddConnection />);
+    await act(async () => {});
+  };
+
+  it('FINDS A SERVICE BY ITS OLD NAME OR ITS PROVIDER — "twitter" found nothing, "microsoft" no Outlook', async () => {
+    await render_();
+    await userEvent.type(screen.getByLabelText('Search services'), 'twitter');
+    expect(screen.getByRole('button', { name: /^X/ })).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('Search services'));
+    await userEvent.type(screen.getByLabelText('Search services'), 'microsoft');
+    expect(screen.getByRole('button', { name: /Outlook/ })).toBeInTheDocument();
+  });
+
+  it('NO MATCH OFFERS WHAT WAS TYPED AS A WEBSITE, and Enter adds it', async () => {
+    await render_();
+    await userEvent.type(screen.getByLabelText('Search services'), 'grafana.acme.io');
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing in the catalog called');
+    expect(screen.getByRole('button', { name: 'Add grafana.acme.io as a website' })).toBeInTheDocument();
+
+    await userEvent.keyboard('{Enter}');
+    expect(sent).toContainEqual({
+      type: 'add-custom-service',
+      name: 'grafana.acme.io',
+      url: 'https://grafana.acme.io',
+    });
+  });
+
+  it('arrow down from the search moves into the grid', async () => {
+    await render_();
+    screen.getByLabelText('Search services').focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.activeElement?.classList.contains('grid-tile')).toBe(true);
+  });
+
+  it('the custom form says what is wrong with an address, not just greys out Add', async () => {
+    await render_();
+    await userEvent.click(screen.getByRole('button', { name: 'Add any website by URL' }));
+    await userEvent.type(screen.getByLabelText('Website address'), 'not a url');
+    expect(screen.getByRole('alert')).toHaveTextContent('doesn’t look like a web address');
+  });
+});

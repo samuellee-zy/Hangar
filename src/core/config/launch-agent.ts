@@ -26,6 +26,20 @@ export function launchAgentWanted(prefs: Preferences): boolean {
   return prefs.behaviour.launchAtLogin;
 }
 
+/**
+ * Whether an executable is an installed copy, and so one login should launch.
+ *
+ * The job's `ProgramArguments` is whatever copy last wrote it, and every packaged copy writes it on
+ * boot. Opening the freshly built `dist/mac-arm64/Hangar.app` to try it out therefore repointed
+ * login at the build directory — which works right up until the next clean build deletes it, and
+ * then login starts nothing, with no error anywhere. Only a copy in an Applications folder may
+ * claim the job; the system one or the user's own `~/Applications`.
+ */
+export function isInstalledCopy(executable: string, home: string): boolean {
+  const roots = ['/Applications/', `${home.replace(/\/+$/, '')}/Applications/`];
+  return roots.some((root) => executable.startsWith(root) && executable.includes('.app/Contents/MacOS/'));
+}
+
 export interface LaunchAgentPaths {
   /** The executable inside the bundle: `/Applications/Hangar.app/Contents/MacOS/Hangar`. */
   program: string;
