@@ -22,6 +22,7 @@ declare global {
       onFindOpened: (fn: () => void) => () => void;
       onFindResult: (fn: (r: { active: number; total: number }) => void) => () => void;
       onOverlayOpen: (fn: (mode: OverlayOpen) => void) => () => void;
+      getDragHighlight: () => Promise<DropHighlight | null>;
       onDragHighlight: (fn: (highlight: DropHighlight | null) => void) => () => void;
       onDragEnded: (fn: () => void) => () => void;
     };

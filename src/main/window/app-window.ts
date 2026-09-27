@@ -510,6 +510,11 @@ export class AppWindow {
     this.win.setTitle(svc ? `${svc.name} — Hangar` : 'Hangar');
   }
 
+  /** What the drag layer should be drawing, for its page once it's listening. */
+  dragHighlight() {
+    return this.dragLayer.currentHighlight();
+  }
+
   get overlayOpen(): { mode: OverlayMode; nonce: number } | null {
     const mode = this.overlay.currentMode;
     return mode ? { mode, nonce: this.overlay.currentNonce } : null;
