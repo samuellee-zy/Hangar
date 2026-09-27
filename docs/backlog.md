@@ -4,10 +4,18 @@ Everything Hangar doesn't do yet, why, and what it would take. Categorised by **
 blocker**, not by feature area, because that's what determines whether something is a decision, a
 purchase, or an afternoon.
 
-Last updated after **Phase 7** (2026-09-26): the installed app ran with no reachable window, which
-led to removing `startHidden`, fixing the Dock and tray routes back, and a one-command signed local
-install — [decisions #96](decisions.md). A full audit of what remains is **§13**; it supersedes the
-older lists below wherever they overlap.
+Last updated after **Phase 8** (2026-09-27). It was a review against Rambox, Ferdium, Wavebox and
+Shift, an engineering-health pass and a UI/UX pass, and it shipped:
+- polish;
+- a command palette, services that keep running, and one Settings page per service;
+- resizable splits;
+- `hangar://` links;
+- pane headers.
+
+What it closed and what is still open is **§14** ([decisions #105–111](decisions.md)).
+
+**Phase 7** (2026-09-26) made the installed app reachable ([decisions #96](decisions.md)). Its
+audit is **§13**, and it supersedes the older lists below wherever they overlap.
 
 Before that, **Phase 6** (stability audit: config-sync lifecycle, teardown, renderer split), plus
 the long-running work: crash resilience, waking from sleep, and launch at login without a signature.
@@ -477,4 +485,100 @@ One unit test failed once and never again in a dozen runs; which one was not cap
 
 `spikes/google-login/sessions` is ~808 MB of **real cookie jars** (gitignored, but live
 credentials on disk); `out-check/` and the stale August DMGs in `dist/` can go.
+
+---
+
+## 14. Phase 8 (2026-09-27) — what it closed, and what is still open
+
+Planned against the codebase and three reviews, and shipped as one PR per step: #3, #4–#9. The
+findings are [decisions #104–111](decisions.md).
+
+### 14.1 Closed
+
+- **8.0, PR #3 green:**
+  - A Start page survives a relaunch.
+  - A quit can't hang the e2e suite, and one that stalls is killed with the app's log attached.
+  - Reordering tiles in the rail never involves main.
+  - The CI package step runs.
+- **8.1 polish:**
+  - One set of colour tokens, each with a light value.
+  - Service accents adjusted for the theme they're drawn on, including the focus ring.
+  - The keyboard follows a switch into the page.
+  - ⌘R and ⇧⌘R reload.
+  - The Settings window can be dragged.
+  - Banners name their service.
+  - Sync and import re-run preference effects.
+  - And the smaller rough edges listed in #105.
+- **8.4 health:**
+  - Type-aware lint and Dependabot; the renderer minified and split by route.
+  - One theme source; a config snapshot per launch.
+  - Scripts kept out of broadcasts and exports.
+  - A push generation counter; per-worker test profiles.
+  - axe in both themes; explicit sandboxes and a tighter CSP.
+  - `[boot]` timing marks.
+- **8.2 everyday:**
+  - The ⌘K command palette; ⌃Tab; next unread.
+  - Keep running; one Settings page per service.
+  - Do Not Disturb and mutes shown in the window, and a Badge only level.
+  - Pane loading, crash and not-responding states; plain-language error pages.
+  - Drop zones on a pane's edges.
+  - Recent notifications and downloads in the window.
+  - Clear cache and ad blocking per account.
+  - SVG icons; a grouped shortcut sheet; Go and Help menus; a fuller Dock.
+- **8.3, the three chosen:**
+  - **Layouts** (#7): resizable splitters with widths saved per layout; one large pane and a stack;
+    ⇧⌘T; move pane left/right.
+  - **Automation** (#8): `hangar://` links and command-line flags. See
+    [automation.md](automation.md).
+  - **Pane chrome** (#9): a title bar on the top strip, optional headers on every pane, and
+    dragging a pane by its header to swap or move it.
+
+### 14.2 Still open from Phase 8
+
+**Needs you.** Each needs an account, the network or a decision.
+- Unread selectors for Notion, Jira, Confluence, Trello, Asana, ClickUp, Monday and Figma: an
+  afternoon each with the page open ([unread-selectors.md](unread-selectors.md)).
+- Vendored icons for the catalog entries without one: `npm run icons` needs the network.
+- A VoiceOver pass, and pane landmarks (§4.3).
+- `npm run cert:local`, so camera and microphone grants survive a rebuild. It writes to the
+  keychain.
+- Deleting `spikes/google-login/sessions*`, which holds real cookie jars, and the stale `dist/`
+  DMGs.
+- The §2 hand checks. Add to them:
+  - a `hangar://` link from Shortcuts against the installed app, which is the only build that
+    registers the scheme;
+  - a double-click on the title bar zooming the window.
+- Apple signing (§1.1), for distribution and updates.
+
+**Built but not finished:**
+- **Splitters have no keyboard equivalent** beyond equal widths. The handle's view is never
+  focused, since focus goes back to the page after a drag.
+- **The stacked column in "one large pane" has no splitter** between its rows. Only column
+  boundaries are draggable.
+- **Headers are off by default.** Whether they should be on is worth deciding after using them.
+
+**Chosen not to build this round** (8.3). Each is unblocked and roughly sized:
+- **App lock** (M): Touch ID or a password, on screen lock or idle.
+- **Task manager** (S–M): per-service memory and CPU. `app:metrics` exists and only Settings
+  reads it.
+- **Schedules** (M): quiet hours per service and globally, and workspaces on a timetable. They
+  would run on the 30-second sweep.
+- **Per-service extras** (S each):
+  - a chord to jump to it;
+  - audio mute and a "playing" mark;
+  - a notification sound;
+  - forced dark mode;
+  - a custom icon;
+  - duplicate a service;
+  - one service in several workspaces.
+- **Calls** (M): a pop-out that floats on top, and pop-outs that keep Hangar's hooks.
+- **Links** (S–M):
+  - "Open in another pane or service" in the link menu;
+  - a browser choice for external links;
+  - rules of your own.
+- **Import from Ferdium** (M). Check first that Electron 43's Node has `node:sqlite`.
+- **Toasts** (S) for copy, zoom, mark read and sync, which undo would build on.
+- **Several tabs per service** (L). It changes the data model: a service would own a list of views.
+- **Browser extensions: deferred.** Password managers need native messaging, which Electron
+  doesn't have.
 

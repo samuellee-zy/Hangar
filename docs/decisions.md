@@ -2285,3 +2285,112 @@ The review's small findings, fixed together because most were one cause showing 
 - **A banner's click is routed by boot**, which can build a window, instead of by the window that
   raised it — after ⌘W that window was destroyed, and the click threw on it.
 
+
+## 106. Engineering health: what the linter, the bundle and the broadcasts were hiding
+
+- **`tsc` can't see a promise nobody awaits.** ESLint now runs type-aware, with
+  `no-floating-promises` and `no-misused-promises` for exactly that — a rejection with no handler,
+  an async function passed where a void callback was expected — and React's hook rules beside them.
+- **The renderer was 831 KB, unminified, and one chunk loaded by six views.** It is minified now
+  and split per route. **The drag layer and the find bar stay in the entry chunk.** Lazy-loaded,
+  the drag layer missed the first highlight: main sends it the moment the view exists, before a lazy
+  component is listening. A CI check guards the size.
+- **One theme source.** `shared/theme.ts` holds the window, text and tile colours that main paints
+  and the stylesheet uses. A test checks that the two agree.
+- **The config is snapshotted once per launch** (`config.launch.json`). A round-trip test covers
+  every key, since `migrate` drops keys it doesn't know.
+- **Broadcasts no longer carry scripts.** Custom JS and CSS go to the Settings window, which edits
+  them, and nowhere else.
+- **Push has a generation counter.** A `connect()` still in flight after `stopAll()` gives up at
+  its next `await` instead of opening a socket nobody owns.
+- **Each Vitest worker gets its own `userData`.** They had shared one directory, which was the
+  likely source of the one-off flake.
+
+## 107. Everyday UX: a command palette, services that keep running, one page per service
+
+- **⌘K is a command palette.** It lists every keymap action by its menu name, plus verbs for the
+  focused service, recent services first. The keymap table already had each action's label and
+  command for the menu, so the palette is a third reader of it rather than a second list.
+- **Keep running is opt-in per service.** It means loaded at launch and exempt from hibernation,
+  so the service notifies without a pane. A view with no bounds still runs; it just draws nothing.
+- **The accent is chosen by the stylesheet, not a listener.** `accentStyle` sets both variants,
+  `--accent-dark` and `--accent-light`, and a media query picks one. Picking in JS went stale
+  whenever the theme changed without an event reaching the renderer, as it does under emulation.
+- **Badge only** is a notification level between All and Off: counted, never a banner. It
+  merged the mute flag and the notifications toggle into one setting.
+- **A pane's edges open beside it** (`edgeZone`, a quarter of the pane up to 120px). "Open
+  alongside" used to be only the 6px gutter, so with one pane it was unreachable.
+
+## 108. A colour token defined as itself
+
+The pass that replaced literal colours with tokens (#105) was a find-and-replace, and it also hit
+the definitions: `--focus: var(--focus)` and `--danger: var(--danger)`. A custom property that
+refers to itself is invalid at computed-value time, so every property using it falls back to its
+initial value. In the dark theme that removed the focus outlines, the drop target's border and the
+red of destructive buttons.
+
+Nothing reported it:
+- There was no console error.
+- axe passed: a lost text colour inherits a readable one.
+- The screenshots were looked at for layout, not for those three details.
+
+It was found by reading the stylesheet while adding the splitter's line.
+
+`tests/renderer/tokens.test.ts` now fails on any token that refers to itself, and on any token
+that is used without being defined.
+
+## 109. Splitters: a view per gutter, screen coordinates, and nothing re-attached mid-drag
+
+- **A gutter has nothing to take a pointer.** It is bare window background, and a `View` has no
+  mouse events. So each boundary gets a thin transparent `WebContentsView` (`features/splitters.ts`).
+  Views are pooled, not closed, when columns drop: one closed while its page was still loading
+  logged a failed load.
+- **The drag reports `screenX`.** The splitter's view moves with the boundary it is dragging. A
+  client position is measured from where the view was when the event was made, a frame earlier,
+  and main is moving it every frame. That is a feedback loop.
+- **Nothing re-attaches a splitter mid-drag.** macOS sends the rest of a press to the view that
+  received the mouse-down. `relayout` re-adds every pane on top, so splitters have to be raised
+  again, but only when a pane is actually above one (`raiseAbove`). The drag itself takes a fast
+  path that only sets bounds.
+- **The minimum width gives way in a narrow window.** No pane is dragged under 280px. But three
+  columns in 820px are 240px each already, and a floor of half the pair pinned every boundary in
+  place. The floor is now a third of the pair when 280px can't fit.
+- **The z-order test needed a second relayout to mean anything.** After the first relayout the
+  splitter sat above the panes only because it was created after them. With the raise removed, the
+  test still passed until it relayouts before checking.
+
+## 110. `hangar://` links: a link is never a command
+
+Any page can open a `hangar://` link: a browser, a mail, a service Hangar is showing. So
+`core/runtime/deeplink.ts` parses a link into one of seven verbs and builds commands from fixed
+templates. Nothing from the link reaches `dispatch` except a name to look up. A test runs hostile
+links through it and checks that only eight command types ever come out, and that the one patch it
+can produce is a mute.
+
+- **Flags are rewritten as links and parsed once,** so the two grammars can't drift apart.
+  A second launch hands them to the running copy in `requestSingleInstanceLock`'s
+  `additionalData`, the way `--quit` does. Chromium rewrites the forwarded argv; `additionalData`
+  is ours.
+- **Only asking to see something brings the window forward.** `open`, `workspace` and `show` do.
+  A Focus automation turning on Do Not Disturb doesn't.
+- **A service is found by name before catalog entry.** With two Gmails, `gmail` means either one;
+  the name is what the user chose.
+- **An unpackaged build never registers the scheme.** Doing so from `npm run dev` would make
+  Electron itself the handler for `hangar://`.
+
+## 111. Pane bars: their own channel, tucked under the page, and a drag that moves the pane
+
+- **Title bar and headers get a channel of their own** (`pane-chrome:state`), not `ShellState`.
+  A page's title changes whenever a chat app's count does, and the rail, the overlay and Settings
+  would have re-rendered for each change.
+- **A header runs `PANE_RADIUS` under its page** (`splitCard`). Electron rounds every corner of a
+  view alike, so a header exactly its own height pinched where its rounded bottom met the page's
+  rounded top.
+- **The title bar paints the window's colour instead of staying transparent.** It's the same
+  picture on screen, but axe measured the text against white and failed it in the dark theme.
+- **A title loses its count, and is dropped when it only repeats the name.** "(3) Slack" beside
+  "Slack" says nothing; the rail already shows the count.
+- **Dragging a pane reuses the tile drag.** It uses the same frozen geometry, layer and highlight,
+  with a pane in flight instead of a service, and a drop that moves the pane.
+  - "A new pane" is always offered, even with four open, because moving a pane doesn't add one.
+  - Dropping a pane on itself, or beside itself, does nothing and draws nothing.
