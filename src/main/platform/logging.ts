@@ -1,4 +1,5 @@
 import { app, dialog } from 'electron';
+import { redactUrlsIn } from '@core/runtime/urls';
 
 /**
  * Keeping a missing terminal from killing the app.
@@ -144,6 +145,7 @@ export function installLogGuards(): void {
   process.on('unhandledRejection', (reason) => {
     if (isBrokenPipe(reason)) return;
     const err = reason instanceof Error ? reason : new Error(String(reason));
-    console.error(`[unhandled-rejection] ${err.stack ?? `${err.name}: ${err.message}`}`);
+    // Through redaction: a failed load's rejection names the URL it was loading, query and all.
+    console.error(`[unhandled-rejection] ${redactUrlsIn(err.stack ?? `${err.name}: ${err.message}`)}`);
   });
 }

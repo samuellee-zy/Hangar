@@ -16,8 +16,14 @@ import { redactUrlsIn } from '@core/runtime/urls';
 
 export const LOG_FILE = path.join(os.homedir(), 'Library', 'Logs', 'Hangar', 'hangar.log');
 
-/** Rotated past this at boot, to `hangar.log.1`. One generation is plenty for a personal app. */
+/** Rotated past this, to `hangar.log.1`. One generation is plenty for a personal app. */
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
+
+/**
+ * How often the size is checked after boot. Under launchd the app runs for weeks between launches,
+ * and a boot-only check let the file grow without limit the whole time.
+ */
+const ROTATE_CHECK_MS = 10 * 60_000;
 
 /**
  * Copy-and-truncate rather than rename. launchd holds the file open, in append mode, for the life
@@ -49,6 +55,17 @@ function stdoutIsFile(file: string): boolean {
     return out.ino === log.ino && out.dev === log.dev;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Timestamps on the lines launchd captures. A copy launchd started writes to the log through its
+ * stdout, which is why it skips the tee below — and why every line it wrote had no time on it.
+ */
+function timestampConsole(): void {
+  for (const level of ['log', 'warn', 'error'] as const) {
+    const original = console[level].bind(console);
+    console[level] = (...args: unknown[]) => original(`${new Date().toISOString()} ${format(...args)}`);
   }
 }
 
@@ -89,6 +106,11 @@ export function setUpLogFile(): void {
     return;
   }
   const rotated = rotateIfLarge(LOG_FILE);
-  if (!stdoutIsFile(LOG_FILE)) teeConsole(LOG_FILE);
+  if (stdoutIsFile(LOG_FILE)) timestampConsole();
+  else teeConsole(LOG_FILE);
   if (rotated) console.log(`[log] rotated the previous log to ${path.basename(LOG_FILE)}.1`);
+  // Copy-and-truncate is safe under either writer: both hold the file in append mode.
+  setInterval(() => {
+    if (rotateIfLarge(LOG_FILE)) console.log(`[log] rotated to ${path.basename(LOG_FILE)}.1`);
+  }, ROTATE_CHECK_MS).unref();
 }

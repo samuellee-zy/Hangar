@@ -13,6 +13,7 @@ import { AppWindow } from '@main/window/app-window';
 import { setNotificationClickRoute } from '@main/window/attention';
 import { isInternalSender } from '@main/platform/renderer-url';
 import { commandProblem, isCommand } from '@core/commands';
+import { redactUrl } from '@core/runtime/urls';
 
 /**
  * Process entry point. Owns boot order, the single-instance lock, the IPC surface and quitting.
@@ -215,7 +216,9 @@ app.whenReady().then(() => {
  */
 function fromApp(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, channel: string): boolean {
   if (isInternalSender(event)) return true;
-  console.warn(`[ipc] ignored ${channel} from ${event.senderFrame?.url.slice(0, 80) ?? 'a closed frame'}`);
+  // Redacted: a sign-in page's URL carries `login_hint` and nonces in its query.
+  const from = event.senderFrame ? redactUrl(event.senderFrame.url).slice(0, 80) : 'a closed frame';
+  console.warn(`[ipc] ignored ${channel} from ${from}`);
   return false;
 }
 
