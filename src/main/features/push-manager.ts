@@ -196,7 +196,29 @@ export class PushManager {
     client.on('ON_CONNECT', () => {
       // Reset the backoff only on a *successful* connection, so a flapping socket still backs off.
       this.attempts.delete(serviceId);
+      // The receiver retries a dropped socket by itself, and so do we — one drop was two
+      // reconnects. Whichever lands first wins: the library's own retry cancels ours here, and ours
+      // tears the library's down (`teardown` → `destroy`, which clears its timer) if it fires first.
+      // Ours stays because the library's gives up for good when re-registering fails.
+      const pending = this.timers.get(serviceId);
+      if (pending) clearTimeout(pending);
+      this.timers.delete(serviceId);
     });
+
+    // Whether this client is still the one the manager holds. `stopAll`, `unsubscribe` or a newer
+    // connect can replace it during any await below; carrying on would open a socket nothing tracks —
+    // the receiver's `connect()` builds a fresh one even after `destroy()` — and deliver into a
+    // window that may no longer exist. The duplicate-notification bug of decisions #54, by another
+    // road.
+    const superseded = () => this.clients.get(serviceId) !== client;
+    const giveUp = () => {
+      try {
+        client.destroy();
+      } catch {
+        // Already gone, which is the state we want.
+      }
+      return new Error(`push: ${serviceId} was stopped while connecting`);
+    };
 
     let credentials: PushTypes.Credentials;
     try {
@@ -213,8 +235,10 @@ export class PushManager {
       this.teardown(serviceId);
       throw new Error(`push: ${serviceId} was removed while registering`);
     }
+    if (superseded()) throw giveUp();
     this.persist({ serviceId, vapidKey, credentials, seenIds: registration.seenIds });
     await client.connect();
+    if (superseded()) throw giveUp();
     this.deps.log(`push: connected for ${serviceId}`);
     return credentials;
   }

@@ -125,3 +125,47 @@ describe('reconnecting every socket after a wake', () => {
     expect(FakeReceiver.instances).toHaveLength(2);
   });
 });
+
+describe('a connect that is overtaken', () => {
+  it('STOPPED MID-REGISTRATION, IT OPENS NOTHING — the socket nobody would track', async () => {
+    // `stopAll` ran while `registerIfNeeded` was in flight. The receiver's `connect()` builds a new
+    // socket even after `destroy()`, so carrying on opened one nothing held and nothing would close.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const original = FakeReceiver.prototype.registerIfNeeded;
+    FakeReceiver.prototype.registerIfNeeded = async function () {
+      await gate;
+      return { token: 't' };
+    };
+    try {
+      const push = manager(['a']);
+      push.start(['a']);
+      await settle();
+      push.stopAll();
+      release();
+      await settle();
+
+      const [client] = FakeReceiver.instances;
+      expect(client!.connects, 'connect() must not run on a stopped client').toBe(0);
+      expect(client!.destroyed).toBe(true);
+      expect(push.activeCount).toBe(0);
+    } finally {
+      FakeReceiver.prototype.registerIfNeeded = original;
+    }
+  });
+
+  it('A DROP IS ONE RECONNECT — the receiver\'s own retry cancels ours when it lands first', async () => {
+    vi.useFakeTimers();
+    const push = manager(['a']);
+    push.start(['a']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const [client] = FakeReceiver.instances;
+    client!.emit('ON_DISCONNECT'); // ours is now on a timer
+    client!.emit('ON_CONNECT'); // …and the receiver's own retry got there first
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeReceiver.instances, 'no second client from the timer that lost').toHaveLength(1);
+    expect(client!.destroyed).toBe(false);
+  });
+});
