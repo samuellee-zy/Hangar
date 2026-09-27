@@ -122,6 +122,9 @@ function restoreBounds(saved: WindowBounds | undefined): WindowBounds {
   );
 }
 
+/** How often config sync asks the remote for changes made on another machine. */
+const SYNC_POLL_MS = 5 * 60_000;
+
 /**
  * Composes the shell: window, rail, panes, overlay. Every mutation funnels through `dispatch`,
  * and every mutation ends in `sync()` — the rail is a pure render target, so there is exactly one
@@ -322,6 +325,7 @@ export class AppWindow {
     // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
     // time an incoming config could land.
     void this.configSync.reconcile();
+    this.configSync.startPolling(SYNC_POLL_MS);
 
     this.scanOrphanPartitions();
     this.restoreLayout();

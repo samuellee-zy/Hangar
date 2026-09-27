@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigSync, type SyncDeps } from '@main/features/sync';
+import { serialise } from '@core/config/sync';
 import { DEFAULT_PREFERENCES } from '@core/config/preferences';
 import type { Config } from '@shared/types';
 
@@ -241,5 +242,36 @@ describe('an incoming config is not applied to a dead window', () => {
 
     expect(write).not.toHaveBeenCalled();
     expect(onApplied).not.toHaveBeenCalled();
+  });
+});
+
+describe('what schedules a pass', () => {
+  it('A WRITE THAT CHANGES NOTHING THAT TRAVELS SCHEDULES NOTHING — a window move was a git fetch', async () => {
+    vi.useFakeTimers();
+    try {
+      let current = config();
+      const reconcile = vi.fn();
+      const sync = makeSync({ read: () => current });
+      (sync as unknown as { reconcile: () => Promise<unknown> }).reconcile = async () => {
+        reconcile();
+        return sync.current();
+      };
+      // What the last pass saw.
+      (sync as unknown as { lastLocal: string }).lastLocal = serialise(current);
+
+      // Machine-local: the window bounds don't travel.
+      current = { ...current, window: { x: 10, y: 10, width: 1200, height: 800 } };
+      sync.schedule();
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(reconcile).not.toHaveBeenCalled();
+
+      // A service does.
+      current = { ...current, workspaces: [{ id: 'w', name: 'Renamed', items: [] }] };
+      sync.schedule();
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(reconcile).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

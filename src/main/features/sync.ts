@@ -128,6 +128,12 @@ export class ConfigSync {
   private disposed = false;
   /** Probe results by web URL, so a reconcile every few seconds isn't a request every few seconds. */
   private visibility = new Map<string, { verdict: RepoVisibility; at: number }>();
+  /**
+   * What travels, as of the last pass. A config write that leaves it unchanged — a window move, a
+   * pane focus, a push id — schedules nothing: each one used to cost a git fetch five seconds later.
+   */
+  private lastLocal: string | null = null;
+  private poll: NodeJS.Timeout | null = null;
 
   constructor(private deps: SyncDeps) {}
 
@@ -143,6 +149,7 @@ export class ConfigSync {
   schedule(): void {
     if (this.disposed) return;
     if (this.deps.repoPath() === null) return;
+    if (serialise(this.deps.read()) === this.lastLocal) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.reconcile(), 5_000);
     this.timer.unref?.();
@@ -161,6 +168,19 @@ export class ConfigSync {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    if (this.poll) clearInterval(this.poll);
+    this.poll = null;
+  }
+
+  /**
+   * Asks the remote on a steady interval. Incoming changes from another machine were noticed only
+   * because local writes happened to trigger a pass — every window move did — which stopped being
+   * true once `schedule` learned to skip writes that change nothing that travels.
+   */
+  startPolling(intervalMs: number): void {
+    if (this.poll) clearInterval(this.poll);
+    this.poll = setInterval(() => void this.reconcile(), intervalMs);
+    this.poll.unref?.();
   }
 
   /** Fetch, decide, act. The only thing that touches git. */
@@ -244,6 +264,7 @@ export class ConfigSync {
 
     const local = this.deps.read();
     const localText = serialise(local);
+    this.lastLocal = localText;
     const remoteText = this.readRemote(repo);
     const action = decideSync({ local: localText, remote: remoteText, base: this.deps.readBase() });
 
@@ -309,6 +330,7 @@ export class ConfigSync {
     // The base is what we just agreed on, computed from the merged config so it matches what a
     // subsequent `serialise(local)` will produce.
     this.deps.writeBase(serialise(merged));
+    this.lastLocal = serialise(merged);
     this.deps.onApplied(local);
     this.deps.log('applied an incoming config');
     this.set({ state: 'idle', lastSync: Date.now() });
