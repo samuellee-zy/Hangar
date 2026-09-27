@@ -108,14 +108,19 @@ become its own package: the boundary is what makes that a `git mv` rather than a
 
 | Path | Role |
 | --- | --- |
-| `boot/index.ts` | Entry point: boot order, single-instance lock, IPC surface, background loops |
+| `boot/index.ts` | Entry point: boot order, single-instance lock, IPC surface (commands shape-checked by `core/commands.ts`), quitting |
+| `boot/maintenance.ts` | The background loops: session-cookie promotion, the hibernation and endpoint sweeps, suspend and resume |
 | `boot/menu.ts` | The application menu, built from the keymap. Owning it is the only way to own ⌘W ([#11](decisions.md)); registering nothing is the only way to rebind it ([#89](decisions.md)) |
-| `window/app-window.ts` | Composition root. `dispatch`, `sync`, `relayout`, `dispose` |
+| `window/app-window.ts` | Composition root: the window, the rail, panes and `relayout`, `sync`, `dispose`. Builds the pieces below, each with a small host of getters and closures |
+| `window/commands/` | Every command's handler, one file per concern (panes, services, workspaces, preferences, data, surfaces), behind a `ShellContext` that lists what a handler may reach. `dispatch` is a lookup |
+| `window/attention.ts` | `AttentionCenter`: unread, banners, the Dock badge, push delivery and the recent-notifications list |
+| `window/preference-effects.ts` | How a preference reaches outside the config — launchd, proxy, global shortcut, tray, push, ad blocking |
+| `window/tile-drag.ts` | Dragging a rail tile onto a pane: frozen geometry, coordinate translation, the drop |
 | `window/service-manager.ts` | A `WebContentsView` per service; load, sleep, recover |
 | `window/overlay.ts` | Palette and picker layer, attached on demand |
 | `window/shortcuts.ts` | `before-input-event` wiring — one listener per contents, keymap read per keystroke |
 | `features/` | push-manager, endpoint-poll, sync, drag-layer, find-bar, tray, settings-window, transfer, icons, context-menu. The first three run on timers; `drag-layer` and `find-bar` are attached only for the duration of an interaction |
-| `platform/` | config, session, persist-cookies, system, launch-agent, sync-base, ua, quit-state, renderer-url, safe-send, logging |
+| `platform/` | config, session, persist-cookies, system, launch-agent, sync-base, ua, quit-state, renderer-url, safe-send, logging, log-file, external, adblock |
 
 ### `src/preload/`, `src/renderer/`, `src/shared/`
 
@@ -193,8 +198,8 @@ then `showWindow()`, which re-checks the bounds against the current displays. `H
 other half of the single-instance handoff: the running copy quits without its confirm dialog, which
 is how `scripts/install-local.mjs` replaces a copy that launchd is supervising.
 
-Then three background loops: session-cookie promotion every 60s, the hibernation sweep every 30s, and
-the endpoint poll every 30s. Each runs on a timer under `void`, so each catches its own rejection —
+Then three background loops, in `boot/maintenance.ts`: session-cookie promotion every 60s, the
+hibernation sweep every 30s, and the endpoint poll every 30s. Each runs on a timer under `void`, so each catches its own rejection —
 otherwise the only symptom of a broken loop is that it silently stopped.
 
 The power hooks are what make those survive a closed lid. `suspend` flushes cookies, because a

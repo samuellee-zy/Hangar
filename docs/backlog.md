@@ -225,7 +225,7 @@ Not bugs; things that will look like bugs later.
 ## 8. Suggested order
 
 If picking this up fresh: §13 is mostly closed, and what remains in it is listed there with the
-reason each is open — `CommandRouter` (§13.6) is the one worth doing first. Then:
+reason each is open. Then:
 
 1. **Fill in unread selectors** — the DOM mechanism ships ([decisions #90](decisions.md)), with
    rules for Salesforce and GitLab and a per-service field for the rest. Notion, Jira, Confluence,
@@ -389,15 +389,24 @@ refused-shortcut message is an alert and the find-bar count is a status region.
 Still open from §4.3: pane landmark roles, and a real VoiceOver pass — both need the app running
 under VoiceOver rather than more code first.
 
-### 13.6 Structure (P2) — started
+### 13.6 Structure (P2) — mostly done
 
-`AttentionCenter` (`window/attention.ts`) now owns unread, banners, the badge, push delivery and the
-recent list, behind a seven-method host interface. `app-window.ts` is ~2,300 lines and still has
-the ~650-line `dispatch`. The rest of the split, along the seams it already has: `CommandRouter` (a
-handler map, input schema-validated — the next one worth doing, since `dispatch` is most of the
-file), `WindowController` (bounds, show/hide, focus ring), `PaneController` (relayout, open,
-sleep), `PreferenceEffects`, `TileDragController`, and a scheduler for the timers in
-`boot/index.ts`.
+`app-window.ts` went from ~2,500 lines to ~1,540, with no behaviour change, along the seams it
+already had:
+
+- `window/commands/` — the ~650-line `dispatch` switch became six handler files by concern behind
+  a `ShellContext` listing exactly what a handler may reach; `dispatch` is a lookup, and a test
+  checks every command type has exactly one handler.
+- `core/commands.ts` — a schema for every command, checked where commands arrive over IPC, that
+  `satisfies` the `Command` union so a new type without an entry does not compile.
+- `window/attention.ts` — unread, banners, the badge, push delivery, recent notifications.
+- `window/preference-effects.ts` and `window/tile-drag.ts`.
+- `boot/maintenance.ts` — the background loops and suspend/resume, out of the entry point.
+
+Each is built by AppWindow with a small host of getters and closures, so its own members stay
+private. What is left in AppWindow is the composition itself — window, rail, panes, `relayout`,
+`sync`, lifecycle. A `WindowController` (bounds, show/hide, focus ring) is the one further cut that
+would still pay; `relayout` is the centre everything else calls and is better left where it is.
 
 ### 13.7 UI/UX enhancements — mostly done
 
