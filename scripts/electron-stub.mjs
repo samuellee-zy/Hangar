@@ -1,12 +1,16 @@
-// Lets main-process modules be bundled and exercised under plain node. Between them they touch
-// Electron for two things — `app.getPath('userData')` and `net.isOnline()` — so a short stub is
-// enough to test the whole add-service path, and the endpoint poller's guards, without launching a
-// window.
+// Lets main-process modules be bundled and exercised under plain node. Each export is the least a
+// module needs from Electron to import and run under a unit test — `app.getPath`, `net.isOnline`,
+// and the few others below, each with a note on why it's shaped the way it is.
 
 import os from 'node:os';
 import path from 'node:path';
 
-const dir = path.join(os.tmpdir(), 'hangar-check');
+/**
+ * One userData per worker. Vitest runs test files in parallel, and a single shared directory let one
+ * file delete it (add-service does, to start clean) while another was reading its config — a failure
+ * that appeared once and never again, in whichever test happened to be reading at the time.
+ */
+const dir = path.join(os.tmpdir(), `hangar-check-${process.env['VITEST_POOL_ID'] ?? process.pid}`);
 
 export const app = {
   getPath: () => dir,
