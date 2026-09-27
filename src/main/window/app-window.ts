@@ -499,6 +499,7 @@ export class AppWindow {
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
       iconVersions: iconVersions(),
+      recentServiceIds: this.recentServiceIds.filter((id) => loadConfig().services.some((s) => s.id === id)),
       about: { version: app.getVersion(), configPath: configFilePath(), logPath: LOG_FILE },
       globalShortcutStatus: globalShortcutStatus(),
       isDefaultMailApp: this.isDefaultMailApp(),
@@ -897,6 +898,7 @@ export class AppWindow {
 
     if (newPane && !this.layout.isFull) this.layout.add(serviceId);
     else this.layout.show(serviceId);
+    this.noteUsed(serviceId);
 
     this.relayout();
     this.saveLayout();
@@ -1181,6 +1183,7 @@ export class AppWindow {
       purgeOrphanPartitions: () => this.purgeOrphanPartitions(),
       registerConsumer: (wc) => this.registerConsumer(wc),
       unreadOf: (id) => this.unread.get(id),
+      recentServiceIds: () => this.recentServiceIds,
       clearUnread: (id) => this.clearUnread(id),
       pushUnreadRules: (id) => this.pushUnreadRules(id),
       applyAllPreferenceEffects: () => this.effects.applyAll(),
@@ -1650,7 +1653,16 @@ export class AppWindow {
   private focusActivePane(): void {
     const pane = this.layout.focused();
     if (!pane) return;
+    this.noteUsed(pane.serviceId);
     const runtime = this.services.get(pane.serviceId);
     if (runtime && !runtime.view.webContents.isDestroyed()) runtime.view.webContents.focus();
+  }
+
+  /** Services by most recent use, newest first. See `ShellState.recentServiceIds`. */
+  private recentServiceIds: string[] = [];
+
+  private noteUsed(serviceId: string): void {
+    if (this.recentServiceIds[0] === serviceId) return;
+    this.recentServiceIds = [serviceId, ...this.recentServiceIds.filter((id) => id !== serviceId)].slice(0, 20);
   }
 }

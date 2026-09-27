@@ -112,6 +112,9 @@ export type ActionId =
   | 'forward'
   | 'reload'
   | 'hard-reload'
+  | 'next-unread'
+  | 'previous-service'
+  | 'mark-all-read'
   | 'sleep-others';
 
 export interface KeyAction {
@@ -262,6 +265,32 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'reload-service', serviceId: '#focused', ignoreCache: true },
     menu: 'view',
     defaultChord: primaryChord('r', { shift: true }),
+  },
+  // Walks on through everything waiting: each press goes to the next service with unread after the
+  // focused one, across workspaces.
+  {
+    id: 'next-unread',
+    label: 'Next service with unread',
+    command: { type: 'focus-next-unread' },
+    menu: 'view',
+    group: true,
+    defaultChord: primaryChord('u', { shift: true }),
+  },
+  // ⌃Tab, the browser's "other tab": back to the service used before this one. ⌘Tab is the
+  // system's (RESERVED_CHORDS), and ⌃Tab is free in every service we ship.
+  {
+    id: 'previous-service',
+    label: 'Previous service',
+    command: { type: 'focus-previous-service' },
+    menu: 'view',
+    defaultChord: 'ctrl+tab',
+  },
+  {
+    id: 'mark-all-read',
+    label: 'Mark all as read',
+    command: { type: 'mark-all-read' },
+    menu: 'view',
+    defaultChord: '',
   },
   // No default chord. It's a real action, it belongs in the menu, and there is no obvious key for
   // it — which is exactly the case rebinding exists to serve.

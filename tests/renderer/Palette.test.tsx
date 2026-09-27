@@ -212,3 +212,52 @@ describe('every workspace', () => {
     expect(screen.queryByText('No matches')).not.toBeInTheDocument();
   });
 });
+
+describe('a command palette, not only a switcher', () => {
+  const focusedOn = (serviceId: string, over: Partial<ShellState> = {}) =>
+    state({
+      panes: [{ id: 'p1', serviceId }],
+      focusedPaneId: 'p1',
+      keyboard: {
+        actions: [
+          { id: 'reload', label: 'Reload page', chord: 'meta+r', conflict: false, command: { type: 'reload-service', serviceId: '#focused' } },
+          { id: 'palette', label: 'Command palette', chord: 'meta+k', conflict: false, command: { type: 'open-palette' } },
+        ],
+        reserved: [],
+        passthrough: {},
+      },
+      ...over,
+    });
+
+  it('TYPING FINDS ACTIONS — the keymap by name, and verbs for the focused service', async () => {
+    await renderPalette(focusedOn('slack'));
+    await userEvent.type(screen.getByRole('combobox'), 'reload');
+    const names = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(names.some((n) => n.startsWith('Reload Slack'))).toBe(true);
+    expect(names.some((n) => n.startsWith('Reload page') && n.includes('⌘R'))).toBe(true);
+    // Not itself: choosing "Command palette" from the palette would only close it.
+    expect(names.some((n) => n.startsWith('Command palette'))).toBe(false);
+  });
+
+  it('running an action closes the palette first, then does it', async () => {
+    await renderPalette(focusedOn('slack'));
+    await userEvent.type(screen.getByRole('combobox'), 'reload slack{Enter}');
+    expect(sent.slice(-2)).toEqual([
+      { type: 'close-overlay' },
+      { type: 'reload-service', serviceId: 'slack' },
+    ]);
+  });
+
+  it('an empty palette is a switcher: services and workspaces, no actions', async () => {
+    await renderPalette(focusedOn('slack'));
+    const names = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(names.some((n) => n.startsWith('Reload'))).toBe(false);
+  });
+
+  it('LISTS SERVICES BY MOST RECENT USE — the next jump is most likely back', async () => {
+    await renderPalette(state({ recentServiceIds: ['notion', 'gmail'] }));
+    const first = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(first[0]).toMatch(/^Notion/);
+    expect(first[1]).toMatch(/^Gmail/);
+  });
+});

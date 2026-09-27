@@ -512,6 +512,11 @@ export interface ShellState {
    * the answer would disagree exactly then.
    */
   railExpanded: boolean;
+  /**
+   * Services by most recent use, newest first — what the palette lists before anything is typed,
+   * and what ⌃Tab goes back through. In memory only: a restart starts a fresh history.
+   */
+  recentServiceIds?: string[];
   /** The shortcut table, resolved against the stored bindings. See `KeyboardMap`. */
   keyboard: KeyboardMap;
 }
@@ -532,6 +537,8 @@ export interface KeyboardMap {
     chord: string;
     /** True when another action holds the same chord, which only a hand-edited config produces. */
     conflict: boolean;
+    /** What the action does, so the palette can offer every one of them by name. */
+    command: Command;
   }>;
   /** Chords the menu bar's roles already own. Settings refuses them before sending. */
   reserved: string[];
@@ -569,6 +576,12 @@ export type Command =
   /** `until` null unmutes; a number mutes until then. */
   | { type: 'mute-service'; serviceId: string; until: number | null }
   | { type: 'mark-read'; serviceId: string }
+  /** Every service, everywhere — the palette's "Mark all as read". */
+  | { type: 'mark-all-read' }
+  /** The next service after the focused one, in rail order, with something unread. */
+  | { type: 'focus-next-unread' }
+  /** Back to the service used before this one (⌃Tab). */
+  | { type: 'focus-previous-service' }
   | { type: 'reveal'; what: 'config' | 'log' }
   | { type: 'make-default-mail-app' }
   | { type: 'pop-out-service'; serviceId: string }

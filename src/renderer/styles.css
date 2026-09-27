@@ -634,12 +634,47 @@ body[data-route='drag'] {
 
 .palette-results li {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 9px 12px;
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* The name takes the room, pushing the count and the hint to the right-hand end. */
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.palette-icon .rail-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.palette-icon .rail-initials {
+  font-size: 10px;
+}
+
+/* A group's name above its first row: Services, Workspaces, Actions. */
+.palette-results li.palette-group {
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: default;
 }
 
 .palette-results li.is-active {
@@ -659,7 +694,6 @@ body[data-route='drag'] {
 
 /* Between the name and the hint, so a service with messages waiting stands out in the list. */
 .palette-unread {
-  margin-left: auto;
   margin-right: 10px;
   min-width: 18px;
   padding: 0 6px;

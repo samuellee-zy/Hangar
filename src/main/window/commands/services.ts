@@ -119,6 +119,11 @@ export const serviceCommands: CommandTable = {
     shell.sync();
   },
 
+  'mark-all-read': (_command, shell) => {
+    for (const svc of loadConfig().services) shell.clearUnread(svc.id);
+    shell.sync();
+  },
+
   'move-to-workspace': (command, shell) => {
     const moved = updateConfigReturning((c) =>
       moveServiceToWorkspace(c, command.serviceId, command.workspaceId),

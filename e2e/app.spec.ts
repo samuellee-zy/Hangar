@@ -80,6 +80,37 @@ test('THE SETTINGS WINDOW RENDERS, AND ITS SECTIONS SWITCH', async () => {
   await expect(settings.getByLabel('Proxy')).toBeVisible();
 });
 
+test('⌃TAB GOES BACK TO THE LAST SERVICE, AND ⇧⌘U TO THE NEXT ONE WITH UNREAD', async () => {
+  h = await launch();
+  await h.rail();
+  const focused = () =>
+    h.app.evaluate(() => {
+      const s = (globalThis as never as {
+        __hangarShell: { state: () => { panes: Array<{ id: string; serviceId: string }>; focusedPaneId: string | null } };
+      }).__hangarShell.state();
+      return s.panes.find((p) => p.id === s.focusedPaneId)?.serviceId ?? null;
+    });
+  const run = (command: unknown) =>
+    h.app.evaluate((_electron, c) => {
+      const s = (globalThis as never as {
+        __hangarShell: { dispatch: (c: unknown) => boolean; handleNotification: (id: string, p: unknown) => void };
+      }).__hangarShell;
+      if ((c as { type: string }).type === 'notify') s.handleNotification('two', { title: 'hi' });
+      else s.dispatch(c);
+    }, command);
+
+  await run({ type: 'focus-service', serviceId: 'one' });
+  await run({ type: 'focus-service', serviceId: 'two' });
+  await expect.poll(focused).toBe('two');
+  await run({ type: 'focus-previous-service' });
+  await expect.poll(focused, { message: '⌃Tab goes back' }).toBe('one');
+
+  // A message for Two while One is in front, then the next-unread action walks to it.
+  await run({ type: 'notify' });
+  await run({ type: 'focus-next-unread' });
+  await expect.poll(focused, { message: 'to the service with something waiting' }).toBe('two');
+});
+
 test('the overlay stops eating clicks once closed', async () => {
   // The overlay is a transparent full-window view. Hiding rather than *removing* it leaves it
   // hit-testing across its whole bounds, so every click meant for a pane lands on nothing and the

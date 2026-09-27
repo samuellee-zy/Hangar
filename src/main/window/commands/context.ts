@@ -46,6 +46,8 @@ export interface ShellContext {
   registerConsumer(wc: WebContents): void;
 
   unreadOf(serviceId: string): number;
+  /** Services by most recent use, newest first. */
+  recentServiceIds(): string[];
   clearUnread(serviceId: string): void;
   pushUnreadRules(serviceId: string): void;
 
