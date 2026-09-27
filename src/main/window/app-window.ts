@@ -7,7 +7,6 @@ import {
   WebContentsView,
   dialog,
   app,
-  nativeTheme,
   screen,
   session,
   type WebContents,
@@ -37,33 +36,25 @@ import { loadRoute } from '@main/platform/renderer-url';
 import { ServiceManager, startPageFor } from '@main/window/service-manager';
 import { FindBar } from '@main/features/find-bar';
 import { AttentionCenter } from '@main/window/attention';
+import { PreferenceEffects } from '@main/window/preference-effects';
+import { TileDrag } from '@main/window/tile-drag';
 import { route, type ShellContext } from '@main/window/commands';
 import { closePopOuts } from '@main/features/popout';
 import { deleteCachedIcon } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import { expiredQuiet } from '@core/notify/policy';
-import {
-  ALL_PREFERENCE_EFFECTS,
-  preferenceEffectFor,
-  trayWanted,
-  type PreferenceEffect,
-} from '@core/config/effects';
 import { safeSend } from '@main/platform/safe-send';
 import {
-  applyGlobalShortcut,
-  applyLoginItem,
-  applyProxy,
   releaseGlobalShortcut,
   globalShortcutStatus,
   onDownloadsChanged,
   recentDownloads,
 } from '@main/platform/system';
-import { allLiveSessions, clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
+import { clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
 import { routable, routeTarget } from '@core/services/routing';
 import { canCompose, composeUrlFor } from '@shared/mailto';
-import { setAdBlocking } from '@main/platform/adblock';
-import { destroyTray, ensureTray, refreshTray } from '@main/features/tray';
+import { destroyTray, refreshTray } from '@main/features/tray';
 import { isQuitting } from '@main/platform/quit-state';
 import { findOrphanPartitions } from '@core/runtime/permissions';
 import { isValidHost } from '@core/services/patch';
@@ -88,14 +79,12 @@ import { readSyncBase, writeSyncBase } from '@main/platform/sync-base';
 import { PushManager } from '@main/features/push-manager';
 import { EndpointPoller } from '@main/features/endpoint-poll';
 import { firebaseConfigStatus, pushEligible } from '@core/push/policy';
-import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
 import { reachableBounds, sameBounds } from '@core/workspace/window-bounds';
 import { resolveRepoPath } from '@core/config/sync';
 import { LOG_FILE } from '@main/platform/log-file';
 import type {
   Command,
   DomUnreadRule,
-  DragOrigin,
   OverlayMode,
   Rect,
   ServiceInstance,
@@ -1094,14 +1083,14 @@ export class AppWindow {
       unreadOf: (id) => this.unread.get(id),
       clearUnread: (id) => this.clearUnread(id),
       pushUnreadRules: (id) => this.pushUnreadRules(id),
-      applyAllPreferenceEffects: () => this.applyAllPreferenceEffects(),
-      applyPreferenceEffect: (path) => this.applyPreferenceEffect(path),
+      applyAllPreferenceEffects: () => this.effects.applyAll(),
+      applyPreferenceEffect: (path) => this.effects.applyFor(path),
       toggleRail: () => this.toggleRail(),
       beginRename: (id) => this.beginRename(id),
-      beginTileDrag: (id) => this.beginTileDrag(id),
-      moveTileDrag: (from, x, y) => this.moveTileDrag(from, x, y),
-      dropTile: (from, x, y) => this.dropTile(from, x, y),
-      endTileDrag: () => this.endTileDrag(),
+      beginTileDrag: (id) => this.tileDrag.begin(id),
+      moveTileDrag: (from, x, y) => this.tileDrag.move(from, x, y),
+      dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
+      endTileDrag: () => void this.tileDrag.end(),
     };
   })();
 
@@ -1126,113 +1115,30 @@ export class AppWindow {
     this.sync();
   }
 
-  // --- tile drag --------------------------------------------------------------------------
+  // --- tile drag: see tile-drag.ts ---------------------------------------------------------
 
-  /**
-   * The geometry a drag is judged against, frozen at the lift.
-   *
-   * Frozen rather than recomputed per pointer move, and safe because `relayout()` ends any drag in
-   * progress — geometry shifting mid-drag would mean the highlight and the drop disagree, and the
-   * user only ever sees the highlight.
-   */
-  private dragContext: (DropContext & { railOrigin: Rect }) | null = null;
+  private readonly tileDrag = (() => {
+    const self = this;
+    return new TileDrag({
+      get win() {
+        return self.win;
+      },
+      get layout() {
+        return self.layout;
+      },
+      get dragLayer() {
+        return self.dragLayer;
+      },
+      chrome: () => this.chrome(),
+      railRect: (width, height) => this.railRect(width, height),
+      railContents: () => this.rail.webContents,
+      openService: (id, options) => this.openService(id, options),
+      flash: (id) => this.flash(id),
+    });
+  })();
 
-  /** A rail tile was lifted. Freeze the geometry and hand the content area to the drag layer. */
-  private beginTileDrag(serviceId: string): void {
-    if (!loadConfig().services.some((s) => s.id === serviceId)) return;
-    const { width, height } = this.win.getContentBounds();
-    const chrome = this.chrome();
-    const bounds = this.layout.bounds(chrome, width, height);
-    const content = contentArea(chrome, width, height);
-
-    this.dragContext = {
-      content,
-      panes: this.layout.panes.flatMap((pane) => {
-        const rect = bounds.get(pane.id);
-        return rect ? [{ paneId: pane.id, rect }] : [];
-      }),
-      // Whether another pane is possible is Layout's to say — a renderer re-deriving it from
-      // `MAX_PANES` would be a second copy of a rule only one of them enforces.
-      canOpenNewPane: !this.layout.isFull,
-      // The rail view's own rectangle, not the space the panes reserved for it. An expanded
-      // compact rail on the right edge starts further left than the reservation says, and every
-      // `from: 'rail'` position is translated through this.
-      railOrigin: this.railRect(width, height),
-    };
-    this.dragLayer.begin(serviceId, content);
-  }
-
-  /**
-   * A pointer position from one of the two renderers, in that renderer's own client coordinates.
-   *
-   * Translating here is the whole point of the arrangement: neither surface knows where it sits in
-   * the window, and only one of them needs to.
-   */
-  private dragPoint(from: DragOrigin, x: number, y: number): { x: number; y: number } | null {
-    const context = this.dragContext;
-    if (!context) return null;
-    const origin = from === 'rail' ? context.railOrigin : context.content;
-    return { x: origin.x + x, y: origin.y + y };
-  }
-
-  private moveTileDrag(from: DragOrigin, x: number, y: number): void {
-    const context = this.dragContext;
-    const point = this.dragPoint(from, x, y);
-    if (!context || !point) return;
-    const drop = dropAt(context, point.x, point.y);
-    const rect = highlightFor(drop, context);
-    this.dragLayer.highlight(
-      rect && drop.kind !== 'none'
-        ? {
-            // Into the layer's coordinates. It sits exactly on the content area, so this is the
-            // same translation as above, backwards.
-            rect: { ...rect, x: rect.x - context.content.x, y: rect.y - context.content.y },
-            kind: drop.kind,
-          }
-        : null,
-    );
-  }
-
-  /**
-   * Detaches the layer and reports which service was in flight, or null if none was.
-   *
-   * Every exit from a drag comes through here, including the ones nobody asked for — a relayout, a
-   * teardown. The rail is told each time, because its dnd-kit drag may never see the release: if
-   * the pointer ended up over the layer's renderer, the rail is left holding a lifted tile with no
-   * way to put it down.
-   */
   private endTileDrag(): string | null {
-    const serviceId = this.dragLayer.draggingServiceId;
-    this.dragLayer.end();
-    this.dragContext = null;
-    if (serviceId) safeSend(this.rail.webContents, 'drag:ended', null);
-    return serviceId;
-  }
-
-  /**
-   * The release. Which service is in flight comes from the layer, never from the message: the drag
-   * is main's state, and a `drop-tile` for a tile that was never lifted should do nothing at all.
-   */
-  private dropTile(from: DragOrigin, x: number, y: number): void {
-    const context = this.dragContext;
-    const point = this.dragPoint(from, x, y);
-    // A null service means this is the second message for one drag — typically the rail's own
-    // drag-end arriving after the layer already handled the release.
-    const serviceId = this.endTileDrag();
-    if (!serviceId || !context || !point) return;
-
-    const target = dropAt(context, point.x, point.y);
-    if (target.kind === 'replace') {
-      // Focus the pane, then `openService` *without* `newPane`: `Layout.show` replaces the focused
-      // pane's service, which is exactly "drop here" once the right pane is focused.
-      if (!this.layout.find(target.paneId)) return;
-      this.layout.focusedPaneId = target.paneId;
-      this.openService(serviceId);
-      this.flash(serviceId);
-    } else if (target.kind === 'new-pane') {
-      this.openService(serviceId, { newPane: true });
-      this.flash(serviceId);
-    }
+    return this.tileDrag.end();
   }
 
   /** Removes the service everywhere it's referenced, then tears down its view. */
@@ -1394,127 +1300,26 @@ export class AppWindow {
     if (suspendedForMs >= LONG_SUSPEND_MS) this.push.reconnectAll();
   }
 
-  /**
-   * Boot, and again when `activate` rebuilds the window — preference *changes* go through
-   * `applyPreferenceEffect`.
-   *
-   * A deliberate subset, not an oversight, and the two omissions have reasons worth stating:
-   * `push` is already started by the constructor and starting it twice opens a second set of FCM
-   * sockets, which is how every notification once arrived twice; `spellcheck` is read when a
-   * session is created, and at this point none exist yet.
-   *
-   * Expressed as effect tags so the *how* lives in exactly one place. This was a fourth copy of
-   * `applyLoginItem` / `applyProxy` / shortcut / tray, and when the tray gained its `closeToTray`
-   * condition, this copy is the one that would have been missed.
-   */
-  applySystemPreferences(): void {
-    for (const effect of ['login-item', 'proxy', 'shortcut', 'tray'] as const) {
-      this.runEffect(effect);
-    }
-  }
+  // --- preference effects: see preference-effects.ts ----------------------------------------
 
-  /**
-   * Every preference effect at once, for a reset.
-   *
-   * Previously reset called `applySystemPreferences()`, which covers the login item, proxy,
-   * shortcut and tray — but *not* the two branches for push and spellcheck. So resetting with push
-   * enabled left the FCM sockets open while Settings reported push off, and live sessions kept the
-   * old spellcheck languages until restart.
-   *
-   * Iterates the effect tags themselves. It used to iterate a hand-written list of representative
-   * *paths*, under a comment claiming a new branch couldn't be forgotten here — it could, because
-   * that list was a second copy of the branch set with nothing tying the two together.
-   */
-  private applyAllPreferenceEffects(): void {
-    for (const effect of ALL_PREFERENCE_EFFECTS) this.runEffect(effect);
-    nativeTheme.themeSource = loadConfig().preferences.appearance.theme;
-  }
-
-  /**
-   * Only the effect the changed key actually needs. Re-running everything meant adjusting the rail
-   * size re-registered the global shortcut and kicked off an unawaited proxy fan-out across every
-   * session — harmless today, but exactly the shape that produces a race later.
-   */
-  private applyPreferenceEffect(path: string): void {
-    const effect = preferenceEffectFor(path);
-    if (effect) this.runEffect(effect);
-  }
-
-  /**
-   * Performs one effect, and contains its failure.
-   *
-   * Each one reaches outside the app — the file system, launchd, the menu bar, a network — and a
-   * throw from any of them used to escape into whatever called it. At boot that was
-   * `applySystemPreferences`, so a `new Tray()` that failed took down the rest of startup with it,
-   * and one broken effect in a reset skipped every effect after it.
-   */
-  private runEffect(effect: PreferenceEffect): void {
-    try {
-      this.performEffect(effect);
-    } catch (err) {
-      console.error(`[effect] ${effect} failed:`, err);
-    }
-  }
-
-  /** Which paths map to which effect is decided in core. */
-  private performEffect(effect: PreferenceEffect): void {
-    const prefs = loadConfig().preferences;
-    switch (effect) {
-      case 'login-item':
-        applyLoginItem(prefs);
-        return;
-
-      case 'proxy':
-        // Async, so `runEffect`'s try/catch cannot see its rejection.
-        void applyProxy(allLiveSessions().values(), prefs).catch((err) =>
-          console.error('[effect] proxy failed:', err),
-        );
-        return;
-
-      case 'adblock':
-        setAdBlocking(allLiveSessions().values(), prefs.network.blockAds);
-        return;
-
-      case 'shortcut':
-        this.applyShortcut(prefs.behaviour.globalShortcut);
-        return;
-
-      case 'tray':
-        // Symmetric: `destroyTray` existed and was never called, so the icon outlived its setting.
-        if (trayWanted(prefs))
-          ensureTray(
-            () => this.state(),
-            (c) => this.dispatch(c),
-          );
-        else destroyTray();
-        return;
-
-      case 'push':
-        // Switching push off must actually close the sockets, not just stop new subscriptions.
-        if (
-          prefs.notifications.push &&
-          firebaseConfigStatus(prefs.notifications.firebase) === 'ready'
-        ) {
-          this.push.start(loadConfig().services.map((s) => s.id));
-        } else {
-          this.push.stopAll();
-        }
-        return;
-
-      case 'spellcheck':
-        // Read once per session at creation, so existing sessions need telling.
-        for (const ses of allLiveSessions().values()) {
-          ses.setSpellCheckerLanguages(prefs.behaviour.spellcheckLanguages);
-        }
-        return;
-    }
-  }
-
-  private applyShortcut(accelerator: string | null): void {
-    applyGlobalShortcut(accelerator, () => {
-      if (this.win.isVisible() && !this.win.isMinimized()) this.hideWindow();
-      else this.showWindow();
+  private readonly effects = (() => {
+    const self = this;
+    return new PreferenceEffects({
+      state: () => this.state(),
+      dispatch: (c) => this.dispatch(c),
+      get push() {
+        return self.push;
+      },
+      toggleWindow: () => {
+        if (this.win.isVisible() && !this.win.isMinimized()) this.hideWindow();
+        else this.showWindow();
+      },
     });
+  })();
+
+  /** Boot, and again when `activate` rebuilds the window. See `PreferenceEffects.applySystem`. */
+  applySystemPreferences(): void {
+    this.effects.applySystem();
   }
 
   /**
