@@ -183,7 +183,8 @@ export function sessionFor(svc: ServiceInstance): Session {
     if (!removed && cookie.session) needsPromotion.add(partition);
   });
 
-  if (svc.userAgent) ses.setUserAgent(svc.userAgent);
+  // Not the session's user agent: that is shared by every service on the account, and was set by
+  // whichever one happened to configure it first. Per page now — see ServiceManager.ensure.
 
   // Deny-by-default, with curated services trusted further than arbitrary URLs, and only a
   // service's own frames trusted at all. See permissions.ts.

@@ -114,6 +114,10 @@ export class ServiceManager {
     // view white — a full-pane white flash on every wake, including in dark mode. Matching the
     // app's own background makes the gap read as "loading" rather than as something breaking.
     view.setBackgroundColor(appBackground());
+    // This service's own user agent, on its own page. It was set on the session — shared by every
+    // service on the same account, and only ever by the first of them to configure it — so giving
+    // one Google service a user agent gave all of them that one, or none.
+    if (svc.userAgent) view.webContents.setUserAgent(svc.userAgent);
 
     const runtime: ServiceRuntime = {
       view,

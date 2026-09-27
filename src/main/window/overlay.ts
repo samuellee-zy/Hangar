@@ -47,6 +47,8 @@ export class Overlay {
       webPreferences: {
         preload: path.join(__dirname, '../preload/sidebar.cjs'),
         contextIsolation: true,
+        // Explicit rather than left to the default: these views hold the app's bridge (decisions #97).
+        sandbox: true,
         transparent: true,
       },
     });
