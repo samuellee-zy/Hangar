@@ -15,7 +15,21 @@ import type { DropHighlight } from '@shared/types';
 export function DragLayer() {
   const [highlight, setHighlight] = useState<DropHighlight | null>(null);
 
-  useEffect(() => window.hangar.onDragHighlight(setHighlight), []);
+  useEffect(() => {
+    let live = true;
+    const off = window.hangar.onDragHighlight((next) => {
+      live = false; // anything sent from here on is newer than what the question below returns
+      setHighlight(next);
+    });
+    // Asked as well as listened for: the first highlight can be sent before this is listening.
+    void window.hangar.getDragHighlight().then((current) => {
+      if (live && current) setHighlight(current);
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
 
   useEffect(() => {
     const send = window.hangar.send;
