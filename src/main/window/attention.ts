@@ -45,6 +45,13 @@ export class AttentionCenter {
   private live = new Set<Notification>();
   /** Newest first, capped. In memory only — never written, never synced. */
   private recent: RecentNotification[] = [];
+  /**
+   * Services whose count the page itself reported — a badge or a title — rather than one we
+   * tallied from notifications. The page is the authority on those, and it only reports a
+   * *change*: clear one because the pane came into view and it stays at zero until the next
+   * message, although the page still says 3.
+   */
+  private reported = new Set<string>();
 
   constructor(private readonly host: AttentionHost) {}
 
@@ -139,6 +146,7 @@ export class AttentionCenter {
     // Muting and the per-service toggle still win: an unread count is an interruption of a
     // quieter kind, and opting out should mean opting out of both.
     if (svc.notificationLevel === 'muted' || !svc.notifications) return;
+    this.reported.add(svc.id);
     if (this.unread.get(svc.id) === detected) return;
     this.unread.set(svc.id, detected);
     this.updateBadge();
@@ -225,13 +233,24 @@ export class AttentionCenter {
   /** The window has just come back into view: whatever is in a pane has now been seen. */
   acknowledgePanes(): void {
     for (const serviceId of this.host.paneServiceIds()) {
-      if (this.host.isLive(serviceId)) this.clearUnread(serviceId);
+      if (this.host.isLive(serviceId)) this.acknowledge(serviceId);
     }
     this.host.sync();
   }
 
-  /** Looking at a service is what marks it read — the only signal we reliably have. */
+  /**
+   * A service is on screen. For a count we tallied, that is the only sign it was read we will ever
+   * get. A count the page reported is left alone: having the pane in view doesn't read Gmail's
+   * inbox, and the page reports again when the number actually changes.
+   */
+  acknowledge(serviceId: string): void {
+    if (!this.reported.has(serviceId)) this.clearUnread(serviceId);
+  }
+
+  /** Marks a service read outright — the user said so, or the rules that produced the count changed. */
   clearUnread(serviceId: string): void {
+    // Forgotten as well: the next report, from whatever rules apply now, starts afresh.
+    this.reported.delete(serviceId);
     if (this.unread.get(serviceId) === 0) return;
     this.unread.clear(serviceId);
     this.updateBadge();

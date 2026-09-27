@@ -788,8 +788,15 @@ export class AppWindow {
     // resize, and a resize is a relayout — which ends any tile drag in progress. On a CI runner whose
     // display is smaller than the window, a late `activate` did exactly that, mid-drag.
     const offScreen = !this.win.isVisible() || this.win.isMinimized();
+    // Already on screen: showing it is focusing it, which is all `activate` did before it learned
+    // to show a hidden window. Nothing else — `show()` re-orders the window and raises events, and
+    // `activate` can arrive at any moment, mid-drag included (it arrives late on CI).
+    if (!offScreen) {
+      this.win.focus();
+      return;
+    }
     if (this.win.isMinimized()) this.win.restore();
-    if (offScreen && !this.win.isFullScreen()) {
+    if (!this.win.isFullScreen()) {
       const current = this.win.getBounds();
       const reachable = restoreBounds(current);
       if (!sameBounds(current, reachable)) this.win.setBounds(reachable);
@@ -947,7 +954,7 @@ export class AppWindow {
       if (!runtime || !rect) continue;
       // Idle time is measured as time off screen, so refresh the stamp while visible.
       this.services.markActive(pane.serviceId);
-      if (onScreen) this.clearUnread(pane.serviceId);
+      if (onScreen) this.attention.acknowledge(pane.serviceId);
       this.win.contentView.addChildView(runtime.view);
       runtime.view.setBounds(rect);
       // Rounded card. Note Electron's caveat: the cut-out corners still capture clicks — harmless

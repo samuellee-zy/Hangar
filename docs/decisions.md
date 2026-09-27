@@ -2192,3 +2192,15 @@ a control a screen reader can use and one it can't.
 - **Two messages were only visible**: the refused-shortcut explanation is an alert now, and the
   find-bar's match count is a status region, read out as it changes.
 
+## 103. Being on screen doesn't read a count the page reported
+
+Relayout marked every visible pane read, and so did showing the window. That is the only signal
+there is for a count we tally from notifications — but a page that draws its own badge reports only
+when the number *changes*. Clear its 3 because the pane was on screen and it stays at 0 while Gmail
+still says 3, until the next message moves it. At launch it raced the first report, which is how the
+badge test failed one run in five.
+
+`AttentionCenter` remembers which services' counts came from the page (a DOM rule, a title pattern,
+an endpoint), and passive acknowledgement — relayout, show, restore — leaves those alone. Marking a
+service read by hand, muting it or changing its rules still clears everything, and forgets where the
+count came from so the next report starts afresh.

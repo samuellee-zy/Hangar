@@ -575,6 +575,22 @@ test('A BADGE IN THE PAGE BECOMES THE COUNT, AND GOES DOWN AGAIN', async () => {
 
   await expect.poll(unread, { timeout: 15_000 }).toBe(3);
 
+  // Being on screen doesn't read it. Relayout, and showing the window, marked every visible pane
+  // read — right for a count we tally, wrong for one the page reports, because the page only
+  // reports a *change*: the 3 became 0 and stayed there while the page still said 3. At launch
+  // that raced the first report, which is how this test failed one run in five.
+  await h.app.evaluate(async () => {
+    const shell = (globalThis as never as {
+      __hangarShell: { relayout: () => void; win: { hide: () => void }; showWindow: () => void };
+    }).__hangarShell;
+    shell.relayout();
+    shell.win.hide();
+    await new Promise((r) => setTimeout(r, 200));
+    shell.showWindow();
+    await new Promise((r) => setTimeout(r, 600));
+  });
+  expect(await unread(), 'a count the page reported survives the pane being looked at').toBe(3);
+
   // The observer, not just the initial read: nobody reloads a chat app to find out they have mail.
   await page.evaluate(() => {
     document.querySelector('.unread-badge')!.textContent = '7';
