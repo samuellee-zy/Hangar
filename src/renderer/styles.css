@@ -1868,3 +1868,96 @@ kbd {
 .grid-tile:focus-visible .grid-caveat {
   color: var(--text);
 }
+
+/* --- recent notifications and downloads --------------------------------------------------- */
+
+.activity-sheet {
+  max-height: min(600px, 86vh);
+}
+
+.activity-body {
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.activity-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 8px 4px;
+}
+
+.activity-section-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.activity-action {
+  border: none;
+  background: none;
+  color: var(--focus);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-row:hover:not(:disabled) {
+  background: var(--selected);
+}
+
+.activity-row:disabled {
+  cursor: default;
+}
+
+.activity-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-detail {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-time {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.activity-empty {
+  margin: 0;
+  padding: 4px 8px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}

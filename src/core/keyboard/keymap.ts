@@ -115,6 +115,7 @@ export type ActionId =
   | 'next-unread'
   | 'previous-service'
   | 'mark-all-read'
+  | 'activity'
   | 'sleep-others';
 
 export interface KeyAction {
@@ -291,6 +292,14 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     command: { type: 'mark-all-read' },
     menu: 'go',
     defaultChord: '',
+  },
+  // Kept all along and shown only in the tray, which is off by default.
+  {
+    id: 'activity',
+    label: 'Recent notifications and downloads…',
+    command: { type: 'open-activity' },
+    menu: 'go',
+    defaultChord: primaryChord('j', { shift: true }),
   },
   // No default chord. It's a real action, it belongs in the menu, and there is no obvious key for
   // it — which is exactly the case rebinding exists to serve.

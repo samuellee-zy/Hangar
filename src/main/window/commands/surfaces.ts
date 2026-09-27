@@ -28,6 +28,7 @@ function toggleOverlay(shell: ShellContext, mode: OverlayMode): void {
 export const surfaceCommands: CommandTable = {
   'open-palette': (_command, shell) => toggleOverlay(shell, 'palette'),
   'open-shortcuts': (_command, shell) => toggleOverlay(shell, 'shortcuts'),
+  'open-activity': (_command, shell) => toggleOverlay(shell, 'activity'),
   'open-connections': (_command, shell) => shell.openOverlay('connections'),
 
   'close-overlay': (_command, shell) => {

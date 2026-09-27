@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ActivitySheet } from './ActivitySheet';
 import { AddConnection } from './AddConnection';
 import { Palette } from './Palette';
 import { ShortcutSheet } from './ShortcutSheet';
@@ -46,5 +47,6 @@ export function OverlayRoot() {
   const key = `${open.mode}:${open.nonce}`;
   if (open.mode === 'connections') return <AddConnection key={key} />;
   if (open.mode === 'shortcuts') return <ShortcutSheet key={key} />;
+  if (open.mode === 'activity') return <ActivitySheet key={key} />;
   return <Palette key={key} />;
 }

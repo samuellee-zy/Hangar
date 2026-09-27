@@ -39,6 +39,7 @@ const SCHEMA = {
   'mute-service': { serviceId: 'string', until: 'number|null' },
   'mark-read': { serviceId: 'string' },
   'mark-all-read': {},
+  'open-activity': {},
   'focus-next-unread': {},
   'focus-previous-service': {},
   reveal: { what: ['config', 'log'] },

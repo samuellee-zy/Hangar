@@ -578,6 +578,8 @@ export type Command =
   | { type: 'mark-read'; serviceId: string }
   /** Every service, everywhere — the palette's "Mark all as read". */
   | { type: 'mark-all-read' }
+  /** The sheet of recent notifications and downloads. */
+  | { type: 'open-activity' }
   /** The next service after the focused one, in rail order, with something unread. */
   | { type: 'focus-next-unread' }
   /** Back to the service used before this one (⌃Tab). */
@@ -680,7 +682,7 @@ export type Command =
   | { type: 'update-service'; serviceId: string; patch: Partial<ServiceInstance> };
 
 /** What the overlay is currently being used for. One view, three jobs. */
-export type OverlayMode = 'palette' | 'connections' | 'shortcuts';
+export type OverlayMode = 'palette' | 'connections' | 'shortcuts' | 'activity';
 
 /**
  * The nonce exists so reopening the overlay in the *same* mode still remounts the renderer.
