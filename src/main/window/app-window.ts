@@ -255,8 +255,11 @@ export class AppWindow {
         if (contents) safeSend(contents, 'find:result', { active, total });
       },
       (serviceId, title) => this.attention.handleTitle(serviceId, title),
-      // Through the broadcast, which is what refreshes the bars — once a frame at most.
-      () => this.sync(),
+      // Through the broadcast, which is what refreshes the bars — once a frame at most, and only for
+      // a service with a bar on screen: a title change in the background refreshes nothing.
+      (serviceId) => {
+        if (this.layout.drawnServiceIds().has(serviceId)) this.sync();
+      },
     );
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
@@ -1414,6 +1417,7 @@ export class AppWindow {
         this.saveLayout();
         this.focusActivePane();
       },
+      returnFocus: () => this.focusActivePane(),
     });
   })();
 

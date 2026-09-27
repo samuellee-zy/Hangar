@@ -154,6 +154,9 @@ test('DRAGGING A PANE BY ITS HEADER ONTO ANOTHER SWAPS THEM — and the preview 
   // Over itself: nothing to do, so nothing drawn.
   await dispatch({ type: 'drag-tile-to', from: 'header', x: first!.width / 2, y: 300 });
   await expect(layer.locator('.drop-target')).toHaveCount(0);
+  // Nor beside its neighbour on the side it's already on — "Move beside Two", for no move at all.
+  await dispatch({ type: 'drag-tile-to', from: 'header', x: second!.x - first!.x + 10, y: 300 });
+  await expect(layer.locator('.drop-target')).toHaveCount(0);
 
   await dispatch({ type: 'drag-tile-to', from: 'header', ...over });
   await dispatch({ type: 'drop-tile', from: 'header', ...over });
@@ -171,3 +174,26 @@ test('DRAGGING A PANE BY ITS HEADER ONTO ANOTHER SWAPS THEM — and the preview 
     )
     .toBe('one');
 });
+
+test('CLOSING A WINDOW WITH HEADERS AND OPENING IT AGAIN WORKS — teardown detached from a dead window', async () => {
+  h = await launch((origin) =>
+    seedConfig(origin, { preferences: { appearance: { paneHeaders: true, railPosition: 'right' } } }),
+  );
+  await h.rail();
+  await dispatch({ type: 'split' });
+  await expect.poll(async () => (await routeRects('header-')).length).toBe(2);
+  await h.app.evaluate(() =>
+    (globalThis as never as { __hangarShell: Shell }).__hangarShell.win.close(),
+  );
+  await h.app.evaluate(({ app }) => app.emit('activate'));
+  await expect
+    .poll(() =>
+      h.app.evaluate(() => {
+        const current = (globalThis as never as { __hangarShell: Shell | null }).__hangarShell;
+        return Boolean(current && !current.win.isDestroyed() && current.win.isVisible());
+      }),
+    )
+    .toBe(true);
+  expect(h.log()).not.toContain('Object has been destroyed');
+});
+

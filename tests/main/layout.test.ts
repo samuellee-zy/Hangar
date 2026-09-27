@@ -652,11 +652,17 @@ describe('dragging a pane by its header', () => {
   });
 
   it('NOTHING, SAID SO, WHEN NOTHING MOVES — onto itself, or beside a neighbour it is already beside', () => {
-    const { l, a, b } = three();
+    const { l, a, b, c } = three();
+    const focused = l.focusedPaneId;
     assert.equal(l.movePane(a.id, { swapWith: a.id }), false);
     assert.equal(l.movePane(a.id, { beside: { paneId: b.id, side: 'before' } }), false);
     assert.equal(l.movePane(a.id, { beside: { paneId: 'gone', side: 'after' } }), false);
+    assert.equal(l.movePane(c.id, { toEnd: true }), false, 'last already');
     assert.equal(order(l), 'abc');
+    // Focus too: it moved on these, with nothing redrawn, and the next ⌘W closed the wrong pane.
+    assert.equal(l.focusedPaneId, focused);
+    assert.equal(l.wouldMove(a.id, { beside: { paneId: b.id, side: 'before' } }), false);
+    assert.equal(l.wouldMove(a.id, { toEnd: true }), true);
   });
 });
 

@@ -3,7 +3,7 @@ import { loadConfig } from '@main/platform/config';
 import { safeSend } from '@main/platform/safe-send';
 import type { DragLayer } from '@main/features/drag-layer';
 import { dropAt, highlightFor, type DropContext } from '@core/workspace/drop';
-import { contentArea, type Chrome, type Layout, type Rect } from '@core/workspace/layout';
+import { contentArea, type Chrome, type Layout, type PaneMove, type Rect } from '@core/workspace/layout';
 import type { DragOrigin } from '@shared/types';
 
 /**
@@ -30,6 +30,8 @@ export interface DragHost {
   headerRect(paneId: string): Rect | null;
   /** The panes were rearranged by a drop: lay them out, save, and put the keyboard back. */
   panesMoved(): void;
+  /** Nothing moved: just put the keyboard back in the focused pane's page. */
+  returnFocus(): void;
 }
 
 /** Why a drag stopped. Only a drop is the user finishing it; the rest are reported in the log. */
@@ -105,14 +107,17 @@ export class TileDrag {
     return origin ? { x: origin.x + x, y: origin.y + y } : null;
   }
 
-  /** Where a release here lands — and for a pane, nowhere, if that's where it already is. */
+  /**
+   * Where a release here lands — and for a pane, nowhere, if it wouldn't move: onto itself, beside
+   * itself, beside a neighbour on the side it's already on, or to the end when it's last. Those drew
+   * "Move beside Gmail" and then did nothing.
+   */
   private target(context: DropContext, x: number, y: number): ReturnType<typeof dropAt> {
     const drop = dropAt(context, x, y);
     const moving = this.movingPaneId;
     if (!moving) return drop;
-    if (drop.kind === 'replace' && drop.paneId === moving) return { kind: 'none' };
-    if (drop.kind === 'new-pane' && drop.beside?.paneId === moving) return { kind: 'none' };
-    return drop;
+    const move = paneMoveFor(drop);
+    return move && this.host.layout.wouldMove(moving, move) ? drop : { kind: 'none' };
   }
 
   move(from: DragOrigin, x: number, y: number): void {
@@ -148,9 +153,13 @@ export class TileDrag {
     this.host.dragLayer.end();
     this.context = null;
     this.movingPaneId = null;
-    // A header drag never involved the rail, so there's nothing there to put down.
+    // A header drag never involved the rail, so there's nothing there to put down — but the
+    // keyboard is in the drag layer, which has just been detached.
     if (serviceId && wasPane) {
-      if (reason !== 'drop') console.log(`[drag] pane drag ended by ${reason}`);
+      if (reason !== 'drop') {
+        console.log(`[drag] pane drag ended by ${reason}`);
+        this.host.returnFocus();
+      }
     } else if (serviceId) {
       // Logged, because an end nobody asked for is otherwise indistinguishable from a mis-aimed
       // drop: the tile just lands back where it was.
@@ -176,13 +185,11 @@ export class TileDrag {
     if (!serviceId || !context || !point) return;
 
     if (moving) {
-      const moved =
-        target.kind === 'replace'
-          ? this.host.layout.movePane(moving, { swapWith: target.paneId })
-          : target.kind === 'new-pane'
-            ? this.host.layout.movePane(moving, target.beside ? { beside: target.beside } : { toEnd: true })
-            : false;
-      if (moved) this.host.panesMoved();
+      const move = paneMoveFor(target);
+      // Either way the keyboard goes back to a page: the lift focused the drag layer, which is
+      // detached now, and a drop that moved nothing left it there with no shortcuts.
+      if (move && this.host.layout.movePane(moving, move)) this.host.panesMoved();
+      else this.host.returnFocus();
       return;
     }
 
@@ -218,4 +225,11 @@ export class TileDrag {
     const name = nameOf(drop.beside.paneId);
     return name ? `Open beside ${name}` : 'Open alongside';
   }
+}
+
+/** What a drop means for a pane being moved, or null for one that means nothing. */
+function paneMoveFor(drop: ReturnType<typeof dropAt>): PaneMove | null {
+  if (drop.kind === 'replace') return { swapWith: drop.paneId };
+  if (drop.kind === 'new-pane') return drop.beside ? { beside: drop.beside } : { toEnd: true };
+  return null;
 }
