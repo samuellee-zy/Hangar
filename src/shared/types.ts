@@ -44,8 +44,10 @@ export interface DomUnreadRule {
    *     Non-empty text with no digits reads as 1, which covers a bare dot.
    *   - `count` — the number of matching elements *is* the count, for a badge per row.
    *   - `attr` — read `attr` off the first match, for `aria-label="3 unread"` and friends.
+   *   - `sum` — add up the numbers in every match, for a count per row that the service never
+   *     totals: WhatsApp's per-chat badges. Matches with no number in them add nothing.
    */
-  read?: 'text' | 'count' | 'attr';
+  read?: 'text' | 'count' | 'attr' | 'sum';
   /** Attribute name for `read: 'attr'`. Ignored otherwise. */
   attr?: string;
   /**

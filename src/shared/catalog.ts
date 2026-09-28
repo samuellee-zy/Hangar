@@ -1,4 +1,4 @@
-import type { CatalogEntry } from './types';
+import type { CatalogEntry, DomUnreadRule } from './types';
 
 // Seeded with the stack actually in use. Anything else is an "add custom app" away.
 //
@@ -91,6 +91,26 @@ const GMAIL_FEED = {
 // and no rule here. Not an oversight — a guessed selector matches nothing, which is indistinguishable
 // from having read everything, so it fails as a permanent silent zero that nobody investigates.
 // Each needs DevTools on a real logged-in page: docs/unread-selectors.md is the procedure.
+/**
+ * WhatsApp's unread messages: the number on each chat in the list, added up.
+ *
+ * - `#pane-side` is the chat list, and has been for years; it's also the anchor, so a list that
+ *   hasn't drawn says nothing rather than zero.
+ * - Each chat's badge is a `span[aria-label]` whose text is the count. Others in the list carry no
+ *   number, and `sum` adds nothing for them.
+ * - A muted chat's badge sits just after its muted icon — `[data-icon="muted"]` in the element before
+ *   the badge's container — and is left out, as WhatsApp's own count leaves it out.
+ *
+ * The list is drawn only as far as it's scrolled, so a chat far down isn't counted. Chats with new
+ * messages move to the top, so in practice that's the rare old one. Ferdium's recipe reads the same
+ * nodes.
+ */
+const WHATSAPP_MESSAGES: DomUnreadRule = {
+  selector: '#pane-side span[aria-label]:not(:has([data-icon="muted"]) + * > span)',
+  read: 'sum',
+  anchor: '#pane-side',
+};
+
 const GITLAB_UNREAD = {
   dom: [
     { selector: '[data-testid="todos-counter"]', anchor: '[data-testid="super-sidebar"]' },
@@ -117,7 +137,14 @@ const COMMS: CatalogEntry[] = [
     id: 'whatsapp', icon: 'whatsapp', name: 'WhatsApp', url: 'https://web.whatsapp.com/',
     initials: 'Wa', color: '#25D366', provider: 'whatsapp',
     allowedHosts: ['web.whatsapp.com', 'whatsapp.com'],
-    unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+    unread: {
+      // Messages, not chats. The title's "(1) WhatsApp" counts chats with something unread, and the
+      // tile said 1 beside a chat with 8 waiting; WhatsApp never totals the messages, so they are
+      // added up from the chat list's own badges. The title is the fallback, while the list hasn't
+      // drawn — or if WhatsApp's markup moves on and this reads nothing.
+      titlePattern: '^\\((\\d+)\\+?\\)',
+      dom: [WHATSAPP_MESSAGES],
+    },
     // "WhatsApp works with Google Chrome 100+", at Chrome 150, until the `Hangar/…` token is gone.
     plainUserAgent: true,
   },

@@ -229,6 +229,15 @@ describe('unread from the page title', () => {
 describe('unread from the DOM', () => {
   const probe = (values: string[], anchored = true) => ({ anchored, values });
 
+  it("ADDS UP A BADGE PER ROW WITH `sum` — WhatsApp's messages, which it never totals", () => {
+    const rules = [{ selector: '#pane-side span[aria-label]', read: 'sum' as const, anchor: '#pane-side' }];
+    assert.equal(unreadFromDom(rules, [probe(['8', '3', '1'])]), 12);
+    // A match with no number is some other node the selector caught, not a message.
+    assert.equal(unreadFromDom(rules, [probe(['8', '', 'Delivered'])]), 8);
+    assert.equal(unreadFromDom(rules, [probe([])]), 0, 'the list, and no badges: all read');
+    assert.equal(unreadFromDom(rules, [probe([], false)]), null, 'no list yet: nothing to say');
+  });
+
   it('says what it read, for Settings — the badge, or why there was none', () => {
     const rules = [{ selector: '.badge', anchor: '.shell' }];
     assert.equal(describeDomReading(rules, [probe(['12 unread'])]), '“12 unread”');

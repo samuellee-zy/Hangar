@@ -120,12 +120,13 @@ describe('host allowlists', () => {
     expect(isAllowedHost(svc, 'https://example.com/')).toBe(false);
   });
 
-  it('NO ENTRY DECLARES BOTH A TITLE PATTERN AND DOM RULES', () => {
-    // Both write an *absolute* count, so two of them on one service is a badge flapping between
-    // whichever reported last — a bug that looks like the count being random.
+  it('AN ENTRY WITH A TITLE AND PAGE RULES LETS THE PAGE SAY "NOT YET" — so the title can stand in', () => {
+    // Both write an *absolute* count. The attention centre lets the page win once it has answered,
+    // and the title speak until then — which works only if the page can decline to answer, and that
+    // is what an anchor is. Without one, an undrawn page reads as a confident zero.
     for (const e of catalog) {
-      const both = Boolean(e.unread?.titlePattern) && Boolean(e.unread?.dom?.length);
-      expect(both, e.id).toBe(false);
+      if (!e.unread?.titlePattern || !e.unread.dom?.length) continue;
+      for (const rule of e.unread.dom) expect(rule.anchor, e.id).toBeTruthy();
     }
   });
 

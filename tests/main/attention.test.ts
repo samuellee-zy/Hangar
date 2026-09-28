@@ -10,7 +10,7 @@ import { app, Notification } from 'electron';
 
 fs.rmSync(app.getPath('userData'), { recursive: true, force: true });
 const { AttentionCenter, setNotificationClickRoute } = await import('@main/window/attention');
-const { loadConfig } = await import('@main/platform/config');
+const { loadConfig, updateConfig } = await import('@main/platform/config');
 
 type Stub = typeof Notification & { shown: Array<{ options: Record<string, unknown>; emit: (e: string) => void }> };
 const banners = () => (Notification as unknown as Stub).shown;
@@ -126,3 +126,42 @@ describe('what a count was read from', () => {
     expect(attention.evidenceSnapshot()[svc.id], 'the title stays the reading').toMatchObject({ source: 'title', count: 4 });
   });
 });
+
+describe('a service read from its page and its title', () => {
+  // WhatsApp: its title counts chats, its page's badges count messages, and the page is the one.
+  const whatsapp = () => {
+    if (!loadConfig().services.some((s) => s.id === 'wa')) {
+      updateConfig((c) => {
+        c.services.push({ ...c.services[0]!, id: 'wa', catalogId: 'whatsapp', name: 'WhatsApp' });
+      });
+    }
+    return loadConfig().services.find((s) => s.id === 'wa')!;
+  };
+  const page = (values: string[], anchored = true) => [{ anchored, values }];
+
+  it('THE TITLE SPEAKS UNTIL THE PAGE ANSWERS, AND THEN THE PAGE IS THE COUNT — not whichever came last', () => {
+    const { attention } = center();
+    const svc = whatsapp();
+    attention.handleTitle(svc.id, '(1) WhatsApp');
+    expect(attention.unread.get(svc.id), 'the list not drawn yet').toBe(1);
+
+    attention.handleUnreadProbes(svc.id, page([], false));
+    expect(attention.unread.get(svc.id), 'nothing from the page yet: the title stands').toBe(1);
+
+    attention.handleUnreadProbes(svc.id, page(['8']));
+    expect(attention.unread.get(svc.id)).toBe(8);
+    attention.handleTitle(svc.id, '(1) WhatsApp');
+    expect(attention.unread.get(svc.id), 'a title after the page changes nothing').toBe(8);
+    expect(attention.evidenceSnapshot()[svc.id]).toMatchObject({ source: 'page', count: 8, detail: '“8”' });
+  });
+
+  it('new rules put the question back: the title speaks again until they answer', () => {
+    const { attention } = center();
+    const svc = whatsapp();
+    attention.handleUnreadProbes(svc.id, page(['8']));
+    attention.pushUnreadRules(svc.id);
+    attention.handleTitle(svc.id, '(2) WhatsApp');
+    expect(attention.unread.get(svc.id)).toBe(2);
+  });
+});
+

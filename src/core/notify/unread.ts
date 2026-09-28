@@ -184,6 +184,12 @@ export function unreadFromDom(
 
     if (rule.read === 'count') return probe.values.length;
 
+    // Numbers only: a match with none in it is some other element the selector caught, not a
+    // badge of one — `countFromBadgeText`'s dot rule would make every stray node a message.
+    if (rule.read === 'sum') {
+      return probe.values.reduce((total, value) => total + (/\d/.test(value) ? countFromBadgeText(value) : 0), 0);
+    }
+
     // The first match, not a sum: a service showing both a per-channel badge and a total would
     // otherwise report roughly double, and which nodes a selector catches is the rule author's
     // decision to make with the selector.

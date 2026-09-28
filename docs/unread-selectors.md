@@ -38,6 +38,22 @@ const GITLAB_UNREAD = {
 Two rules, tried in order: current markup first, older self-hosted markup as the fallback. Each
 carries its own anchor, because the thing that proves *that* version rendered is different.
 
+## A count per row, and a title as well
+
+Some services show a number on each conversation and never total them. WhatsApp's title says
+"(1) WhatsApp" meaning one *chat*, while the chats hold 8 messages. For those, `read: 'sum'` adds up
+the number in every match. A match with no number in it adds nothing, so a selector that also
+catches an icon's label is harmless. See `WHATSAPP_MESSAGES` in `src/shared/catalog.ts`, which also
+leaves muted chats out with `:not(:has(…) + * > span)`.
+
+An entry can keep its `titlePattern` next to page rules, as WhatsApp does. The page is the count
+once it has given a number; the title speaks until then, while the page loads, or for good if the
+markup changes and the rule reads nothing. That only works if the page can decline to answer, so
+every page rule on such an entry needs an `anchor`, and a test checks it.
+
+Settings → Unread badges shows what each count was last read from: the title, the badge text
+found, or why there was none. That is the quickest way to tell a wrong rule from a surprising number.
+
 ## The procedure
 
 1. **Open the service in Hangar and sign in.** It has to be your real account — an empty inbox and
