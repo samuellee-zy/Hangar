@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { launch, tearDown, type Harness } from './harness';
@@ -97,6 +98,21 @@ test('FLAGS AT LAUNCH RUN ONCE THE WINDOW IS UP', async () => {
 test('AFTER ⌘W, A BACKGROUND LINK CHANGES THE SETTING AND OPENS NO WINDOW — `open` still does', async () => {
   h = await launch();
   await h.rail();
+  // A Stream Deck plugin, listening on the control socket: its key has to follow the change too.
+  const states: Array<{ dnd: boolean }> = [];
+  const plugin = net.createConnection(path.join(h.userData, 'control.sock'));
+  let buffer = '';
+  plugin.setEncoding('utf8');
+  plugin.on('data', (chunk: string) => {
+    buffer += chunk;
+    let at: number;
+    while ((at = buffer.indexOf('\n')) !== -1) {
+      const message = JSON.parse(buffer.slice(0, at));
+      buffer = buffer.slice(at + 1);
+      if (message.type === 'state') states.push(message.state);
+    }
+  });
+  await expect.poll(() => states.length).toBeGreaterThan(0);
   // Close-to-tray is off by default, so this destroys the window.
   await h.app.evaluate(() =>
     (globalThis as never as { __hangarShell: { win: { close: () => void } } }).__hangarShell.win.close(),
@@ -111,6 +127,9 @@ test('AFTER ⌘W, A BACKGROUND LINK CHANGES THE SETTING AND OPENS NO WINDOW — 
   const onDisk = () => JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
   await expect.poll(() => onDisk().preferences?.notifications?.dnd, 'set where it is kept').toBe(true);
   expect(await hasWindow(), 'and no window was built to do it').toBe(false);
+  // No window, so no broadcast to carry it: the key said off until something else changed.
+  await expect.poll(() => states.at(-1)?.dnd, 'and the plugin was told').toBe(true);
+  plugin.destroy();
 
   await h.app.evaluate(({ app }) => {
     app.emit('open-url', { preventDefault() {} }, 'hangar://open/Two');

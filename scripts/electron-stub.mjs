@@ -22,6 +22,10 @@ export const app = {
     app.badgeCount = n;
     return true;
   },
+  // Lifecycle hooks a module registers at start — the control server's `will-quit` — and a unit
+  // test never fires.
+  on() {},
+  once() {},
 };
 
 /**

@@ -179,10 +179,14 @@ function runLinks(links: readonly string[]): void {
     // rest of the batch was dropped.
     try {
       if (show) ensureShell();
+      const windowless = !shell;
       for (const command of commands) {
         if (shell) shell.dispatch(command);
         else applyWithoutWindow(command);
       }
+      // No window means no broadcast to carry the change, as `runControl` knows: a Focus Shortcut
+      // turning Do Not Disturb on after ⌘W left the Stream Deck's key saying off.
+      if (windowless && commands.length) publishControlState(controlStateFromConfig(loadConfig()));
       console.log(`[link] ${commands.map((c) => c.type).join(', ') || 'show'}`);
     } catch (err) {
       console.error('[link] failed:', err);
@@ -193,7 +197,8 @@ function runLinks(links: readonly string[]): void {
 /**
  * A command from the control socket, already allowlisted (core/runtime/control.ts). Treated like a
  * link's: what asks to be seen brings the window forward, and a setting changed with no window is
- * changed where it's kept. Not rate-limited as links are — only your own user can reach the socket.
+ * changed where it's kept. Rate-limited per client in the server (twenty in ten seconds), since
+ * any process running as you can reach the socket.
  */
 function runControl(command: Command): void {
   if (isQuitting()) return;
@@ -295,10 +300,16 @@ app.whenReady().then(() => {
   registerIpc();
   // After the IPC surface, before the window: a client connecting mid-construction is told the
   // settings, and the first broadcast follows.
-  startControlServer({
-    run: runControl,
-    current: () => (shell ? controlState(shell.state()) : controlStateFromConfig(loadConfig())),
-  });
+  // Guarded as well as careful inside: the socket is a convenience, and nothing about it may stop
+  // the window below from being built.
+  try {
+    startControlServer({
+      run: runControl,
+      current: () => (shell ? controlState(shell.state()) : controlStateFromConfig(loadConfig())),
+    });
+  } catch (err) {
+    console.error('[control] not started:', err);
+  }
 
   // GPU, network service, utilities. Chromium restarts them itself, and the only trace used to be a
   // bare line from Chromium's own logging — this says which, why, and with what exit code.

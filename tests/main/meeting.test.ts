@@ -3,11 +3,12 @@
 // what they mean is decided in core/services/meeting.ts. These run the real probe script against
 // markup shaped like each service's, then check what core makes of it.
 
-import { describe, it } from 'vitest';
+import { describe, it, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { catalogById } from '@shared/catalog';
 import { asMeetingProbe, clickScript, mergeMeetings, probeScript, readMeeting } from '@core/services/meeting';
 import type { MeetingRules } from '@shared/types';
+import { MeetingBridge } from '@main/features/meeting-bridge';
 
 const rules = (id: string): MeetingRules => {
   const found = catalogById(id)?.meeting;
@@ -111,8 +112,100 @@ describe('the catalog rules', () => {
     }
   });
 
+  it('A LABEL RULE SAYS WHAT OFF LOOKS LIKE — without it, any label but ON read as OFF', () => {
+    for (const id of ['teams', 'slack', 'meet']) {
+      for (const [name, rule] of Object.entries(rules(id).controls)) {
+        if ((rule?.read ?? 'label') === 'label' && rule?.on?.length) assert.ok(rule.off?.length, `${id}.${name} needs OFF`);
+      }
+    }
+  });
+
   it('BLANK POPUPS ONLY WHERE A HUDDLE NEEDS THEM', () => {
     assert.equal(catalogById('slack')?.blankPopups, true);
     for (const id of ['teams', 'meet', 'gmail']) assert.notEqual(catalogById(id)?.blankPopups, true, id);
   });
 });
+
+describe('ON, OFF, or unknown', () => {
+  const read = (id: string, html: string) => {
+    document.body.innerHTML = html;
+    return readMeeting(rules(id), probe(rules(id))!).controls;
+  };
+
+  it("A LABEL IN ANOTHER LANGUAGE IS UNKNOWN, NOT OFF — the camera read off in German Teams", () => {
+    const html = (label: string) => `<button id="hangup-button"></button><button id="video-button" aria-label="${label}"></button>`;
+    assert.equal(read('teams', html('Turn camera off')).video, true);
+    assert.equal(read('teams', html('Turn camera on')).video, false);
+    assert.equal(read('teams', html('Kamera ausschalten')).video, null);
+  });
+
+  it("Slack's mute: Unmute is ON, Mute is OFF, anything else unknown", () => {
+    const html = (label: string) =>
+      `<button data-qa="huddle_toolbar__leave_button"></button><button data-qa="segmented-mute-button-main" aria-label="${label}"></button>`;
+    assert.equal(read('slack', html('Unmute mic')).mute, true);
+    assert.equal(read('slack', html('Mute mic')).mute, false);
+    assert.equal(read('slack', html('Stummschaltung aufheben')).mute, null);
+  });
+
+  it('an attribute with an OFF list is three-way too; one without keeps its two', () => {
+    const meet = (value: string) => `<div jsname="CQylAd"></div><button jsname="hw0c9" data-is-muted="${value}"></button>`;
+    assert.equal(read('meet', meet('true')).mute, true);
+    assert.equal(read('meet', meet('false')).mute, false);
+    assert.equal(read('meet', meet('pending')).mute, null);
+    // Teams' mic: `data-state` is the page's own value, and its OFF values haven't been listed.
+    const teams = `<button id="hangup-button"></button><button id="microphone-button" data-state="mic-on"></button>`;
+    assert.equal(read('teams', teams).mute, false);
+  });
+});
+
+describe('pressing a control', () => {
+  /** A bridge over one Slack service whose page runs clicks when `finish` says so. */
+  const bridge = () => {
+    let finish: (value: unknown) => void = () => {};
+    const run = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+    const page = { isDestroyed: () => false, executeJavaScriptInIsolatedWorld: run, once: () => {} };
+    const meetings = new MeetingBridge({
+      services: () => [{ id: 's', catalogId: 'slack' }],
+      contents: () => page as never,
+      changed: () => {},
+    });
+    return { meetings, run, finish: (value: unknown) => finish(value) };
+  };
+
+  it("A `want` PRESS WITH THE STATE UNKNOWN IS REFUSED — pressed blind, it could unmute a muted user", async () => {
+    const { meetings, run } = bridge();
+    assert.equal(await meetings.control('s', 'mute', true), false);
+    assert.equal(run.mock.calls.length, 0, 'nothing pressed');
+  });
+
+  it('ONE PRESS AT A TIME — a second, while the page is still running the first, is dropped rather than queued', async () => {
+    const { meetings, run, finish } = bridge();
+    // Leave has no state, so it's pressed whatever is known.
+    const first = meetings.control('s', 'leave', null);
+    assert.equal(await meetings.control('s', 'leave', null), false, 'dropped');
+    assert.equal(run.mock.calls.length, 1);
+    finish(true);
+    assert.equal(await first, true);
+    await new Promise((r) => setTimeout(r, 0));
+    const third = meetings.control('s', 'leave', null);
+    assert.equal(run.mock.calls.length, 2, 'free again once the page ran it');
+    finish(true);
+    assert.equal(await third, true);
+  });
+
+  it("A PAGE THAT NEVER ANSWERS HOLDS THE LOCK TEN SECONDS, NOT FOREVER — every later press was refused", async () => {
+    vi.useFakeTimers();
+    try {
+      const { meetings, run } = bridge();
+      void meetings.control('s', 'leave', null);
+      await vi.advanceTimersByTimeAsync(9_000);
+      assert.equal(await meetings.control('s', 'leave', null), false, 'still held at nine seconds');
+      await vi.advanceTimersByTimeAsync(1_000);
+      void meetings.control('s', 'leave', null);
+      assert.equal(run.mock.calls.length, 2, 'pressed again after ten');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+

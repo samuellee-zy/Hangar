@@ -91,11 +91,18 @@ export interface MeetingControlRule {
    *   - `attr` — attribute `attr` is one of `on`;
    *   - `child` — it contains a match for `child`.
    * A control with no `on` (leave) is only ever pressed.
+   *
+   * `off` is what OFF looks like, and makes the reading three-way: ON, OFF, or unknown (`null`).
+   * Required for `label`: labels are English text that changes with the UI's language and with
+   * redesigns, and "doesn't say ON" read as OFF — so in another language the camera would always
+   * read off, and a press meant to turn it off would be skipped. Optional for `attr`, whose values
+   * (`aria-pressed`, `data-is-muted`) don't change with language; without it, anything but ON is OFF.
    */
   read?: 'label' | 'attr' | 'child';
   attr?: string;
   child?: string;
   on?: string[];
+  off?: string[];
 }
 
 export interface MeetingRules {

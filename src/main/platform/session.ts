@@ -282,6 +282,19 @@ const isBlankUrl = (url: string): boolean => isBlankPage(url);
  */
 const blankWindows = new WeakSet<Electron.WebContents>();
 
+/**
+ * Closes a blank popup if nothing has been drawn into it. Asked of the page, since a document the
+ * opener wrote into leaves no trace main can see: no navigation, no load, the same address.
+ * Unanswerable — the page gone or hung — leaves it open, which loses nothing.
+ */
+function closeIfEmpty(wc: Electron.WebContents): void {
+  wc.executeJavaScript('!document.body || (document.body.childElementCount === 0 && !document.body.textContent.trim())', true)
+    .then((empty: unknown) => {
+      if (empty === true && !wc.isDestroyed()) BrowserWindow.fromWebContents(wc)?.close();
+    })
+    .catch(() => {});
+}
+
 /** Hands a link to the router, or to the system browser when the router declines it. */
 function leave(url: string, svc: ServiceInstance): void {
   if (routeLink?.(url, svc.id)) return;
@@ -358,8 +371,21 @@ export function attachNavigationGuards(
   // guarded the front door and left the window open. Recursive, because an IdP flow is a chain of
   // redirects and any of them can spawn another popup.
   wc.on('did-create-window', (child, details) => {
+    if (isBlankUrl(details.url)) {
+      // Only the service's own page may open a window it then fills in itself. The handler above
+      // can't tell which frame asked, and a third-party iframe in Slack — an embed, a media player —
+      // could otherwise open a window with no address bar, Slack's cookie jar, and anything it
+      // cares to write into it, which no navigation guard would ever see. The opener's origin says
+      // who it was; `noopener` leaves none, and a blank window nobody can write into is useless.
+      const origin = child.webContents.opener?.origin;
+      if (!origin || !isAllowedHost(current(), origin)) {
+        console.log(`[nav] ${svc.name}: a blank window opened by ${origin ? hostOf(origin) : 'an unknown frame'} — closed`);
+        child.close();
+        return;
+      }
+      blankWindows.add(child.webContents);
+    }
     attachNavigationGuards(child.webContents, svc, partition);
-    if (isBlankUrl(details.url)) blankWindows.add(child.webContents);
     onPopup?.(svc.id, child.webContents);
     // The service's own user agent, which is set per page now rather than on the session: a sign-in
     // popup is often exactly what the user agent was set to get through. From its next request on —
@@ -380,14 +406,19 @@ export function attachNavigationGuards(
     if (isAllowedHost(current(), url)) return false;
     console.log(`[nav] ${svc.name}: ${hostOf(url)} not on allowlist (${via}) — leaving the service`);
     // Routed to another of your services, the pane stays where it was: the link went somewhere.
-    if (routeLink?.(url, svc.id)) return true;
-    openExternalSafely(url, svc.name);
+    const routed = routeLink?.(url, svc.id) === true;
+    if (!routed) openExternalSafely(url, svc.name);
 
-    // A blank popup that was on its way somewhere else: close it rather than leave it empty.
+    // A blank popup. If it's still empty it was a link on its way somewhere — the browser or
+    // another service has it now — and what's left is an empty window: close it. If the page drew
+    // into it, it's Slack's huddle, whose address stays about:blank for its whole life, and a
+    // refused link inside it must leave the call up. Either way it gets no blocked page, which
+    // would replace whatever was drawn.
     if (blankWindows.has(wc) && isBlankUrl(wc.getURL())) {
-      BrowserWindow.fromWebContents(wc)?.close();
+      closeIfEmpty(wc);
       return true;
     }
+    if (routed) return true;
 
     // The pane is only replaced when it holds nothing worth keeping. Clicking an external link in
     // a working service must leave that service exactly where it was.

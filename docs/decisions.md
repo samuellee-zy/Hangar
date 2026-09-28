@@ -2456,10 +2456,16 @@ can reach.
 
 - **A socket, not a port.** A localhost port answers every process on the machine, and a browser
   can be steered at one. The socket is in a 0700 directory and is 0600 itself, so reaching it
-  already means running as you. That's why it can see state and isn't rate-limited, when a link
-  can see nothing and gets ten a window.
+  already means running as you. That's why it can see state when a link can see nothing.
+- **Rate-limited all the same: twenty commands in ten seconds, per client.** "Running as you"
+  includes every app you've installed and every script a package ran, and the socket can do more
+  than a link: through `meeting-control` it can unmute you, turn your camera on, end a call, or
+  start a screen share (that one stops at the picker, which needs a person). The first version
+  wasn't limited and its docs said the socket could do no more than a link. A Stream Deck is a
+  few presses a second at most; a loop gets `too many commands`.
 - **An allowlist, not the command set.** It gets the link verbs plus navigation: next unread,
-  split, maximise, cycle, reopen, palette, activity, reload, sleep. It doesn't get `update-service`,
+  split, maximise, cycle, reopen, palette, activity, reload, sleep, and the meeting controls (#115).
+  It doesn't get `update-service`,
   since `mute-service` does the one thing a link used it for. Nothing that removes, signs out,
   imports, sets a preference or touches custom code is on it. A test checks each entry is a real
   command and that each link verb is covered.
@@ -2469,10 +2475,18 @@ can reach.
   `broadcast`, which already runs at most once a frame.
 - **Shown or not, like links.** A command that asks to see something builds and shows the window.
   A setting changed with no window is written where it's kept, and the new state is sent from
-  there, because no broadcast will carry it.
+  there, because no broadcast will carry it — for a `hangar://` link as well as a socket command;
+  the link path first forgot. With no window there's no sweep to end a timed Do Not Disturb or
+  mute either, so the state reports them as they stand now, not as the config last said.
+- **A client that stops reading costs nothing and blocks no one.** A plugin suspended mid-session
+  keeps its connection open and reads nothing. Node would buffer every state for it, and eight
+  such connections filled every slot. So a backlogged client is sent only the newest state when it
+  drains, one with over 1 MB unread is dropped, and when all eight slots are taken the one
+  backlogged longest is dropped to make room.
 - **A stale socket is removed at start.** The single-instance lock means one left behind is from
   a crash. A path over macOS's 104-byte limit, such as a deep `HANGAR_USER_DATA`, logs an error and
-  the app runs without the socket.
+  the app runs without the socket. So does a path that can't be cleared — a directory where the
+  socket goes threw out of `whenReady`, and the window was never built.
 
 ## 115. Meeting controls: probed from main, in an isolated world, from catalog rules
 
@@ -2491,9 +2505,19 @@ against markup shaped like each service's.
 - **A press is a user gesture.** Starting a screen share is refused without one.
 - **The socket only, never a link.** `meeting-control` is on the control allowlist and not among
   the link verbs. A page that can open `hangar://` must not be able to unmute you or end your call.
-- **Blank popups, for Slack only.** The allowlist can't judge a window the opener fills in itself,
-  and a blank window is also how some pages open an external link before pointing it somewhere. So
-  `blankPopups` is opt-in per entry, and a blank popup whose first navigation is refused is closed
-  rather than left empty behind the link.
+- **Blank popups, for Slack only, and only from Slack.** The allowlist can't judge a window the
+  opener fills in itself, and a blank window is also how some pages open an external link before
+  pointing it somewhere. So `blankPopups` is opt-in per entry, and the frame that opened it must be
+  on the service's own hosts: an embed inside Slack could otherwise open a blank window and draw a
+  Slack-looking sign-in in it. One opened with `noopener` has no opener to judge, and is closed.
+- **A refused link closes the popup only if it's empty.** Handed to the browser, or to another
+  service, it leaves a blank window behind that is closed — but a huddle window Slack has drawn
+  into is also still on `about:blank`, and closing that on a link clicked in the huddle's chat
+  would end the call.
+- **On, off, or unknown.** A control read from a button's label has an `off` list as well as an
+  `on` one, and a label in neither reads `null`. With only `on`, anything else read as "off": a
+  Teams in German would show the camera off while it was on. A `want` press on a control reading
+  `null` is refused rather than guessed, and a press while one is still running is dropped, so
+  a double-tapped key can't toggle twice.
 - **Selectors are best guesses until a real call confirms them.** The Meet and Slack hooks come
   from open-source controllers and will drift with redesigns; they're data so a fix is one line.

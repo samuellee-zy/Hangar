@@ -12,7 +12,8 @@ Shift, an engineering-health pass and a UI/UX pass, and it shipped:
 - `hangar://` links;
 - pane headers.
 
-What it closed and what is still open is **§14** ([decisions #105–111](decisions.md)).
+What it closed and what is still open is **§14** ([decisions #105–111](decisions.md)). What came
+after it, PRs #13–#21 and the round that followed, is **§14.3**.
 
 **Phase 7** (2026-09-26) made the installed app reachable ([decisions #96](decisions.md)). Its
 audit is **§13**, and it supersedes the older lists below wherever they overlap.
@@ -81,6 +82,9 @@ out which of your services actually use `aes128gcm` before spending on it.
 
 Written, typechecked, unit-tested where the logic is pure — but never proven against the real thing.
 Listed separately from "done" on purpose.
+
+The checks for the newer rules — unread counts, meeting controls, huddles, links from Shortcuts —
+are a list of their own, to go through after installing: [manual-checks.md](manual-checks.md).
 
 | Item | What's unverified | How to check |
 | --- | --- | --- |
@@ -544,10 +548,9 @@ findings are [decisions #104–111](decisions.md).
   keychain.
 - Deleting `spikes/google-login/sessions*`, which holds real cookie jars, and the stale `dist/`
   DMGs.
-- The §2 hand checks. Add to them:
-  - a `hangar://` link from Shortcuts against the installed app, which is the only build that
-    registers the scheme;
-  - a double-click on the title bar zooming the window.
+- The §2 hand checks, and [manual-checks.md](manual-checks.md): a `hangar://` link from Shortcuts
+  against the installed app, which is the only build that registers the scheme, a double-click on
+  the title bar, and the checks §14.3 added.
 - Apple signing (§1.1), for distribution and updates.
 
 **Built but not finished:**
@@ -582,3 +585,35 @@ findings are [decisions #104–111](decisions.md).
 - **Browser extensions: deferred.** Password managers need native messaging, which Electron
   doesn't have.
 
+### 14.3 After Phase 8: #13–#21
+
+Fixes found by using it, and one feature built for a Stream Deck plugin
+([decisions #114–115](decisions.md)):
+- **WhatsApp** is sent the plain Chrome user agent (#13), which it accepts where it refused
+  Hangar's, and its tile counts unread *messages*, the green badges added up, not the chats its
+  title counts (#19).
+- **Full screen** keeps no space for the traffic lights it hides (#14).
+- **Dependencies** (#15–17): Electron 43.7.5 and the other safe updates, the audit fixes, and
+  Dependabot grouped without majors — a major now comes on its own.
+- **Unread** (#18): Settings → Notifications says, for each service, where its count comes from
+  and what it last read. Gmail's count works while its tab is open.
+- **The control socket** (#20): state for your own processes and a short list of commands, in
+  [automation.md](automation.md). And **meeting controls** for Teams, Slack huddles and Meet: whether
+  you're in a call, muted, on camera, sharing, with a hand up, and pressing each.
+- **Slack huddles** (#21): the huddle window may use the microphone and share the screen, judged
+  as the service that opened it.
+
+Then the review of #20, fixed in the round after:
+- A blank popup is allowed only when the service's own page opened it, and a refused link closes
+  one only if it's empty — a huddle window is blank too, and closing it would end the call.
+- A control whose label isn't recognised reads unknown, not off, and isn't pressed; one press
+  runs at a time.
+- The socket is rate-limited, copes with a client that stops reading, reports timed quiet
+  periods as they stand now, tells a plugin about a link's change with no window, and can't stop
+  the window being built.
+
+**Still open from these:**
+- The meeting labels are English. In another language a label-read control reads `null`: safe,
+  but not useful. Each language is a line in the catalog.
+- The rules were written from the services' markup, not a real call.
+  [manual-checks.md](manual-checks.md) is how they're confirmed.

@@ -73,10 +73,11 @@ rolled up.
 those, and catalog entries without a logo yet, get their favicon captured from the page itself.
 
 **Notifications.** A service's own notifications are intercepted and attributed, so the dock badge,
-tray count and folder roll-ups all reflect real unread. Do Not Disturb silences the banner but keeps
-counting; muting a service does neither, and Badge only counts without a banner. They can be timed —
-for an hour, until tomorrow — and ⇧⌘J lists the notifications you missed and your downloads. A
-service set to keep running loads at launch and never sleeps, so it notifies without a pane.
+tray count and folder roll-ups all reflect real unread, and Settings says where each service's count
+comes from. Do Not Disturb silences the banner but keeps counting; muting a service does neither,
+and Badge only counts without a banner. They can be timed — for an hour, until tomorrow — and ⇧⌘J
+lists the notifications you missed and your downloads. A service set to keep running loads at launch
+and never sleeps, so it notifies without a pane.
 
 **Links and mail.** A link that leaves one service can open in the service it belongs to — a Jira
 ticket from Slack in your Jira — instead of the browser (opt-in). Hangar can also be your default
@@ -84,7 +85,13 @@ email app: `mailto:` links anywhere on the Mac open a new message in Gmail, Outl
 
 **Automation.** `hangar://open/Slack`, `hangar://dnd/on?for=45` and the same as command-line
 flags. Shortcuts, Raycast and Focus can switch services, workspaces and Do Not Disturb. What a link
-can do is a short list on purpose. See [automation.md](docs/automation.md).
+can do is a short list on purpose. For a Stream Deck or a script that also needs to *see* Hangar,
+a control socket streams each service's unread count, Do Not Disturb and mutes, and takes a short
+list of commands. See [automation.md](docs/automation.md).
+
+**Calls.** Teams and Google Meet calls run in their panes, and a Slack huddle in the window Slack
+opens for it, microphone and screen sharing included. Over the control socket, a key can show
+whether you're muted, on camera, sharing or have a hand up, and press each.
 
 **Panes and windows.** Maximise the focused pane (⌘⇧↵), with a ring marking which one has focus;
 pop any service into a window of its own, still signed in — for a call beside something else.
@@ -189,7 +196,8 @@ that has never opened Gmail.
 | [preferences.md](docs/preferences.md) | Every setting, what it does, and what isn't wired yet |
 | [icons.md](docs/icons.md) | Icon sourcing, protocols, CSP |
 | [keyboard.md](docs/keyboard.md) | Shortcut map, context menus, and why it works the way it does |
-| [automation.md](docs/automation.md) | `hangar://` links and command-line flags, for Shortcuts, Raycast and Focus |
+| [automation.md](docs/automation.md) | `hangar://` links, command-line flags and the control socket, for Shortcuts, Raycast, Focus and a Stream Deck |
+| [manual-checks.md](docs/manual-checks.md) | What only a real page can prove, to check after installing |
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
@@ -200,14 +208,15 @@ that has never opened Gmail.
 ## Status
 
 **Built:** the shell (panes with resizable splits and optional headers, the command palette,
-keyboard, application menu, context menus), `hangar://` links and command-line flags, accounts and
-multi-login, icons, the connection picker with custom URLs, folders, rail reordering, dragging a
-tile onto a pane, dragging one into and out of a folder, the compact rail's chevron, keyboard
-rebinding with per-service passthrough, unread from the page's own badge and from a sleeping
-service's own API, Web Push, the preferences system with a Settings window and reset-to-defaults,
-rail placement on any edge, theming, hibernation, `powerMonitor` handling, tray, git-backed config
-sync, config export/import, and launch-at-login with optional relaunch — which works on an unsigned
-build, via a LaunchAgent rather than the API macOS refuses ([decisions #93](docs/decisions.md)).
+keyboard, application menu, context menus), `hangar://` links and command-line flags, the control
+socket and meeting controls, accounts and multi-login, icons, the connection picker with custom
+URLs, folders, rail reordering, dragging a tile onto a pane, dragging one into and out of a folder,
+the compact rail's chevron, keyboard rebinding with per-service passthrough, unread from the page's
+own badge and from a sleeping service's own API, Web Push, the preferences system with a Settings
+window and reset-to-defaults, rail placement on any edge, theming, hibernation, `powerMonitor`
+handling, tray, git-backed config sync, config export/import, and launch-at-login with optional
+relaunch — which works on an unsigned build, via a LaunchAgent rather than the API macOS refuses
+([decisions #93](docs/decisions.md)).
 
 **Not built:**
 

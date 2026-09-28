@@ -133,6 +133,18 @@ A client sends commands, one per line:
 
 Anything else gets `{"type":"error","error":…}` back, and the reason is in the log.
 
+`meeting-control` with `want` presses only when the control reads the other way. A control that
+reads `null` isn't pressed at all, since Hangar can't tell which way it would go. A press sent
+while the last one is still running is dropped: a double-tapped key toggles once.
+
+**Limits.**
+- Twenty commands in any ten seconds, per client. Past that, a command is answered
+  `{"type":"error","error":"too many commands"}` and not run. A refused one doesn't count.
+- Eight clients at once. A ninth is told `too many clients`, unless one of the eight has stopped
+  reading; the one that stopped longest ago is dropped to make room.
+- A client that isn't reading is sent only the newest state when it starts again, not every one
+  it missed. With over 1 MB waiting for it, it's dropped.
+
 Commands that ask to see something bring the window forward, building one if there is none:
 the focus and workspace ones, the palette, activity and `show-window`. Do Not Disturb, mutes and
 marking read never do, exactly as with links.
@@ -150,9 +162,18 @@ directory only your user can open, and it's made 0600 as well. Reaching it means
 as you. A port on localhost would answer every process on the machine, and a web page can be
 talked into sending requests to one.
 
-It still can't do more than a link, plus moving around what's on screen. Removing a service,
-signing out, importing a config, preferences and custom scripts are not on its list. Decision
-#114 has the reasoning.
+"Running as you" still takes in every app you've installed and every script a package ran, and
+the socket can do more than a link. Beyond moving around what's on screen, through
+`meeting-control` it can:
+- unmute you, or turn your camera on;
+- end a call;
+- start a screen share, as far as the screen picker, which needs you to choose.
+
+That's why it's rate-limited, and why `meeting-control` is on the socket and is not a link: a page
+can open `hangar://`, and must not be able to do any of the above.
+
+Removing a service, signing out, importing a config, preferences and custom scripts are not on
+its list. Decisions #114 and #115 have the reasoning.
 
 ## Recipes
 

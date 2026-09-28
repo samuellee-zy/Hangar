@@ -1,4 +1,5 @@
 import { commandProblem } from '@core/commands';
+import { expiredQuiet } from '@core/notify/policy';
 import { catalogById } from '@shared/catalog';
 import type { Command, Config, MeetingState, ShellState } from '@shared/types';
 
@@ -120,12 +121,18 @@ export function controlState(state: ShellState): ControlState {
   };
 }
 
-/** The same picture with no window: settings only. */
-export function controlStateFromConfig(config: Config): ControlState {
+/**
+ * The same picture with no window: settings only. Quiet periods as they stand *now*: with no
+ * window there's no sweep to end a timed Do Not Disturb or mute, and the config says "on" after
+ * its time is up — a Stream Deck key showed DND long after it had ended.
+ */
+export function controlStateFromConfig(config: Config, now = Date.now()): ControlState {
+  const expired = expiredQuiet(config, now);
+  const dnd = config.preferences.notifications.dnd && !expired.dnd;
   return {
     window: false,
-    dnd: config.preferences.notifications.dnd,
-    dndUntil: config.preferences.notifications.dndUntil,
+    dnd,
+    dndUntil: dnd ? config.preferences.notifications.dndUntil : null,
     activeWorkspaceId: config.activeWorkspaceId,
     workspaces: config.workspaces.map(({ id, name }) => ({ id, name })),
     services: config.services.map((svc) => ({
@@ -134,8 +141,8 @@ export function controlStateFromConfig(config: Config): ControlState {
       catalogId: svc.catalogId,
       icon: catalogById(svc.catalogId)?.icon,
       unread: 0,
-      muted: svc.notificationLevel === 'muted',
-      mutedUntil: svc.mutedUntil ?? null,
+      muted: svc.notificationLevel === 'muted' && !expired.services.includes(svc.id),
+      mutedUntil: expired.services.includes(svc.id) ? null : (svc.mutedUntil ?? null),
       sleeping: false,
     })),
     focusedServiceId: null,

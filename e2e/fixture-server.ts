@@ -64,6 +64,12 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
       document.documentElement.append(blank);
       window.blankMicrophone = () =>
         blank.contentWindow.navigator.permissions.query({ name: 'microphone' }).then((p) => p.state);
+      // A blank window opened by the embed, which isn't the service, and written into.
+      window.openBlank = () => {
+        const w = window.open('', 'from-embed');
+        if (w) w.document.write('<h1 id=planted>Not Slack</h1>');
+        return true;
+      };
     </script>`,
   },
   // Title-based unread detection reads this shape — see core/notify/unread.ts.
