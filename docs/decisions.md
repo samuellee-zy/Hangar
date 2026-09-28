@@ -2446,3 +2446,30 @@ The findings worth remembering, because the pattern will come back:
 - **New default chords can take ones you bound yourself,** because the first action in the table
   wins a shared chord. A new action starts unbound when its default is already in use.
 
+## 114. The control socket: state for your own processes, commands from a list
+
+A Stream Deck plugin wanted what links can't give: each service's unread count, whether Do Not
+Disturb is on, which workspace is showing. Unread counts are in memory only, and the Dock badge is
+only the total. So main streams a trimmed state over a Unix socket in userData
+(`main/features/control-server.ts`). The decisions are in `core/runtime/control.ts`, which tests
+can reach.
+
+- **A socket, not a port.** A localhost port answers every process on the machine, and a browser
+  can be steered at one. The socket is in a 0700 directory and is 0600 itself, so reaching it
+  already means running as you. That's why it can see state and isn't rate-limited, when a link
+  can see nothing and gets ten a window.
+- **An allowlist, not the command set.** It gets the link verbs plus navigation: next unread,
+  split, maximise, cycle, reopen, palette, activity, reload, sleep. It doesn't get `update-service`,
+  since `mute-service` does the one thing a link used it for. Nothing that removes, signs out,
+  imports, sets a preference or touches custom code is on it. A test checks each entry is a real
+  command and that each link verb is covered.
+- **Trimmed, not `ShellState`.** It sends ids, names, unread, mutes, Do Not Disturb, workspaces
+  and the focused service. It doesn't send custom scripts, the rail tree, notification text or
+  paths. It's sent only when it changed, and only while someone is connected. It's published from
+  `broadcast`, which already runs at most once a frame.
+- **Shown or not, like links.** A command that asks to see something builds and shows the window.
+  A setting changed with no window is written where it's kept, and the new state is sent from
+  there, because no broadcast will carry it.
+- **A stale socket is removed at start.** The single-instance lock means one left behind is from
+  a crash. A path over macOS's 104-byte limit, such as a deep `HANGAR_USER_DATA`, logs an error and
+  the app runs without the socket.

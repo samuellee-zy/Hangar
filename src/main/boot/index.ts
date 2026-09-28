@@ -17,6 +17,8 @@ import { commandProblem, isCommand } from '@core/commands';
 import { createRateLimiter, redactUrl } from '@core/runtime/urls';
 import { muteUntil, setDnd, settleMute, unmute } from '@core/notify/policy';
 import { LINK_SCHEME, isLink, linksFromArgv, resolveLink } from '@core/runtime/deeplink';
+import { CONTROL_SHOWS, controlState, controlStateFromConfig } from '@core/runtime/control';
+import { publishControlState, startControlServer } from '@main/features/control-server';
 import type { Command } from '@shared/types';
 
 /**
@@ -67,6 +69,8 @@ const trackWindow = (w: AppWindow) => {
     // The Dock and Go menus list services with their unread counts, and Do Not Disturb. Left as
     // they were, the Dock went on saying "Slack (5)" with the badge cleared and nothing behind it.
     refreshMenu();
+    // The control socket's clients too: with no window, nothing is unread.
+    publishControlState(controlStateFromConfig(loadConfig()));
   });
 };
 
@@ -186,6 +190,23 @@ function runLinks(links: readonly string[]): void {
   }
 }
 
+/**
+ * A command from the control socket, already allowlisted (core/runtime/control.ts). Treated like a
+ * link's: what asks to be seen brings the window forward, and a setting changed with no window is
+ * changed where it's kept. Not rate-limited as links are — only your own user can reach the socket.
+ */
+function runControl(command: Command): void {
+  if (isQuitting()) return;
+  if (CONTROL_SHOWS.has(command.type)) ensureShell();
+  if (shell) {
+    shell.dispatch(command);
+    return;
+  }
+  applyWithoutWindow(command);
+  // No window means no broadcast to carry the change, so it's told here.
+  publishControlState(controlStateFromConfig(loadConfig()));
+}
+
 /** Ten links in ten seconds: a Shortcut that runs a few in a row, not a page that runs a thousand. */
 const allowLink = createRateLimiter({ max: 10, windowMs: 10_000 });
 
@@ -272,6 +293,12 @@ app.whenReady().then(() => {
   // whose `shell:get-state` had no handler: a blank window with no way to recover it.
   app.on('activate', () => ensureShell());
   registerIpc();
+  // After the IPC surface, before the window: a client connecting mid-construction is told the
+  // settings, and the first broadcast follows.
+  startControlServer({
+    run: runControl,
+    current: () => (shell ? controlState(shell.state()) : controlStateFromConfig(loadConfig())),
+  });
 
   // GPU, network service, utilities. Chromium restarts them itself, and the only trace used to be a
   // bare line from Chromium's own logging — this says which, why, and with what exit code.

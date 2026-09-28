@@ -84,6 +84,72 @@ This is the same handoff `--quit` uses.
 `open -a Hangar --args …` only passes the arguments when Hangar isn't already running; macOS just
 activates a running app. Use the binary's path, or a link: `open "hangar://…"` works either way.
 
+## The control socket
+
+Links and flags only send. For something that also needs to *see* Hangar — a Stream Deck key with
+Slack's unread count on it, a Do Not Disturb button that lights up — there is a Unix socket:
+
+```
+~/Library/Application Support/Hangar/control.sock
+```
+
+It speaks newline-delimited JSON. On connecting, a client is sent the state, and it's sent again
+whenever any of it changes:
+
+```json
+{"type":"state","state":{"window":true,"dnd":false,"dndUntil":null,"activeWorkspaceId":"w-1",
+ "workspaces":[{"id":"w-1","name":"Work"}],"focusedServiceId":"svc-3","unreadTotal":4,
+ "services":[{"id":"svc-3","name":"Slack","catalogId":"slack","icon":"slack","color":"#4a154b","initials":"S",
+              "unread":4,"muted":false,"mutedUntil":null,"sleeping":false}]}}
+```
+
+- `services` is every service, in every workspace, like the Dock badge.
+- `window` is false after ⌘W with close-to-tray off. Nothing is running then, so nothing is unread.
+- `icon` names the logo in the bundle, `Hangar.app/Contents/Resources/assets/icons/<icon>.svg`. A
+  service without one may have a captured favicon at `icons/<id>.*` in the same folder as the socket.
+
+A client sends commands, one per line:
+
+```json
+{"type":"command","command":{"type":"focus-service","serviceId":"svc-3"}}
+```
+
+| Command | Fields |
+|---|---|
+| `focus-service`, `open-in-new-pane` | `serviceId` |
+| `set-workspace` | `workspaceId` |
+| `set-dnd` | `on`, `until` (epoch ms or `null`) |
+| `mute-service` | `serviceId`, `until` (epoch ms; `null` unmutes) |
+| `mark-read` · `mark-all-read` | `serviceId` · — |
+| `focus-next-unread`, `focus-previous-service` | — |
+| `toggle-maximise-pane`, `split`, `reopen-pane` | — |
+| `cycle-pane` | `delta` (`1` or `-1`) |
+| `reload-service`, `sleep-service` | `serviceId` |
+| `open-palette`, `open-activity`, `show-window` | — |
+
+Anything else gets `{"type":"error","error":…}` back, and the reason is in the log.
+
+Commands that ask to see something bring the window forward, building one if there is none:
+the focus and workspace ones, the palette, activity and `show-window`. Do Not Disturb, mutes and
+marking read never do, exactly as with links.
+
+To try it:
+
+```bash
+nc -U ~/Library/Application\ Support/Hangar/control.sock
+```
+
+### Why a socket can see more than a link
+
+A link can come from any page, so it can't read anything back. The socket is a file in a
+directory only your user can open, and it's made 0600 as well. Reaching it means already running
+as you. A port on localhost would answer every process on the machine, and a web page can be
+talked into sending requests to one.
+
+It still can't do more than a link, plus moving around what's on screen. Removing a service,
+signing out, importing a config, preferences and custom scripts are not on its list. Decision
+#114 has the reasoning.
+
 ## Recipes
 
 **Shortcuts.** Use the "Open URLs" action with a `hangar://` link.

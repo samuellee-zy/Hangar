@@ -65,6 +65,7 @@ import { clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/
 import { routable, routeTarget } from '@core/services/routing';
 import { canCompose, composeUrlFor } from '@shared/mailto';
 import { destroyTray, refreshTray } from '@main/features/tray';
+import { publishControlState } from '@main/features/control-server';
 import { isQuitting } from '@main/platform/quit-state';
 import { findOrphanPartitions } from '@core/runtime/permissions';
 import { isValidHost } from '@core/services/patch';
@@ -852,6 +853,7 @@ export class AppWindow {
       safeSend(wc, 'shell:state', payload);
     }
     refreshTray(state, (c) => this.dispatch(c));
+    publishControlState(state);
     this.refreshMenuIfChanged(state);
     this.refreshPaneChrome(state);
   }
