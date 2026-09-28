@@ -41,6 +41,31 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
           <div class="count"><span aria-label="1 unread message">1</span></div></div>
       </div></div>`,
   },
+  // How Slack starts a huddle: a blank window, opened and then drawn into by the page itself.
+  '/huddle': {
+    body: `<!doctype html><title>Huddle fixture</title>
+      <button id="start" onclick="
+        const w = window.open('', 'huddle', 'width=360,height=480');
+        w.document.write('<title>Huddle</title><h1 id=huddle>In a huddle</h1>');
+        w.document.close();
+      ">Start huddle</button>
+      <script>
+        // A third-party embed — another host, not on the service's allowlist — as Slack's page might
+        // carry one. The test asks for the microphone from a blank frame inside it.
+        const embed = document.createElement('iframe');
+        embed.id = 'embed';
+        embed.src = location.origin.replace('127.0.0.1', 'localhost') + '/embed';
+        document.body.append(embed);
+      </script>`,
+  },
+  '/embed': {
+    body: `<!doctype html><title>Embed</title><script>
+      const blank = document.createElement('iframe');
+      document.documentElement.append(blank);
+      window.blankMicrophone = () =>
+        blank.contentWindow.navigator.permissions.query({ name: 'microphone' }).then((p) => p.state);
+    </script>`,
+  },
   // Title-based unread detection reads this shape — see core/notify/unread.ts.
   '/unread': {
     body: `<!doctype html><title>(4) Fixture</title><h1>Four unread</h1>`,

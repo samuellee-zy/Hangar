@@ -5,6 +5,7 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import {
+  isBlankPage,
   createRateLimiter,
   externalOpenDecision,
   isAppRendererUrl,
@@ -135,3 +136,18 @@ describe('redactUrl', () => {
     assert.equal(redactUrl('mailto:someone@example.com'), 'mailto:someone@example.com');
   });
 });
+
+describe('a blank page', () => {
+  it("IS A WINDOW A PAGE DRAWS INTO ITSELF — Slack's huddle opens as one", () => {
+    for (const url of ['about:blank', 'ABOUT:BLANK', 'about:blank#huddle', 'about:blank?x=1', '', '  ']) {
+      assert.equal(isBlankPage(url), true, JSON.stringify(url));
+    }
+  });
+
+  it('and nothing else is', () => {
+    for (const url of ['about:srcdoc', 'about:blankish', 'https://app.slack.com/', 'data:text/html,x', undefined]) {
+      assert.equal(isBlankPage(url), false, String(url));
+    }
+  });
+});
+
