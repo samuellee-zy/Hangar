@@ -5,7 +5,7 @@
 
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { creditSuspendedTime, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import { creditSuspendedTime, keepsRunning, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 
 
 const NOW = 1_000_000_000;
@@ -16,6 +16,7 @@ const svc = (id, over = {}) => ({
   visible: false,
   sleeping: false,
   hibernate: true,
+  busy: false,
   lastActiveAt: minutesAgo(60),
   ...over,
 });
@@ -24,6 +25,11 @@ describe("what gets slept", () => {
 
   it('an idle background service past the timeout is slept', () => {
     assert.deepEqual(servicesToHibernate([svc('a')], 30, NOW), ['a']);
+  });
+
+  it('A SERVICE IN A CALL OR PLAYING SOUND IS NEVER SLEPT — off screen is not idle', () => {
+    // A Slack huddle runs in its own window: the pane can be gone for hours and the call still up.
+    assert.deepEqual(servicesToHibernate([svc('a', { busy: true, lastActiveAt: minutesAgo(600) })], 5, NOW), []);
   });
 
   it('a VISIBLE service is never slept, however idle it looks', () => {
@@ -125,5 +131,14 @@ describe('time spent asleep does not count as idle time', () => {
   it('a zero or negative suspend leaves the stamp alone', () => {
     assert.equal(creditSuspendedTime(minutesAgo(5), 0, NOW), minutesAgo(5));
     assert.equal(creditSuspendedTime(minutesAgo(5), -1, NOW), minutesAgo(5));
+  });
+});
+
+describe('keepsRunning', () => {
+  it('its own setting, or the one for every service', () => {
+    assert.equal(keepsRunning({}, { keepAllRunning: false }), false);
+    assert.equal(keepsRunning({ keepRunning: true }, { keepAllRunning: false }), true);
+    assert.equal(keepsRunning({ keepRunning: false }, { keepAllRunning: true }), true);
+    assert.equal(keepsRunning({}, { keepAllRunning: true }), true);
   });
 });

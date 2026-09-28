@@ -52,6 +52,10 @@ describe('mapping a path to its effect', () => {
     assert.equal(preferenceEffectFor('behaviour.spellcheckLanguages'), 'spellcheck');
   });
 
+  it('KEEP EVERY SERVICE RUNNING STARTS THEM AT ONCE — not at the next launch', () => {
+    assert.equal(preferenceEffectFor('behaviour.keepAllRunning'), 'background-services');
+  });
+
   it('an ordinary preference needs NO effect beyond being written', () => {
     // Re-running everything on each write meant adjusting the rail size re-registered the global
     // shortcut and kicked off an unawaited proxy fan-out across every session.
@@ -88,6 +92,7 @@ describe('the effect list stays in step with the mapping', () => {
       'notifications.push',
       'notifications.firebase.apiKey',
       'behaviour.spellcheckLanguages',
+      'behaviour.keepAllRunning',
     ];
 
     for (const path of paths) {
@@ -109,6 +114,7 @@ describe('the effect list stays in step with the mapping', () => {
         'appearance.showTrayIcon',
         'notifications.push',
         'behaviour.spellcheckLanguages',
+        'behaviour.keepAllRunning',
       ].map(preferenceEffectFor)
     );
 

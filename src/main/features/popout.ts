@@ -53,6 +53,11 @@ export function popOut(svc: ServiceInstance, url: string): void {
   win.loadURL(url).catch((err: unknown) => console.warn(`[popout] ${svc.name}: ${String(err)}`));
 }
 
+/** Each popped-out window's page, by service — for asking before a quit ends a call in one. */
+export function popOutContents(): Array<[serviceId: string, contents: Electron.WebContents]> {
+  return [...open].filter(([, win]) => !win.isDestroyed()).map(([id, win]) => [id, win.webContents]);
+}
+
 /** Closes every popped-out window. For teardown. */
 export function closePopOuts(): void {
   for (const win of open.values()) if (!win.isDestroyed()) win.close();

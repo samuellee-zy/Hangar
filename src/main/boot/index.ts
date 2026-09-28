@@ -18,6 +18,7 @@ import { createRateLimiter, redactUrl } from '@core/runtime/urls';
 import { muteUntil, setDnd, settleMute, unmute } from '@core/notify/policy';
 import { LINK_SCHEME, isLink, linksFromArgv, resolveLink } from '@core/runtime/deeplink';
 import { CONTROL_SHOWS, controlState, controlStateFromConfig } from '@core/runtime/control';
+import { quitPrompt, type BusyService } from '@core/runtime/busy';
 import { publishControlState, startControlServer } from '@main/features/control-server';
 import type { Command } from '@shared/types';
 
@@ -516,6 +517,19 @@ startMaintenance(() => shell);
 const QUIT_PERSIST_TIMEOUT_MS = 3_000;
 
 /**
+ * What quitting would interrupt. Guarded: a throw on the way out is a quit that never happens, and
+ * a question not asked costs less than that.
+ */
+function busyNow(): BusyService[] {
+  try {
+    return shell?.busyServices() ?? [];
+  } catch (err) {
+    console.error('[quit] could not tell what is busy:', err);
+    return [];
+  }
+}
+
+/**
  * Quit, promoting session cookies first. Returns without quitting if the user cancels the confirm.
  *
  * `confirm: false` is for `--quit`, which a script sends: there is no one there to click the
@@ -524,13 +538,18 @@ const QUIT_PERSIST_TIMEOUT_MS = 3_000;
 function quitGracefully({ confirm }: { confirm: boolean }): void {
   if (isQuitting()) return;
 
-  if (confirm && loadConfig().preferences.behaviour.confirmQuit) {
+  // A call or sound going on is asked about whatever "Confirm before quitting" says: that setting is
+  // for a slip of the finger in general, and ending a call is the slip that costs most. Never for
+  // `--quit` or a logout, where no one is there to answer.
+  const busy = confirm ? quitPrompt(busyNow()) : null;
+  if (busy || (confirm && loadConfig().preferences.behaviour.confirmQuit)) {
     const response = dialog.showMessageBoxSync({
-      type: 'question',
+      type: busy ? 'warning' : 'question',
       buttons: ['Quit', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
-      message: 'Quit Hangar?',
+      message: busy?.message ?? 'Quit Hangar?',
+      ...(busy ? { detail: busy.detail } : {}),
     });
     // Cancelling must leave the app fully usable — no half-quit state.
     if (response !== 0) return;

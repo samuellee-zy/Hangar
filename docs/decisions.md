@@ -2521,3 +2521,33 @@ against markup shaped like each service's.
   a double-tapped key can't toggle twice.
 - **Selectors are best guesses until a real call confirms them.** The Meet and Slack hooks come
   from open-source controllers and will drift with redesigns; they're data so a fix is one line.
+
+## 116. Staying awake: a call isn't idle, and keeping everything running is one switch
+
+Hibernation judged a service by whether it was on screen and how long since you'd used it. A Slack
+huddle runs in its own window, so the Slack pane can be gone for an hour with the call still up,
+and music plays with no pane at all. The idle sweep and "Sleep background services" unloaded both,
+and putting a service to sleep, popping it out or quitting ended the call without a word.
+
+- **Busy is a call or sound.** A call is what the meeting probe reports (#115), which covers
+  Slack's huddle window. Sound is `isCurrentlyAudible()` on the service's page or any window it
+  opened, so it covers any service, not only those with meeting rules. `AppWindow.busyReason`
+  answers both.
+- **A sweep skips; an action asks.** The idle sweep and "Sleep background services" leave a busy
+  service alone and say so in the log. Putting one service to sleep or popping it out asks first,
+  since you named it and may mean to end the call. Popping out asks too, because the pop-out loads
+  the page afresh, and that ends a call as surely as sleeping.
+- **Quitting asks whatever "Confirm before quitting" says.** That setting guards against a slip of
+  the finger in general; ending a call is the slip that costs most. A pop-out isn't probed for
+  meetings, so sound is what shows a call in one. `Hangar --quit` and a logout never ask: there's
+  no one to answer, and a dialog nobody clicks is a quit that never happens.
+- **A slept service's meeting is forgotten at once.** Kept until the next probe, it read "in a
+  call" for half a second after the sleep that ended it, and a quit in that half second asked
+  about a call that was over.
+- **Keep every service running is a preference, and one helper answers it.** `keepsRunning` in
+  `core/runtime/hibernate.ts` is asked by the launch, the idle sweep and "Sleep background
+  services", which each read `svc.keepRunning` for themselves before. Turned on, the rest load at
+  once; turned off, nothing unloads until the sweep would have.
+- **Loaded half a second apart.** Twenty services starting together at launch were twenty
+  renderers competing with the panes you're looking at. They start one at a time after the panes,
+  each re-reading the config, since in half a second a service can be removed or opened in a pane.

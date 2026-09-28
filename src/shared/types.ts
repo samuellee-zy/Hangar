@@ -427,6 +427,11 @@ export interface Preferences {
      */
     relaunchOnCrash: boolean;
     closeToTray: boolean;
+    /**
+     * Every service loads at launch and never hibernates, as if each had "Keep running" on. Each is
+     * its own set of processes, so this is memory for being told about everything.
+     */
+    keepAllRunning: boolean;
     /** Open a link that leaves a service in another of your services when it belongs there. */
     routeLinks: boolean;
     /** The mail service a `mailto:` link opens a compose in, or `''` for none. */

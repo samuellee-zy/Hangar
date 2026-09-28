@@ -32,6 +32,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     launchAtLogin: false,
     relaunchOnCrash: false,
     closeToTray: false,
+    // Off: twenty services all running is twenty pages' memory, which is a choice to make.
+    keepAllRunning: false,
     // Off by default: a link that used to open in the browser suddenly opening in a pane would be
     // a surprise, however useful.
     routeLinks: false,

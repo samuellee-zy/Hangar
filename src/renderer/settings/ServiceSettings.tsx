@@ -65,6 +65,8 @@ export function ServiceSettings({
     window.hangar.send({ type: 'update-service', serviceId: svc.id, patch });
   const account = state.accounts.find((a) => a.id === svc.accountId);
   const sharing = state.allServices.filter((s) => s.accountId === svc.accountId && s.id !== svc.id);
+  // "Keep every service running" decides for this one too, so its own switch shows that and waits.
+  const allRunning = state.preferences.behaviour.keepAllRunning;
 
   return (
     <>
@@ -118,15 +120,18 @@ export function ServiceSettings({
         <ul className="rows">
           <Check
             name="Keep running"
-            note="Loads at launch and never hibernates, so it can notify without being in a pane"
-            checked={Boolean(svc.keepRunning)}
+            note={allRunning
+              ? 'On for every service, under General'
+              : 'Loads at launch and never hibernates, so it can notify without being in a pane'}
+            checked={allRunning || Boolean(svc.keepRunning)}
+            disabled={allRunning}
             onChange={(keepRunning) => send({ keepRunning })}
           />
           <Check
             name="Hibernate when idle"
-            note={svc.keepRunning ? 'Not while it is set to keep running' : 'After the time set under General'}
+            note={allRunning || svc.keepRunning ? 'Not while it is set to keep running' : 'After the time set under General'}
             checked={svc.hibernate}
-            disabled={Boolean(svc.keepRunning)}
+            disabled={allRunning || Boolean(svc.keepRunning)}
             onChange={(hibernate) => send({ hibernate })}
           />
           {/* One choice, three answers. "Off" is a mute: it stops the badge as well as the banner —

@@ -568,7 +568,7 @@ findings are [decisions #104–111](decisions.md).
   would run on the 30-second sweep.
 - **Per-service extras** (S each):
   - a chord to jump to it;
-  - audio mute and a "playing" mark;
+  - audio mute and a "playing" mark (whether one is playing is known now: `busyReason`);
   - a notification sound;
   - forced dark mode;
   - a custom icon;
@@ -611,6 +611,13 @@ Then the review of #20, fixed in the round after:
 - The socket is rate-limited, copes with a client that stops reading, reports timed quiet
   periods as they stand now, tells a plugin about a link's change with no window, and can't stop
   the window being built.
+
+And in the same round ([decision #116](decisions.md)):
+- **A call isn't idle.** A service in a call or playing sound is kept by the idle sweep and "Sleep
+  background services", and putting it to sleep, popping it out or quitting asks first. `--quit`
+  never asks.
+- **Keep every service running** is one switch under General. They load half a second apart after
+  the panes, not all at once.
 
 **Still open from these:**
 - The meeting labels are English. In another language a label-read control reads `null`: safe,

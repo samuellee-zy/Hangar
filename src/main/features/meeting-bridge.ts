@@ -84,6 +84,18 @@ export class MeetingBridge {
     return this.states;
   }
 
+  /**
+   * The service was unloaded: its call is over as far as anyone can tell until the next probe says
+   * otherwise. Kept, it read "in a call" for up to half a second after a sleep, and a quit in that
+   * half second asked about a call that had already ended.
+   */
+  forget(serviceId: string): void {
+    this.states.delete(serviceId);
+    this.signatures.delete(serviceId);
+    this.where.delete(serviceId);
+    this.lastProbe.delete(serviceId);
+  }
+
   /** A window a service's page opened. Tracked until it closes. */
   notePopup(serviceId: string, wc: WebContents): void {
     const rules = this.rulesFor(serviceId);

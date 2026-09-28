@@ -77,7 +77,8 @@ tray count and folder roll-ups all reflect real unread, and Settings says where 
 comes from. Do Not Disturb silences the banner but keeps counting; muting a service does neither,
 and Badge only counts without a banner. They can be timed — for an hour, until tomorrow — and ⇧⌘J
 lists the notifications you missed and your downloads. A service set to keep running loads at launch
-and never sleeps, so it notifies without a pane.
+and never sleeps, so it notifies without a pane — or every service, with one switch. Nothing in a
+call or playing sound is put to sleep without asking.
 
 **Links and mail.** A link that leaves one service can open in the service it belongs to — a Jira
 ticket from Slack in your Jira — instead of the browser (opt-in). Hangar can also be your default

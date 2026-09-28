@@ -1,4 +1,5 @@
 import type { BaseWindow, WebContents } from 'electron';
+import type { BusyReason, Prompt } from '@core/runtime/busy';
 import type { Layout, Rect } from '@core/workspace/layout';
 import type { ConfigSync } from '@main/features/sync';
 import type { FindBar } from '@main/features/find-bar';
@@ -37,6 +38,10 @@ export interface ShellContext {
   contentsForService(serviceId: string): WebContents | null;
   /** Presses a meeting control in a service's page or its huddle window. See meeting-bridge.ts. */
   meetingControl(serviceId: string, control: MeetingControl, want: boolean | null): Promise<boolean>;
+  /** Whether unloading the service now would end a call or its sound. See core/runtime/busy.ts. */
+  busyReason(serviceId: string): BusyReason | null;
+  /** Asks on the window; true when the user chose to go ahead. */
+  confirm(prompt: Prompt): Promise<boolean>;
   activeWorkspace(workspaceId: string | null): Workspace | undefined;
   activeServices(workspaceId: string | null): ServiceInstance[];
   mutateWorkspace(mutate: (w: Workspace) => void): void;

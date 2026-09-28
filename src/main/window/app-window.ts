@@ -45,10 +45,11 @@ import { AttentionCenter } from '@main/window/attention';
 import { PreferenceEffects } from '@main/window/preference-effects';
 import { TileDrag } from '@main/window/tile-drag';
 import { route, type ShellContext } from '@main/window/commands';
-import { closePopOuts } from '@main/features/popout';
+import { closePopOuts, popOutContents } from '@main/features/popout';
 import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
-import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import { LONG_SUSPEND_MS, keepsRunning, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import type { BusyReason, BusyService, Prompt } from '@core/runtime/busy';
 import { expiredQuiet, unmute } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
 import { openExternalSafely } from '@main/platform/external';
@@ -139,6 +140,8 @@ const isSettingsView = (wc: WebContents): boolean => !wc.isDestroyed() && wc.get
 
 /** How often config sync asks the remote for changes made on another machine. */
 const SYNC_POLL_MS = 5 * 60_000;
+/** Between one background service starting to load and the next. */
+const BACKGROUND_STAGGER_MS = 500;
 
 /**
  * Composes the shell: window, rail, panes, overlay. Every mutation funnels through `dispatch`,
@@ -226,6 +229,10 @@ export class AppWindow {
   private endpoints: EndpointPoller;
   /** Meeting controls in services' pages, for the control socket. See meeting-bridge.ts. */
   private meetings: MeetingBridge;
+  /** Every window each service's page opened, while open: a huddle, a player. For `busyReason`. */
+  private popups = new Map<string, Set<WebContents>>();
+  /** The next background service to load, a moment after the last. See `startBackgroundServices`. */
+  private backgroundTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.win = new BaseWindow({
@@ -380,7 +387,13 @@ export class AppWindow {
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
     setLinkRouter((url, fromServiceId) => this.routeLink(url, fromServiceId));
-    setPopupListener((serviceId, contents) => this.meetings.notePopup(serviceId, contents));
+    setPopupListener((serviceId, contents) => {
+      let open = this.popups.get(serviceId);
+      if (!open) this.popups.set(serviceId, (open = new Set()));
+      open.add(contents);
+      contents.once('destroyed', () => open.delete(contents));
+      this.meetings.notePopup(serviceId, contents);
+    });
     this.meetings.start();
     onDownloadsChanged(() => this.sync());
 
@@ -461,14 +474,69 @@ export class AppWindow {
   }
 
   /**
-   * Loads every `keepRunning` service that isn't already, from every workspace — a message in
+   * Loads every service that keeps running and isn't loaded yet, from every workspace — a message in
    * another workspace is still one to hear about. No pane: a view with no bounds renders nothing and
    * still runs, notifies and reports its unread count.
+   *
+   * One every half second, after the panes, not all at once. With "Keep every service running" on
+   * that's every service you have, and twenty pages starting together at launch were twenty
+   * renderers competing with the panes you're looking at. Asked again — a setting turned on while a
+   * round is under way — it starts a fresh round over whatever still isn't loaded.
    */
   private startBackgroundServices(): void {
-    for (const svc of loadConfig().services) {
-      if (svc.keepRunning && !this.services.has(svc.id)) this.services.ensure(svc);
+    if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
+    const next = () => {
+      this.backgroundTimer = null;
+      const config = loadConfig();
+      // Read afresh each time: in half a second a service can be removed, opened in a pane, or the
+      // setting turned back off.
+      const svc = config.services.find(
+        (s) => keepsRunning(s, config.preferences.behaviour) && !this.services.has(s.id),
+      );
+      if (!svc) return;
+      this.services.ensure(svc);
+      this.backgroundTimer = setTimeout(next, BACKGROUND_STAGGER_MS);
+    };
+    this.backgroundTimer = setTimeout(next, BACKGROUND_STAGGER_MS);
+  }
+
+  /**
+   * Why unloading this service now would cost you something, or null if it wouldn't: it's in a call
+   * (the meeting probe saw one, in its page or its huddle window), or it or one of its windows is
+   * making sound.
+   */
+  private busyReason(serviceId: string): BusyReason | null {
+    if (this.meetings.snapshot().get(serviceId)?.inCall) return 'call';
+    const pages = [this.services.get(serviceId)?.view.webContents, ...(this.popups.get(serviceId) ?? [])];
+    return pages.some((wc) => wc && !wc.isDestroyed() && wc.isCurrentlyAudible()) ? 'audio' : null;
+  }
+
+  /** Every service that quitting would interrupt, pop-outs included, for the quit prompt. */
+  busyServices(): BusyService[] {
+    const names = new Map(loadConfig().services.map((svc) => [svc.id, svc.name]));
+    const busy = new Map<string, BusyReason>();
+    for (const id of names.keys()) {
+      const reason = this.busyReason(id);
+      if (reason) busy.set(id, reason);
     }
+    // A pop-out isn't probed for a meeting, so sound is what shows a call in one.
+    for (const [id, wc] of popOutContents()) {
+      if (!busy.has(id) && wc.isCurrentlyAudible()) busy.set(id, 'audio');
+    }
+    return [...busy].map(([id, reason]) => ({ name: names.get(id) ?? 'A service', reason }));
+  }
+
+  /** Asks a question on the window, answered asynchronously. True when the user chose to go ahead. */
+  private async confirm(prompt: Prompt): Promise<boolean> {
+    const { response } = await dialog.showMessageBox(this.win, {
+      type: 'warning',
+      buttons: [prompt.confirm, 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: prompt.message,
+      detail: prompt.detail,
+    });
+    return response === 0;
   }
 
   private saveLayout(): void {
@@ -1357,6 +1425,8 @@ export class AppWindow {
       paneRect: (id) => this.paneRect(id),
       contentsForService: (id) => this.contentsForService(id),
       meetingControl: (id, control, want) => this.meetings.control(id, control, want),
+      busyReason: (id) => this.busyReason(id),
+      confirm: (prompt) => this.confirm(prompt),
       activeWorkspace: (id) => this.activeWorkspace(id),
       activeServices: (id) => this.activeServices(id),
       mutateWorkspace: (mutate) => this.mutateWorkspace(mutate),
@@ -1482,6 +1552,7 @@ export class AppWindow {
     if (!runtime) return;
     this.win.contentView.removeChildView(runtime.view);
     this.services.destroy(serviceId);
+    this.meetings.forget(serviceId);
     // Nothing is watching this service's count from now on, so let the endpoint poller ask at the
     // next sweep rather than waiting out an interval that started while the page was still live.
     this.endpoints.forget(serviceId);
@@ -1560,8 +1631,9 @@ export class AppWindow {
         serviceId: svc.id,
         visible: visible.has(svc.id),
         sleeping: !this.services.has(svc.id),
-        // Running in the background is the point of `keepRunning`; sleeping it would undo that.
-        hibernate: svc.hibernate && !svc.keepRunning,
+        // Running in the background is the point of keeping it running; sleeping it would undo that.
+        hibernate: svc.hibernate && !keepsRunning(svc, config.preferences.behaviour),
+        busy: this.busyReason(svc.id) !== null,
         lastActiveAt: this.services.get(svc.id)?.lastActiveAt ?? Date.now(),
       })),
       timeout,
@@ -1615,6 +1687,7 @@ export class AppWindow {
         if (this.win.isVisible() && !this.win.isMinimized()) this.hideWindow();
         else this.showWindow();
       },
+      startBackgroundServices: () => this.startBackgroundServices(),
     });
   })();
 
@@ -1670,6 +1743,8 @@ export class AppWindow {
     // whose views are gone.
     this.endpoints.dispose();
     this.meetings.stop();
+    if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
+    this.backgroundTimer = null;
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = null;
 

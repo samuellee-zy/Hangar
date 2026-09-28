@@ -28,7 +28,9 @@ export type PreferenceEffect =
   /** Start or stop the Web Push sockets. */
   | 'push'
   /** Push new spellcheck languages into sessions already created. */
-  | 'spellcheck';
+  | 'spellcheck'
+  /** Load the services that should be running and aren't — "Keep every service running" was turned on. */
+  | 'background-services';
 
 /** Every effect, so a caller that must run all of them cannot miss one. */
 export const ALL_PREFERENCE_EFFECTS: readonly PreferenceEffect[] = [
@@ -39,6 +41,7 @@ export const ALL_PREFERENCE_EFFECTS: readonly PreferenceEffect[] = [
   'tray',
   'push',
   'spellcheck',
+  'background-services',
 ];
 
 /**
@@ -59,6 +62,9 @@ export function preferenceEffectFor(path: string): PreferenceEffect | null {
   if (path === 'appearance.showTrayIcon' || path === 'behaviour.closeToTray') return 'tray';
   if (path === 'notifications.push' || path.startsWith('notifications.firebase')) return 'push';
   if (path === 'behaviour.spellcheckLanguages') return 'spellcheck';
+  // Takes effect at once, like a service's own "Keep running". Turned off, nothing is unloaded:
+  // the idle sweep does that, if hibernation is on.
+  if (path === 'behaviour.keepAllRunning') return 'background-services';
   return null;
 }
 

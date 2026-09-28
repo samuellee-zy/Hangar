@@ -52,6 +52,16 @@ In a call in Teams, Google Meet, or a Slack huddle, with `nc -U` running:
 - The log has no `[nav] Slack: a blank window opened by … — closed` line for the huddle itself.
   That line is for a window something other than Slack tried to open.
 
+**Staying in the call:**
+- In a huddle, show another service in Slack's pane, wait out **Hibernate after**, then choose
+  **Sleep background services**. The huddle stays up, and the log says `[sleep] kept …: in a call`.
+- Put Slack to sleep from its tile's menu, and pop it out. Each asks first, and Cancel leaves the
+  call up.
+- Quit with ⌘Q. It asks "Slack is in a call. Quit Hangar?", even with **Confirm before quitting**
+  off.
+- Play something in a service that isn't in a pane, then **Sleep background services**. It keeps
+  playing.
+
 ## Links and the window
 
 | Check | Do | Read |
