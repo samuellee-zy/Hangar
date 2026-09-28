@@ -86,6 +86,7 @@ const SCHEMA = {
   zoom: { direction: ['in', 'out', 'reset'] },
   print: {},
   'reload-service': { serviceId: 'string', ignoreCache: 'boolean?' },
+  'meeting-control': { serviceId: 'string', control: ['mute', 'video', 'share', 'hand', 'leave'], want: 'boolean|null' },
   'sleep-service': { serviceId: 'string' },
   'show-service-menu': { serviceId: 'string' },
   'show-rail-menu': {},

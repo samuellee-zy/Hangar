@@ -2473,3 +2473,27 @@ can reach.
 - **A stale socket is removed at start.** The single-instance lock means one left behind is from
   a crash. A path over macOS's 104-byte limit, such as a deep `HANGAR_USER_DATA`, logs an error and
   the app runs without the socket.
+
+## 115. Meeting controls: probed from main, in an isolated world, from catalog rules
+
+A Stream Deck key should mute a Teams call in Hangar, and show whether it's muted, the same as it
+does for the Teams app. The call bar is DOM in the service's page, so the reading is a rule per
+catalog entry (`meeting`), like unread (#90): one evaluator in `core/services/meeting.ts`, tested
+against markup shaped like each service's.
+
+- **Probed from main, not the preload.** Slack runs a huddle in its own `about:blank` window, and
+  popups don't get the preload. `main/features/meeting-bridge.ts` runs one probe script in the view
+  and its popups instead: every two seconds to notice a call, twice a second in one, and only for
+  entries with rules.
+- **An isolated world.** The probe and the press run in a world of their own, so the page's
+  scripts can neither see them nor answer for `document.querySelector`. What comes back is still
+  shape-checked, and labels are clamped.
+- **A press is a user gesture.** Starting a screen share is refused without one.
+- **The socket only, never a link.** `meeting-control` is on the control allowlist and not among
+  the link verbs. A page that can open `hangar://` must not be able to unmute you or end your call.
+- **Blank popups, for Slack only.** The allowlist can't judge a window the opener fills in itself,
+  and a blank window is also how some pages open an external link before pointing it somewhere. So
+  `blankPopups` is opt-in per entry, and a blank popup whose first navigation is refused is closed
+  rather than left empty behind the link.
+- **Selectors are best guesses until a real call confirms them.** The Meet and Slack hooks come
+  from open-source controllers and will drift with redesigns; they're data so a fix is one line.

@@ -5,6 +5,7 @@ import type {
   Config,
   Command,
   KeyboardMap,
+  MeetingState,
   Pane,
   ServiceInstance,
   ServiceView,
@@ -82,6 +83,8 @@ export interface ProjectionInput {
   unreadEvidence?: Record<string, UnreadEvidence>;
   /** Bumped each time a service's favicon is cached, so the renderer refetches it. */
   iconVersions?: ReadonlyMap<string, number>;
+  /** Meetings found in services' pages (main/features/meeting-bridge.ts), by service id. */
+  meetings?: ReadonlyMap<string, MeetingState>;
   /** Services by most recent use, newest first. */
   recentServiceIds?: string[];
   maximisedPaneId?: string | null;
@@ -109,6 +112,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
       sleeping: !runtime,
       unread: input.unread.get(svc.id) ?? 0,
       iconVersion: input.iconVersions?.get(svc.id) ?? 0,
+      ...(input.meetings?.has(svc.id) ? { meeting: input.meetings.get(svc.id) } : {}),
     };
   };
   return {

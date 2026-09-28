@@ -1,6 +1,6 @@
 import { commandProblem } from '@core/commands';
 import { catalogById } from '@shared/catalog';
-import type { Command, Config, ShellState } from '@shared/types';
+import type { Command, Config, MeetingState, ShellState } from '@shared/types';
 
 /**
  * The control socket's side of things that needs no Electron: what a client may ask for, what it
@@ -35,6 +35,8 @@ export const CONTROL_COMMAND_TYPES: ReadonlySet<Command['type']> = new Set([
   'open-palette',
   'open-activity',
   'show-window',
+  // Presses a control in a meeting running in a service's page. Only here, never a link verb (#115).
+  'meeting-control',
 ]);
 
 /**
@@ -71,6 +73,8 @@ export interface ControlService {
   /** When a timed mute ends, epoch ms. */
   mutedUntil: number | null;
   sleeping: boolean;
+  /** A call in the service's page (Teams, a Slack huddle, Meet), when there is one. */
+  meeting?: MeetingState;
 }
 
 /** What a client is sent: on connecting, and whenever any of it changes. */
@@ -100,6 +104,7 @@ export function controlState(state: ShellState): ControlState {
       muted: svc.notificationLevel === 'muted',
       mutedUntil: svc.mutedUntil ?? null,
       sleeping: svc.sleeping,
+      ...(svc.meeting ? { meeting: svc.meeting } : {}),
     })
   );
   const focused = state.panes.find((pane) => pane.id === state.focusedPaneId);

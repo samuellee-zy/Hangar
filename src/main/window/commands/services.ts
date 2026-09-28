@@ -16,6 +16,12 @@ import type { CommandTable } from '@main/window/commands/context';
 
 /** Adding, changing and removing services and accounts, and their unread and mute state. */
 export const serviceCommands: CommandTable = {
+  // From the control socket — a Stream Deck key muting a Teams call, say. Never a link verb: a page
+  // that could open one mustn't be able to unmute you or end your call.
+  'meeting-control': (command, shell) => {
+    void shell.meetingControl(command.serviceId, command.control, command.want);
+  },
+
   'add-service': (command, shell) => {
     const svc = updateConfigReturning((c) =>
       addService(c, makeInstance(c, command.catalogId, { forceNewAccount: command.forceNewAccount })),

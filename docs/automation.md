@@ -105,6 +105,9 @@ whenever any of it changes:
 
 - `services` is every service, in every workspace, like the Dock badge.
 - `window` is false after ⌘W with close-to-tray off. Nothing is running then, so nothing is unread.
+- `meeting` appears on a service in a call — Teams, a Slack huddle, Meet — as
+  `{"inCall":true,"controls":{"mute":true,"video":false,…}}`: `true` means muted, camera on, sharing,
+  hand raised. A control that's there but unreadable is `null`; one that isn't there is absent.
 - `icon` names the logo in the bundle, `Hangar.app/Contents/Resources/assets/icons/<icon>.svg`. A
   service without one may have a captured favicon at `icons/<id>.*` in the same folder as the socket.
 
@@ -126,6 +129,7 @@ A client sends commands, one per line:
 | `cycle-pane` | `delta` (`1` or `-1`) |
 | `reload-service`, `sleep-service` | `serviceId` |
 | `open-palette`, `open-activity`, `show-window` | — |
+| `meeting-control` | `serviceId`, `control` (`mute`, `video`, `share`, `hand`, `leave`), `want` (`true`/`false`, or `null` to just press) |
 
 Anything else gets `{"type":"error","error":…}` back, and the reason is in the log.
 

@@ -26,6 +26,7 @@ describe('what a client may send', () => {
       { type: 'focus-next-unread' },
       { type: 'cycle-pane', delta: 1 },
       { type: 'show-window' },
+      { type: 'meeting-control', serviceId: 'svc-1', control: 'mute', want: true },
     ];
     for (const command of accepted) {
       const message = readControlMessage(line(command));
@@ -67,6 +68,12 @@ describe('the allowlist itself', () => {
       if (type === 'update-service') assert.equal(CONTROL_COMMAND_TYPES.has(type), false);
       else assert.ok(CONTROL_COMMAND_TYPES.has(type), type);
     }
+  });
+
+  it('A MEETING PRESS IS THE SOCKET\'S ALONE — never a link verb, and it never brings the window up', () => {
+    assert.ok(CONTROL_COMMAND_TYPES.has('meeting-control'));
+    assert.equal(LINK_COMMAND_TYPES.has('meeting-control'), false);
+    assert.equal(CONTROL_SHOWS.has('meeting-control'), false);
   });
 
   it('what brings the window forward is on the allowlist, and settings never do', () => {
@@ -132,6 +139,13 @@ describe('what a client is told', () => {
   it('THE ICON IS THE CATALOG\'S FILE NAME, not the catalog id', () => {
     const control = controlState({ ...state, allServices: [view({ catalogId: 'gcal' })] } as unknown as ShellState);
     assert.equal(control.services[0]?.icon, 'google-calendar');
+  });
+
+  it("a service's meeting goes along when it has one", () => {
+    const meeting = { inCall: true, controls: { mute: false } };
+    const control = controlState({ ...state, allServices: [view({ meeting })] } as unknown as ShellState);
+    assert.deepEqual(control.services[0]?.meeting, meeting);
+    assert.equal('meeting' in (controlState(state).services[0] ?? {}), false);
   });
 
   it('NO SERVICE CODE, NO RAIL TREE — only the fields it names', () => {
