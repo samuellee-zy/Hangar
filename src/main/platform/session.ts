@@ -14,7 +14,7 @@ import { accountById } from '@core/services/accounts';
 import { userAgentFor } from '@core/services/user-agent';
 import { decidePermission } from '@core/runtime/permissions';
 import { blockedPageHtml, shouldShowBlockedPage } from '@core/runtime/recovery';
-import { isWebUrl, redactUrl } from '@core/runtime/urls';
+import { isBlankPage, isWebUrl, redactUrl } from '@core/runtime/urls';
 import { applyProxy, attachDownloadHandler } from '@main/platform/system';
 import { applyAdBlocking } from '@main/platform/adblock';
 import { loadConfig } from '@main/platform/config';
@@ -131,9 +131,17 @@ function requestingService(
   partition: string,
   wc: WebContents | null,
   requestingUrl: string | undefined,
+  isMainFrame = false,
 ): ServiceInstance | null {
   if (!requestingUrl) return null;
   const ownerId = wc ? ownerOf.get(wc) : undefined;
+  // A blank window a service opened and drew into — Slack's huddle — asks from `about:blank`,
+  // which is on nobody's allowlist, so its microphone was refused: the huddle opened and couldn't
+  // hear you. It runs with the origin of the page that opened it; judge by that. Only when the
+  // blank page *is* the window's top frame, of a window we know whose it is — a blank iframe in a
+  // third-party embed is judged by its own origin still — and an opaque origin ("null") matches
+  // nothing.
+  if (isBlankPage(requestingUrl) && isMainFrame && wc && ownerId) requestingUrl = wc.mainFrame.origin;
   const candidates = ownerId
     ? loadConfig().services.filter((s) => s.id === ownerId)
     : servicesIn(partition);
@@ -145,8 +153,9 @@ function permitted(
   wc: WebContents | null,
   permission: string,
   requestingUrl: string | undefined,
+  isMainFrame = false,
 ): boolean {
-  const svc = requestingService(partition, wc, requestingUrl);
+  const svc = requestingService(partition, wc, requestingUrl, isMainFrame);
   return decidePermission({
     permission,
     fromService: svc !== null,
@@ -204,16 +213,19 @@ export function sessionFor(svc: ServiceInstance): Session {
   // Deny-by-default, with curated services trusted further than arbitrary URLs, and only a
   // service's own frames trusted at all. See permissions.ts.
   ses.setPermissionRequestHandler((wc, permission, callback, details) =>
-    callback(permitted(partition, wc, permission, details.requestingUrl)),
+    callback(permitted(partition, wc, permission, details.requestingUrl, details.isMainFrame)),
   );
   // The *check* handler covers synchronous queries (navigator.permissions.query, getUserMedia's
   // internal check). Leaving it at the default would let a page bypass the handler above.
   ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details) =>
-    permitted(partition, wc, permission, details.requestingUrl ?? requestingOrigin),
+    permitted(partition, wc, permission, details.requestingUrl ?? requestingOrigin, details.isMainFrame),
   );
   ses.setDisplayMediaRequestHandler((request, callback) => {
     const wc = request.frame ? webContents.fromFrame(request.frame) ?? null : null;
-    const url = request.frame?.url ?? request.securityOrigin;
+    // A blank window's frame has no address, but has its opener's origin — see `requestingService`.
+    // So sharing a screen from a huddle is judged as Slack, not refused as about:blank.
+    const frameUrl = request.frame?.url;
+    const url = isBlankPage(frameUrl) ? (request.frame?.origin ?? request.securityOrigin) : (frameUrl ?? request.securityOrigin);
     const svc = requestingService(partition, wc, url);
     if (!svc || !permitted(partition, wc, 'display-capture', url)) {
       callback({});
@@ -261,7 +273,7 @@ export function setPopupListener(listener: PopupListener | null): void {
 }
 
 /** `window.open()` with no URL, or `about:blank`: a window the page fills in itself. */
-const isBlankUrl = (url: string): boolean => url === '' || url === 'about:blank';
+const isBlankUrl = (url: string): boolean => isBlankPage(url);
 
 /**
  * Blank popups opened by entries that allow them (`blankPopups`), for as long as they've shown

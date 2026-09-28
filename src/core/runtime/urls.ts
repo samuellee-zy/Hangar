@@ -156,3 +156,15 @@ export function redactUrl(raw: string): string {
 export function redactUrlsIn(text: string): string {
   return text.replace(/https?:\/\/[^\s'"<>]+/g, (url) => redactUrl(url));
 }
+
+/**
+ * A new window with nothing loaded yet — `window.open()` with no URL, or `about:blank`. Web apps open
+ * one and write into it themselves: Slack draws a huddle that way. It has no address of its own
+ * and inherits the origin of the page that opened it.
+ */
+export function isBlankPage(url: string | undefined): boolean {
+  if (url === undefined) return false;
+  const trimmed = url.trim();
+  return trimmed === '' || /^about:blank([?#].*)?$/i.test(trimmed);
+}
+
