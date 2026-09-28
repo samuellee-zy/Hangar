@@ -56,6 +56,13 @@ export class AttentionCenter {
   /** The last reading behind each count — see `UnreadEvidence`. */
   private evidence = new Map<string, UnreadEvidence>();
   /**
+   * Services whose page has given a number since its rules last changed. For those, the page is the
+   * count and the title is not: both set it outright, and two of them on one service is a badge
+   * flapping between whichever reported last. The title speaks until the page first answers —
+   * while it loads, or for good if a service's markup moves on and the rule reads nothing.
+   */
+  private pageAnswered = new Set<string>();
+  /**
    * Services whose count the page itself reported — a badge or a title — rather than one we
    * tallied from notifications. The page is the authority on those, and it only reports a
    * *change*: clear one because the pane came into view and it stays at zero until the next
@@ -101,6 +108,7 @@ export class AttentionCenter {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
     const detection = catalogById(svc.catalogId)?.unread;
+    if (this.pageAnswered.has(svc.id)) return;
     const count = unreadFromTitle(title, detection);
     if (detection?.titlePattern) this.note(svc.id, { source: 'title', count, detail: title });
     this.applyDetectedUnread(svc, count);
@@ -123,6 +131,9 @@ export class AttentionCenter {
 
   /** Tells a live view to start watching a different set of rules. No-op if it isn't loaded. */
   pushUnreadRules(serviceId: string): void {
+    // New rules: whether they can read anything is an open question again, and the title speaks
+    // until they do.
+    this.pageAnswered.delete(serviceId);
     const contents = this.host.contentsFor(serviceId);
     if (contents) safeSend(contents, 'service:unread-rules-changed', this.unreadRulesFor(serviceId));
   }
@@ -137,7 +148,13 @@ export class AttentionCenter {
     if (!svc) return;
     const rules = resolveUnreadRules(catalogById(svc.catalogId)?.unread, svc.unreadSelector);
     const count = unreadFromDom(rules, probes);
-    if (rules.length) this.note(svc.id, { source: 'page', count, detail: describeDomReading(rules, probes) });
+    // "Nothing yet" is worth saying only where nothing else speaks. With a title to fall back on,
+    // the count on screen is the title's — or the page's last answer — and the note should say so.
+    const fallback = Boolean(catalogById(svc.catalogId)?.unread?.titlePattern);
+    if (rules.length && (count !== null || !fallback)) {
+      this.note(svc.id, { source: 'page', count, detail: describeDomReading(rules, probes) });
+    }
+    if (count !== null) this.pageAnswered.add(svc.id);
     this.applyDetectedUnread(svc, count);
   }
 

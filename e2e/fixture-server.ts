@@ -27,6 +27,20 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
       <a id="external" href="https://example.com/elsewhere">external link</a>
       <p id="findable">The quick brown fox jumps over the lazy dog.</p>`,
   },
+  // WhatsApp's chat list, as its unread rule reads it (catalog.ts, WHATSAPP_MESSAGES): a badge per
+  // chat, a muted chat's badge just after its muted icon, and a status icon with a label and no
+  // number. The title counts chats, as WhatsApp's does.
+  '/whatsapp': {
+    body: `<!doctype html><title>(2) WhatsApp</title>
+      <div id="pane-side"><div aria-label="Chat list">
+        <div class="chat"><div class="meta"><span data-icon="pinned2"></span></div>
+          <div class="count"><span id="family" aria-label="8 unread messages">8</span></div></div>
+        <div class="chat"><div class="meta"><span data-icon="muted"></span></div>
+          <div class="count"><span aria-label="3 unread messages">3</span></div></div>
+        <div class="chat"><div class="meta"><span aria-label=" Delivered " data-icon="status-dblcheck"></span></div>
+          <div class="count"><span aria-label="1 unread message">1</span></div></div>
+      </div></div>`,
+  },
   // Title-based unread detection reads this shape — see core/notify/unread.ts.
   '/unread': {
     body: `<!doctype html><title>(4) Fixture</title><h1>Four unread</h1>`,
