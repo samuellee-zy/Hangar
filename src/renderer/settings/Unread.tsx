@@ -1,6 +1,7 @@
 import { catalogById } from '@shared/catalog';
 import { CommitOnBlur } from '../CommitOnBlur';
-import type { ServiceInstance, ShellState } from '@shared/types';
+import { ago } from '../ActivitySheet';
+import type { ServiceInstance, ShellState, UnreadEvidence } from '@shared/types';
 
 /**
  * Where a service's badge number comes from, and the escape hatch for the ones it comes from
@@ -55,6 +56,27 @@ const NOTES: Record<UnreadSource, string> = {
   events: 'counting notifications only',
 };
 
+/**
+ * The last reading, in words: what the number came from and what it said. So a count that looks
+ * wrong can be told apart from a rule that is — WhatsApp's "1" beside a chat with 27 unread is its
+ * title, "(1) WhatsApp", which counts chats rather than messages.
+ */
+export function describeReading(reading: UnreadEvidence, now = Date.now()): string {
+  const when = ago(reading.at, now);
+  switch (reading.source) {
+    case 'title':
+      return `Read ${reading.count ?? 0} from its title, “${reading.detail}” · ${when}`;
+    case 'page':
+      return reading.count === null
+        ? `Nothing read from the page yet — ${reading.detail} · ${when}`
+        : `Read ${reading.count} from the page: ${reading.detail} · ${when}`;
+    case 'feed':
+      return `Read ${reading.count ?? 0} from its feed, while asleep · ${when}`;
+    case 'notifications':
+      return `Counted ${reading.count ?? 0} from notifications it sent · ${when}`;
+  }
+}
+
 export function Unread({ state }: { state: ShellState }) {
   // Only services in the current workspace have a live count to show, and that live count is what
   // makes a selector tunable: type one, watch the number appear.
@@ -92,6 +114,9 @@ export function Unread({ state }: { state: ShellState }) {
                   {hasSleepingEndpoint(svc) ? ' · asks its API while asleep' : ''}
                   {count ? ` · showing ${count}` : ''}
                 </span>
+                {state.unreadEvidence?.[svc.id] && (
+                  <span className="pref-note pref-reading">{describeReading(state.unreadEvidence[svc.id]!)}</span>
+                )}
               </span>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <CommitOnBlur

@@ -546,6 +546,7 @@ export class AppWindow {
       renameRequest: this.renameRequest,
       railExpanded: this.railExpanded,
       fullScreen: this.win.isFullScreen(),
+      unreadEvidence: this.attention.evidenceSnapshot(),
       iconVersions: iconVersions(),
       // Only while it means something: with one pane, maximised and not are the same picture.
       maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,

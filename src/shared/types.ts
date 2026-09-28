@@ -486,6 +486,20 @@ export interface PaneChromeState {
   inset: number;
 }
 
+/**
+ * The last thing a service's count was read from, for Settings → Unread badges: which mechanism, the
+ * count it gave, and the text it read. So "why does WhatsApp say 1" has an answer on screen — its
+ * title says "(1) WhatsApp", which counts chats, not messages.
+ */
+export interface UnreadEvidence {
+  source: 'title' | 'page' | 'feed' | 'notifications';
+  /** What it gave: a count, or null for "nothing to say" (a page that hasn't drawn yet). */
+  count: number | null;
+  /** What was read — the title, the badge's text — or what happened. */
+  detail: string;
+  at: number;
+}
+
 export interface DownloadEntry {
   id: string;
   name: string;
@@ -570,6 +584,11 @@ export interface ShellState {
    * The window is full screen, where macOS hides the traffic lights until the pointer reaches the
    * top edge. Nothing then needs to be kept clear for them.
    */
+  /**
+   * The last reading behind each service's count, keyed by service id. Settings only: a page title
+   * can carry an email subject or a sender's name, and nothing else needs it.
+   */
+  unreadEvidence?: Record<string, UnreadEvidence>;
   fullScreen?: boolean;
   /**
    * Services by most recent use, newest first — what the palette lists before anything is typed,
