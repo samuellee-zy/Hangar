@@ -6,11 +6,12 @@ import { decideNotification, normaliseNotification } from '@core/notify/policy';
 import { extractNotification } from '@core/push/policy';
 import {
   UnreadCounts,
+  describeDomReading,
   resolveUnreadRules,
   unreadFromDom,
   unreadFromTitle,
 } from '@core/notify/unread';
-import type { DomUnreadRule, ServiceInstance, ShellState } from '@shared/types';
+import type { DomUnreadRule, ServiceInstance, ShellState, UnreadEvidence } from '@shared/types';
 
 /**
  * Everything that asks for your attention: unread counts, notification banners, the Dock badge,
@@ -52,6 +53,8 @@ export class AttentionCenter {
   private live = new Set<Notification>();
   /** Newest first, capped. In memory only — never written, never synced. */
   private recent: RecentNotification[] = [];
+  /** The last reading behind each count — see `UnreadEvidence`. */
+  private evidence = new Map<string, UnreadEvidence>();
   /**
    * Services whose count the page itself reported — a badge or a title — rather than one we
    * tallied from notifications. The page is the authority on those, and it only reports a
@@ -97,7 +100,10 @@ export class AttentionCenter {
   handleTitle(serviceId: string, title: string): void {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
-    this.applyDetectedUnread(svc, unreadFromTitle(title, catalogById(svc.catalogId)?.unread));
+    const detection = catalogById(svc.catalogId)?.unread;
+    const count = unreadFromTitle(title, detection);
+    if (detection?.titlePattern) this.note(svc.id, { source: 'title', count, detail: title });
+    this.applyDetectedUnread(svc, count);
   }
 
   /**
@@ -130,7 +136,9 @@ export class AttentionCenter {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
     const rules = resolveUnreadRules(catalogById(svc.catalogId)?.unread, svc.unreadSelector);
-    this.applyDetectedUnread(svc, unreadFromDom(rules, probes));
+    const count = unreadFromDom(rules, probes);
+    if (rules.length) this.note(svc.id, { source: 'page', count, detail: describeDomReading(rules, probes) });
+    this.applyDetectedUnread(svc, count);
   }
 
   /** A count from the endpoint poller, for a service that is asleep. */
@@ -139,7 +147,24 @@ export class AttentionCenter {
     // Raced with the service being deleted, or with it waking up — in which case its own page is
     // about to report, and the endpoint's answer is the staler of the two.
     if (!svc || this.host.isLive(serviceId)) return;
+    this.note(svc.id, { source: 'feed', count, detail: 'asked its own feed, while asleep' });
     this.applyDetectedUnread(svc, count);
+  }
+
+  /** The last reading behind each count, for Settings. */
+  evidenceSnapshot(): Record<string, UnreadEvidence> {
+    return Object.fromEntries(this.evidence);
+  }
+
+  /**
+   * Records a reading. Broadcast only when it says something new, and only Settings is sent it
+   * (`withoutServiceCode`) — so a chat app retitling itself on every message costs the rail nothing.
+   */
+  private note(serviceId: string, reading: Omit<UnreadEvidence, 'at'>): void {
+    const last = this.evidence.get(serviceId);
+    if (last && last.source === reading.source && last.count === reading.count && last.detail === reading.detail) return;
+    this.evidence.set(serviceId, { ...reading, at: Date.now() });
+    this.host.sync();
   }
 
   /**
@@ -186,7 +211,13 @@ export class AttentionCenter {
     });
 
     if (decision.count) {
-      this.unread.increment(serviceId);
+      const count = this.unread.increment(serviceId);
+      // Only for a service with no rule to read: where one exists, its reading is the count, and a
+      // notification in between says nothing about where the number came from.
+      const last = this.evidence.get(serviceId);
+      if (!last || last.source === 'notifications') {
+        this.note(serviceId, { source: 'notifications', count, detail: 'a notification it sent' });
+      }
       // Counted ones only: a message you were looking at as it arrived isn't one you missed.
       this.recent.unshift({
         serviceId,

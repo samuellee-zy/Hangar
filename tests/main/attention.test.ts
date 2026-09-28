@@ -101,3 +101,28 @@ describe('what counts as read', () => {
     expect(app.badgeCount).toBe(0);
   });
 });
+
+describe('what a count was read from', () => {
+  // The default config's first service is Gmail, whose count comes from its title.
+  it("RECORDS THE TITLE BEHIND A COUNT — so a number that looks wrong can be told from a rule that is", () => {
+    const { attention } = center();
+    const svc = service();
+    attention.handleTitle(svc.id, 'Inbox (3) - you@gmail.com - Gmail');
+    expect(attention.unread.get(svc.id)).toBe(3);
+    expect(attention.evidenceSnapshot()[svc.id]).toMatchObject({
+      source: 'title',
+      count: 3,
+      detail: 'Inbox (3) - you@gmail.com - Gmail',
+    });
+  });
+
+  it('a notification is the reading only until the service has something better', () => {
+    const { attention } = center();
+    const svc = service();
+    attention.handleNotification(svc.id, { title: 'Alex', body: 'hi' });
+    expect(attention.evidenceSnapshot()[svc.id]).toMatchObject({ source: 'notifications', count: 1 });
+    attention.handleTitle(svc.id, 'Inbox (4) - you@gmail.com - Gmail');
+    attention.handleNotification(svc.id, { title: 'Sam', body: 'again' });
+    expect(attention.evidenceSnapshot()[svc.id], 'the title stays the reading').toMatchObject({ source: 'title', count: 4 });
+  });
+});

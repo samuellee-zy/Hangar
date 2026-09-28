@@ -127,7 +127,9 @@ export function unreadFromTitle(
   const captured = match[1];
   if (captured === undefined) return 1;
 
-  const n = Number.parseInt(captured, 10);
+  // Thousands separators: "(1,234)" in English, "(1.234)" or "(1 234)" elsewhere. Read as they
+  // were, the first was 1.
+  const n = Number.parseInt(captured.replace(/[,.\s\u00a0\u202f]/g, ''), 10);
   // "99+" parses to 99, which is the right answer. Anything unparseable means matched-but-unknown.
   return Number.isFinite(n) ? Math.max(0, n) : 1;
 }
@@ -189,6 +191,24 @@ export function unreadFromDom(
   }
 
   return null;
+}
+
+/**
+ * What a DOM reading saw, in words, for Settings — the badge's text, or why there was none. Said of
+ * the same rule `unreadFromDom` answered from, so the note and the number can't disagree.
+ */
+export function describeDomReading(rules: DomUnreadRule[] | undefined, probes: unknown): string {
+  if (!rules?.length || !Array.isArray(probes)) return 'no page rule';
+  for (const [index] of rules.entries()) {
+    const probe = asProbe(probes[index]);
+    if (!probe) continue;
+    if (probe.values.length) {
+      const shown = probe.values.slice(0, 3).map((v) => `“${v.trim().slice(0, 40)}”`).join(', ');
+      return probe.values.length > 3 ? `${shown} and ${probe.values.length - 3} more` : shown;
+    }
+    if (probe.anchored) return 'no badge on the page';
+  }
+  return 'page not drawn yet';
 }
 
 function asProbe(value: unknown): DomUnreadProbe | null {

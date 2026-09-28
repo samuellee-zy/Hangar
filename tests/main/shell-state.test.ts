@@ -125,10 +125,14 @@ describe('projectShellState', () => {
       workspaces: [ws('w', ['a'])],
       activeWorkspaceId: 'w',
     });
-    const full = projectShellState({ ...base, config: c });
+    const reading = { source: 'title' as const, count: 1, detail: '(1) Re: salary review - Gmail', at: 1 };
+    const full = projectShellState({ ...base, config: c, unreadEvidence: { a: reading } });
     expect(full.services[0]!.customJs).toBe('alert(1)');
+    expect(full.unreadEvidence?.['a']).toEqual(reading);
 
     const lean = withoutServiceCode(full);
+    // Nor what the counts were read from: page titles, with subjects and names in them.
+    expect(lean).not.toHaveProperty('unreadEvidence');
     for (const view of [...lean.services, ...lean.allServices]) {
       expect(view).not.toHaveProperty('customJs');
       expect(view).not.toHaveProperty('customCss');

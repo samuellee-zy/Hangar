@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Unread, hasSleepingEndpoint, unreadSourceOf } from '../../src/renderer/settings/Unread';
+import { Unread, describeReading, hasSleepingEndpoint, unreadSourceOf } from '../../src/renderer/settings/Unread';
 import { sent } from './setup';
 import { DEFAULT_PREFERENCES } from '../../src/core/config/preferences';
 import type { ServiceInstance, ShellState } from '../../src/shared/types';
@@ -161,3 +161,29 @@ describe('the unread selector field', () => {
     expect(screen.getByText(/your selector · showing 4/)).toBeInTheDocument();
   });
 });
+
+describe('what each count was read from', () => {
+  const now = 1_000_000;
+  it("SAYS THE TITLE BEHIND WHATSAPP'S 1 — it counts chats, and the 27 was messages in one", () => {
+    expect(describeReading({ source: 'title', count: 1, detail: '(1) WhatsApp', at: now }, now)).toBe(
+      'Read 1 from its title, “(1) WhatsApp” · just now',
+    );
+    expect(describeReading({ source: 'page', count: null, detail: 'page not drawn yet', at: now }, now)).toMatch(
+      /^Nothing read from the page yet/,
+    );
+    expect(describeReading({ source: 'notifications', count: 2, detail: '', at: now - 5 * 60_000 }, now)).toBe(
+      'Counted 2 from notifications it sent · 5 min ago',
+    );
+  });
+
+  it('shows the reading under the service it belongs to', () => {
+    const wa = svc({ id: 'wa', catalogId: 'whatsapp', name: 'WhatsApp' });
+    render(
+      <Unread
+        state={state([wa], { unreadEvidence: { wa: { source: 'title', count: 1, detail: '(1) WhatsApp', at: Date.now() } } })}
+      />,
+    );
+    expect(screen.getByText(/Read 1 from its title, “\(1\) WhatsApp”/)).toBeInTheDocument();
+  });
+});
+

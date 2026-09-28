@@ -14,11 +14,12 @@ import {
 import {
   UnreadCounts,
   countFromBadgeText,
+  describeDomReading,
   resolveUnreadRules,
   unreadFromDom,
   unreadFromTitle,
 } from '@core/notify/unread';
-import { catalog } from '@shared/catalog';
+import { catalog, catalogById } from '@shared/catalog';
 
 
 const ctx = (over = {}) => ({
@@ -195,6 +196,23 @@ describe('unread from the page title', () => {
     assert.equal(unreadFromTitle('(-4) x', { titlePattern: '\\((-?\\d+)\\)' }), 0);
   });
 
+  it("GMAIL'S COUNT COMES AFTER THE LABEL — it read zero while open, since the rule wanted it first", () => {
+    const rule = catalogById('gmail')!.unread;
+    assert.equal(unreadFromTitle('Inbox (3) - you@gmail.com - Gmail', rule), 3);
+    assert.equal(unreadFromTitle('Primary (12) - you@gmail.com - Gmail', rule), 12);
+    assert.equal(unreadFromTitle('(5) Inbox - you@gmail.com - Gmail', rule), 5, 'the other order too');
+    assert.equal(unreadFromTitle('Inbox - you@gmail.com - Gmail', rule), 0);
+    // A count is only taken before the first dash: after it is the address, then a subject.
+    assert.equal(unreadFromTitle('Starred - you@gmail.com - Gmail (2)', rule), 0);
+  });
+
+  it('A THOUSANDS SEPARATOR IS PART OF THE COUNT — "(1,234)" was one', () => {
+    const rule = catalogById('gmail')!.unread;
+    assert.equal(unreadFromTitle('Inbox (1,234) - you@gmail.com - Gmail', rule), 1234);
+    assert.equal(unreadFromTitle('Boîte de réception (1 234) - vous@gmail.com - Gmail', rule), 1234);
+    assert.equal(unreadFromTitle('Posteingang (1.234) - du@gmail.com - Gmail', rule), 1234);
+  });
+
   it('the catalog patterns match the titles their services actually produce', () => {
     for (const entry of catalog) {
       if (!entry.unread?.titlePattern) continue;
@@ -210,6 +228,15 @@ describe('unread from the page title', () => {
 // lands here, where a test can reach it.
 describe('unread from the DOM', () => {
   const probe = (values: string[], anchored = true) => ({ anchored, values });
+
+  it('says what it read, for Settings — the badge, or why there was none', () => {
+    const rules = [{ selector: '.badge', anchor: '.shell' }];
+    assert.equal(describeDomReading(rules, [probe(['12 unread'])]), '“12 unread”');
+    assert.equal(describeDomReading(rules, [probe([])]), 'no badge on the page');
+    assert.equal(describeDomReading(rules, [probe([], false)]), 'page not drawn yet');
+    assert.equal(describeDomReading([], [probe(['3'])]), 'no page rule');
+    assert.equal(describeDomReading(rules, [probe(['1', '2', '3', '4', '5'])]), '“1”, “2”, “3” and 2 more');
+  });
 
   it('reads the number out of a badge, however the site writes it', () => {
     assert.equal(countFromBadgeText('3'), 3);

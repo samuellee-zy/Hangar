@@ -511,7 +511,14 @@ const AI_NOTES: CatalogEntry[] = [
 export const catalog: CatalogEntry[] = [
   {
     id: 'gmail',
-    unread: { titlePattern: '^\\((\\d+)\\+?\\)', endpoint: GMAIL_FEED },
+    unread: {
+      // "Inbox (3) - you@gmail.com - Gmail", with the count after the label — and "(1,234)" once
+      // the inbox is big. The pattern everything else uses wants "(3)" first, so a Gmail that was
+      // open read zero. Any label before the count, but no dash: past the first " - " is the
+      // address, and an open message's subject.
+      titlePattern: '^(?:[^()\\-–]+ )?\\((\\d[\\d,.\\s\\u00a0\\u202f]*)\\+?\\)',
+      endpoint: GMAIL_FEED,
+    },
     icon: 'gmail',
     name: 'Gmail',
     // Bare host, NOT /mail/u/0/ — same trap as Calendar. With no session at user index 0, Google

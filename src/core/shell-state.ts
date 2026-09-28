@@ -10,6 +10,7 @@ import type {
   ServiceView,
   ShellState,
   SyncStatus,
+  UnreadEvidence,
   Workspace,
 } from '@shared/types';
 
@@ -77,6 +78,8 @@ export interface ProjectionInput {
   /** Whether a compact rail is currently open. See `railSizes`. */
   railExpanded: boolean;
   fullScreen?: boolean;
+  /** What each count was last read from. Settings only — see `withoutServiceCode`. */
+  unreadEvidence?: Record<string, UnreadEvidence>;
   /** Bumped each time a service's favicon is cached, so the renderer refetches it. */
   iconVersions?: ReadonlyMap<string, number>;
   /** Services by most recent use, newest first. */
@@ -133,6 +136,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
     activeWorkspaceId: config.activeWorkspaceId,
     railExpanded: input.railExpanded,
     fullScreen: input.fullScreen ?? false,
+    unreadEvidence: input.unreadEvidence ?? {},
     recentServiceIds: input.recentServiceIds ?? [],
     maximisedPaneId: input.maximisedPaneId ?? null,
     layoutShape: input.layoutShape ?? 'columns',
@@ -249,6 +253,9 @@ export function removeServiceFromConfig(config: Config, serviceId: string): void
  */
 export function withoutServiceCode(state: ShellState): ShellState {
   const strip = ({ customCss: _css, customJs: _js, ...svc }: ServiceView): ServiceView => svc;
-  return { ...state, services: state.services.map(strip), allServices: state.allServices.map(strip) };
+  // And what each count was read from: page titles, which carry email subjects and names. Settings
+  // shows them; nothing else has any use for them.
+  const { unreadEvidence: _evidence, ...rest } = state;
+  return { ...rest, services: state.services.map(strip), allServices: state.allServices.map(strip) };
 }
 

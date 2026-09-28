@@ -1225,6 +1225,14 @@ kbd {
   color: var(--muted);
 }
 
+/* What a count was last read from — a page title can be long, so it wraps rather than pushing the
+   field off the row. */
+.pref-reading {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
 .pref select,
 .pref input[type='number'],
 .settings :where(input[type='text'], input[type='password'], input[type='url'], input[type='number'], input:not([type])):not(.field):not(.rail-rename-field) {
