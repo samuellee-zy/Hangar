@@ -17,6 +17,7 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 | `⌘\` | Split — opens the next unshown service alongside |
 | `⌘⇧↵` | Maximise the focused pane; again to restore the split. `⌘⌥←/→` while maximised shows the next pane full size |
 | `⌘⌥←` / `⌘⌥→` | Move focus between panes |
+| `⌃⌘→` / `⌃⌘←` | Widen or narrow the focused pane, 48px a press — the keyboard's splitter. Double-click a splitter, or View → Make panes equal size, to even them out |
 | `⌘W` | Close the focused pane; closes the window when it's the last one |
 | `⌘[` / `⌘]` | Back / forward within the focused service |
 | `⌘R` / `⇧⌘R` | Reload the focused service / reload it ignoring the cache |

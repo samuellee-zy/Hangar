@@ -208,6 +208,14 @@ export type LayoutShape = 'columns' | 'main-stack';
 
 /** No pane is dragged narrower than this — below it most web apps stop being usable. */
 export const MIN_PANE_WIDTH = 280;
+/**
+ * Nor shorter than this. Lower than the width's floor, because height is the scarcer axis: three
+ * panes stacked in a laptop's window are under 300px each before anything is dragged, and 280 would
+ * leave them nowhere to go.
+ */
+export const MIN_PANE_HEIGHT = 160;
+/** How far the keyboard moves a pane's edge, each press. */
+export const KEYBOARD_RESIZE_STEP = 48;
 
 /** Where a pane dragged by its header goes. See `Layout.movePane`. */
 export type PaneMove =
@@ -215,9 +223,9 @@ export type PaneMove =
   | { beside: { paneId: string; side: 'before' | 'after' } }
   | { toEnd: true };
 
-/** A vertical boundary between two columns, where a splitter sits. */
+/** A boundary between two columns, or two rows, where a splitter sits. */
 export interface Boundary {
-  /** Which boundary: 0 is between the first and second column. */
+  /** Which boundary: 0 is between the first and second column, or the first and second row. */
   index: number;
   /** The gutter's rectangle, in window coordinates. */
   rect: Rect;
@@ -234,6 +242,11 @@ export class Layout {
    * which is how widths from two panes used to come back when a fourth was opened.
    */
   weights: number[] = [];
+  /**
+   * Row heights as weights, the same way: for the stack beside the large pane, or for the grid's two
+   * rows, which share one boundary across both columns. Let go of whenever `weights` is.
+   */
+  rowWeights: number[] = [];
   /** Recently closed panes, newest last — what ⌘⇧T reopens, at the place each was. */
   closed: Array<{ serviceId: string; index: number }> = [];
   /**
@@ -242,6 +255,12 @@ export class Layout {
    * next one full size. Not persisted; it is a momentary view, like a zoomed window.
    */
   maximisedPaneId: string | null = null;
+
+  /** Every pane back to an equal share, across and down: sizes dragged for one arrangement mean nothing for another. */
+  resetSizes(): void {
+    this.weights = [];
+    this.rowWeights = [];
+  }
 
   /** Toggles maximise on the focused pane. Meaningless with one pane, so it clears instead. */
   toggleMaximise(): void {
@@ -322,7 +341,7 @@ export class Layout {
     if (at === -1) this.panes.push(pane);
     else this.panes.splice(beside!.side === 'before' ? at : at + 1, 0, pane);
     this.focusedPaneId = pane.id;
-    this.weights = [];
+    this.resetSizes();
     return pane;
   }
 
@@ -333,7 +352,7 @@ export class Layout {
     if (this.panes.length === 1) return;
     const [gone] = this.panes.splice(index, 1);
     if (gone) this.closed = [...this.closed, { serviceId: gone.serviceId, index }].slice(-10);
-    this.weights = [];
+    this.resetSizes();
     this.refocusAfter(index, paneId);
   }
 
@@ -348,7 +367,7 @@ export class Layout {
       const pane: Pane = { id: randomUUID(), serviceId: last.serviceId };
       this.panes.splice(Math.min(last.index, this.panes.length), 0, pane);
       this.focusedPaneId = pane.id;
-      this.weights = [];
+      this.resetSizes();
       return pane;
     }
     return null;
@@ -422,7 +441,7 @@ export class Layout {
     const index = this.panes.findIndex((p) => p.id === paneId);
     if (index === -1) return;
     this.panes.splice(index, 1);
-    this.weights = [];
+    this.resetSizes();
     this.refocusAfter(index, paneId);
   }
 
@@ -478,18 +497,20 @@ export class Layout {
 
     // Built per column, returned in pane order — callers iterate it and expect the panes' own order.
     const byPane = new Map<string, Rect>();
+    const span = this.rowSpan();
     for (let col = 0; col < cols; col++) {
       const cells = cellsOf(col);
       const rows = cells.length;
       const usableH = Math.max(0, area.height - gutter * (rows + 1));
-      const cellH = Math.floor(usableH / rows);
+      // The same division as the widths, down the column; the last row absorbs the rounding so the
+      // far gutter stays even.
+      const heights = columnWidths(usableH, rows, span?.columns.includes(col) ? this.rowWeights : []);
       cells.forEach((pane, row) => {
         byPane.set(pane.id, {
           x: columnX(col),
-          y: y0 + row * (cellH + gutter),
+          y: y0 + heights.slice(0, row).reduce((a, b) => a + b, 0) + row * gutter,
           width: widths[col]!,
-          // Last row absorbs the rounding remainder so the far gutter stays even.
-          height: row === rows - 1 ? usableH - row * cellH : cellH,
+          height: heights[row]!,
         });
       });
     }
@@ -541,6 +562,88 @@ export class Layout {
     widths[index] = left;
     widths[index + 1] = pair - left;
     this.weights = widths;
+  }
+
+  /**
+   * Where rows are divided, and how many there are: the stack beside the large pane, once it holds
+   * two or more; or the grid's two rows, one boundary across both columns — a boundary per column
+   * would let the four corners come apart. Null where every column is one pane.
+   */
+  private rowSpan(): { columns: number[]; rows: number } | null {
+    const n = this.drawn().length;
+    if (this.shape === 'main-stack' && n >= 3) return { columns: [1], rows: n - 1 };
+    if (this.shape === 'columns' && n === 4) return { columns: [0, 1], rows: 2 };
+    return null;
+  }
+
+  /** The gutters between rows, where row splitters go. Empty where no column has two panes. */
+  rowBoundaries(chrome: Chrome, contentWidth: number, contentHeight: number): Boundary[] {
+    const span = this.rowSpan();
+    if (!span) return [];
+    const area = contentArea(chrome, contentWidth, contentHeight);
+    const { gutter } = chrome;
+    const cols = this.columns();
+    const widths = columnWidths(Math.max(0, area.width - gutter * (cols + 1)), cols, this.weights);
+    const columnX = (col: number) => area.x + gutter + widths.slice(0, col).reduce((a, b) => a + b, 0) + col * gutter;
+    const first = span.columns[0]!;
+    const last = span.columns[span.columns.length - 1]!;
+    const x = columnX(first);
+    const width = columnX(last) + widths[last]! - x;
+    const heights = columnWidths(Math.max(0, area.height - gutter * (span.rows + 1)), span.rows, this.rowWeights);
+    const out: Boundary[] = [];
+    let y = area.y + gutter;
+    for (let i = 0; i < span.rows - 1; i++) {
+      y += heights[i]!;
+      out.push({ index: i, rect: { x, y, width, height: gutter } });
+      y += gutter;
+    }
+    return out;
+  }
+
+  /**
+   * Moves row boundary `index` so it sits at window y `at`, as `resizeAt` does across: each row at
+   * least `MIN_PANE_HEIGHT` tall, or a third of the pair where the pair can't give both that.
+   */
+  resizeRowAt(index: number, at: number, chrome: Chrome, contentWidth: number, contentHeight: number): void {
+    const span = this.rowSpan();
+    if (!span || index < 0 || index >= span.rows - 1) return;
+    const area = contentArea(chrome, contentWidth, contentHeight);
+    const { gutter } = chrome;
+    const usableH = Math.max(0, area.height - gutter * (span.rows + 1));
+    const heights = columnWidths(usableH, span.rows, this.rowWeights);
+    const start = area.y + gutter + heights.slice(0, index).reduce((a, b) => a + b, 0) + index * gutter;
+    const pair = heights[index]! + heights[index + 1]!;
+    const floor = pair >= 2 * MIN_PANE_HEIGHT ? MIN_PANE_HEIGHT : Math.round(pair / 3);
+    const top = Math.max(floor, Math.min(pair - floor, Math.round(at - start - gutter / 2)));
+    heights[index] = top;
+    heights[index + 1] = pair - top;
+    this.rowWeights = heights;
+  }
+
+  /** Which column a drawn pane is in, or -1. */
+  private columnOf(paneId: string | null): number {
+    const i = this.drawn().findIndex((p) => p.id === paneId);
+    if (i < 0) return -1;
+    if (this.shape === 'main-stack') return i === 0 ? 0 : 1;
+    return this.drawn().length === 4 ? i % 2 : i;
+  }
+
+  /**
+   * The keyboard's splitter: widens (1) or narrows (-1) the focused pane by `KEYBOARD_RESIZE_STEP`,
+   * moving the boundary on its right — or, in the last column, the one on its left, so the same key
+   * widens whichever pane has focus. False with nothing to resize: one column, or no focus.
+   */
+  nudgeFocused(delta: -1 | 1, chrome: Chrome, contentWidth: number, contentHeight: number): boolean {
+    const cols = this.columns();
+    const col = this.columnOf(this.focusedPaneId);
+    if (cols < 2 || col < 0) return false;
+    const onRight = col < cols - 1;
+    const index = onRight ? col : col - 1;
+    const boundary = this.boundaries(chrome, contentWidth, contentHeight)[index];
+    if (!boundary) return false;
+    const centre = boundary.rect.x + boundary.rect.width / 2;
+    this.resizeAt(index, centre + (onRight ? delta : -delta) * KEYBOARD_RESIZE_STEP, chrome, contentWidth, contentHeight);
+    return true;
   }
 
   /** Services currently on screen — everything else gets detached. */

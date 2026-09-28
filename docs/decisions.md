@@ -2551,3 +2551,26 @@ and putting a service to sleep, popping it out or quitting ended the call withou
 - **Loaded half a second apart.** Twenty services starting together at launch were twenty
   renderers competing with the panes you're looking at. They start one at a time after the panes,
   each re-reading the config, since in half a second a service can be removed or opened in a pane.
+
+## 117. Splitters down as well as across, and one from the keyboard
+
+Only column boundaries could be dragged (#109). The stack beside the large pane was always evenly
+divided, and so were the grid's rows, and there was no way to resize without a pointer.
+
+- **Rows are weights, like columns.** `Layout.rowWeights` divides the stack, or the grid's two
+  rows, and is let go of wherever `weights` is: a pane opened or closed, or the shape changed.
+  Saved as `rowWeights` and restored on the same terms as the widths — whole, and only when every
+  pane came back.
+- **The grid has one row boundary, across both columns.** One per column would let the four
+  corners come apart, and a 2×2 grid that isn't a grid is two stacks side by side, which is a
+  different shape.
+- **Its own floor, 160px.** The width's 280 would have frozen a stack of three in a laptop's
+  window, where each is under 300 before anything is dragged. The same fallback applies: a pair
+  that can't give both the floor gets a third each.
+- **A second set of views, not a second kind of view.** `Splitters` takes an axis; the row views
+  load `#splitter-row-N`, report `screenY`, and are raised and left alone mid-drag exactly as the
+  column views are. A column drag moves the row views too, since the grid's spans the columns.
+- **The keyboard moves the focused pane's own edge.** ⌃⌘→ widens it by 48px: its right boundary
+  moves right, or, in the last column, its left one moves left. So one key widens whichever pane
+  has focus. ⌃⌘ because ⌘⌥ arrows move focus, ⇧⌘⌥ arrows move the pane, ⌥ and ⌘ arrows are word
+  and line in every text field, and ⌃ arrows are Spaces. Saved at once, since a key has no let-go.

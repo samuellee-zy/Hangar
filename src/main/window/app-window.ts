@@ -162,6 +162,8 @@ export class AppWindow {
   private dragLayer: DragLayer;
   /** The handles on the gutters between columns. See features/splitters.ts. */
   private splitters: Splitters;
+  /** And between rows: the stack beside the large pane, and the grid's two rows. */
+  private rowSplitters: Splitters;
   /** A splitter is being dragged: its moves are applied without a full relayout. */
   private splitDragging = false;
   /** The title bar on the top strip, and a header per pane. See features/pane-chrome.ts. */
@@ -278,6 +280,11 @@ export class AppWindow {
     // Shortcuts: a press focuses the splitter's view, and a chord pressed then used to go nowhere.
     this.splitters = new Splitters(this.win, (wc) =>
       attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
+    );
+    this.rowSplitters = new Splitters(
+      this.win,
+      (wc) => attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
+      'row',
     );
     this.paneChrome = new PaneChrome(this.win, (wc) =>
       attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
@@ -463,12 +470,14 @@ export class AppWindow {
     // widths saved for three mean nothing for the two left after a service was removed — and only a
     // list that is all finite, positive numbers: `Infinity` from a hand-edited file made every
     // rectangle NaN, on every launch. Whole or not at all, so one bad entry can't shift the rest.
-    const weights = stored?.weights;
-    const sound =
+    // Heights the same way, and on the same condition.
+    const sound = (weights: unknown): weights is number[] =>
       Array.isArray(weights) &&
       weights.every((w) => typeof w === 'number' && Number.isFinite(w) && w > 0) &&
       Number.isFinite(weights.reduce((a, b) => a + b, 0));
-    this.layout.weights = sound && serviceIds.length === stored!.panes.length ? [...weights] : [];
+    const whole = serviceIds.length === stored?.panes.length;
+    this.layout.weights = whole && sound(stored.weights) ? [...stored.weights] : [];
+    this.layout.rowWeights = whole && sound(stored.rowWeights) ? [...stored.rowWeights] : [];
     this.saveLayout();
     this.startBackgroundServices();
   }
@@ -553,6 +562,7 @@ export class AppWindow {
         // Only what differs from the default, so a layout nobody has shaped stays as it was.
         ...(this.layout.shape !== 'columns' && { shape: this.layout.shape }),
         ...(this.layout.weights.length && { weights: [...this.layout.weights] }),
+        ...(this.layout.rowWeights.length && { rowWeights: [...this.layout.rowWeights] }),
       };
     });
   }
@@ -1255,6 +1265,7 @@ export class AppWindow {
     this.paneChrome.placeTitlebar(chrome.topStrip > 0 ? { x: 0, y: 0, width, height: chrome.topStrip } : null);
     this.drawFocusRing(bounds, chrome.gutter);
     this.splitters.sync(this.layout.boundaries(chrome, width, height));
+    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, width, height));
 
     // A pane whose service has no runtime renders nothing, so treat that as empty too.
     const hasVisibleContent = this.layout.panes.some((p) => this.services.has(p.serviceId));
@@ -1292,7 +1303,10 @@ export class AppWindow {
     const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
     // Beneath the rail and everything above it, which they never overlap. Not while one is being
     // dragged: re-attaching the view under a press can end the press. `endSplit` raises it after.
-    if (!this.splitDragging) this.splitters.raiseAbove(panes);
+    if (!this.splitDragging) {
+      this.splitters.raiseAbove(panes);
+      this.rowSplitters.raiseAbove(panes);
+    }
     const children = this.win.contentView.children;
     const railAt = children.indexOf(this.rail);
     if (railAt < 0 || children.slice(railAt + 1).some((child) => panes.has(child))) {
@@ -1312,14 +1326,40 @@ export class AppWindow {
    */
   private dragSplit(index: number, screenX: number): void {
     const content = this.win.getContentBounds();
+    this.layout.resizeAt(index, screenX - content.x, this.chrome(), content.width, content.height);
+    this.placeDraggedSplit();
+  }
+
+  /** A row splitter moved, the same way: the pointer is at `screenY`. */
+  private dragRowSplit(index: number, screenY: number): void {
+    const content = this.win.getContentBounds();
+    this.layout.resizeRowAt(index, screenY - content.y, this.chrome(), content.width, content.height);
+    this.placeDraggedSplit();
+  }
+
+  /**
+   * After either drag: the panes, both sets of splitters — a column drag moves the grid's row
+   * boundary, which spans the columns — and the focus ring. Nothing re-attached.
+   */
+  private placeDraggedSplit(): void {
+    const content = this.win.getContentBounds();
     const chrome = this.chrome();
-    this.layout.resizeAt(index, screenX - content.x, chrome, content.width, content.height);
     this.splitDragging = true;
     const bounds = this.layout.bounds(chrome, content.width, content.height);
     this.placePanes(bounds, { reorder: false });
     this.splitters.sync(this.layout.boundaries(chrome, content.width, content.height));
+    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, content.width, content.height));
     this.drawFocusRing(bounds, chrome.gutter);
     if (this.layout.focusedPaneId) this.findBar.raise(this.paneRect(this.layout.focusedPaneId));
+  }
+
+  /** ⌃⌘→ and ⌃⌘←: the focused pane a step wider or narrower. Saved at once — a key has no let-go. */
+  private resizeFocusedPane(delta: -1 | 1): boolean {
+    const content = this.win.getContentBounds();
+    if (!this.layout.nudgeFocused(delta, this.chrome(), content.width, content.height)) return false;
+    this.relayout();
+    this.saveLayout();
+    return true;
   }
 
   /**
@@ -1452,7 +1492,9 @@ export class AppWindow {
       dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
       endTileDrag: () => void this.tileDrag.end('cancel'),
       dragSplit: (index, screenX) => this.dragSplit(index, screenX),
+      dragRowSplit: (index, screenY) => this.dragRowSplit(index, screenY),
       endSplit: () => this.endSplit(),
+      resizeFocusedPane: (delta) => this.resizeFocusedPane(delta),
     };
   })();
 
@@ -1782,6 +1824,7 @@ export class AppWindow {
     this.overlay.destroy();
     this.dragLayer.destroy();
     this.splitters.destroy();
+    this.rowSplitters.destroy();
     this.paneChrome.destroy();
     // The rail and the empty view too. They were thought to go with the window as attached children;
     // they don't — a view's webContents lives until it is closed — so each ⌘W and reopen left one

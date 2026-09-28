@@ -15,6 +15,7 @@ type Route =
   | 'drag'
   | 'titlebar'
   | `splitter-${number}`
+  | `splitter-row-${number}`
   | `header-${number}`;
 
 const rendererIndex = () => path.join(__dirname, '../renderer/index.html');

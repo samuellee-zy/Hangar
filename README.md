@@ -51,10 +51,11 @@ yourself" needs a Developer ID. Details: [packaging.md](docs/packaging.md).
 
 **Panes.** 1–4 web views side by side, inset as rounded cards.
 - `⌘\` splits, `⌘⌥←/→` moves focus, and `⇧⌘⌥←/→` moves the pane itself.
-- Drag the gap between two panes to resize them.
+- Drag the gap between two panes to resize them, across or down; `⌃⌘←/→` does it from the
+  keyboard.
 - The one large pane and the rest stacked beside it is a toggle in the View menu.
 - `⇧⌘T` reopens the pane you just closed.
-- The arrangement, widths and shape included, is remembered per workspace across restarts.
+- The arrangement, widths, heights and shape included, is remembered per workspace across restarts.
 - A header on each pane is optional. It has the service's name and page, back, forward and
   reload, and dragging it moves the pane.
 

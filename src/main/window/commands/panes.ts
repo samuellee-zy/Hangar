@@ -118,19 +118,24 @@ export const paneCommands: CommandTable = {
 
   'toggle-layout-shape': (_command, shell) => {
     shell.layout.shape = shell.layout.shape === 'columns' ? 'main-stack' : 'columns';
-    // The columns change, and widths dragged for one arrangement say nothing about the other.
-    shell.layout.weights = [];
+    // The columns change, and sizes dragged for one arrangement say nothing about the other.
+    shell.layout.resetSizes();
     shell.relayout();
     shell.saveLayout();
   },
 
   'drag-split': (command, shell) => shell.dragSplit(command.index, command.screenX),
 
+  'drag-row-split': (command, shell) => shell.dragRowSplit(command.index, command.screenY),
+
+  // False with one column, so the chord reaches the page rather than doing nothing here.
+  'resize-pane': (command, shell) => shell.resizeFocusedPane(command.delta),
+
   'end-split': (_command, shell) => shell.endSplit(),
 
   'reset-splits': (_command, shell) => {
-    if (!shell.layout.weights.length) return false;
-    shell.layout.weights = [];
+    if (!shell.layout.weights.length && !shell.layout.rowWeights.length) return false;
+    shell.layout.resetSizes();
     shell.relayout();
     shell.saveLayout();
   },

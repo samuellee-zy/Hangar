@@ -554,10 +554,6 @@ findings are [decisions #104–111](decisions.md).
 - Apple signing (§1.1), for distribution and updates.
 
 **Built but not finished:**
-- **Splitters have no keyboard equivalent** beyond equal widths. The handle's view is never
-  focused, since focus goes back to the page after a drag.
-- **The stacked column in "one large pane" has no splitter** between its rows. Only column
-  boundaries are draggable.
 - **Headers are off by default.** Whether they should be on is worth deciding after using them.
 
 **Chosen not to build this round** (8.3). Each is unblocked and roughly sized:
@@ -618,6 +614,10 @@ And in the same round ([decision #116](decisions.md)):
   never asks.
 - **Keep every service running** is one switch under General. They load half a second apart after
   the panes, not all at once.
+- **Splitters between rows, and from the keyboard** ([decision #117](decisions.md)): the stack
+  beside the large pane and the 2×2 grid have a splitter between their rows, kept per layout like
+  the widths; ⌃⌘→ and ⌃⌘← widen and narrow the focused pane. Both were §14.2's "built but not
+  finished".
 
 **Still open from these:**
 - The meeting labels are English. In another language a label-read control reads `null`: safe,

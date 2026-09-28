@@ -78,7 +78,12 @@ export interface ShellContext {
 
   /** Splitter `index` is being dragged; the pointer is at `screenX`. */
   dragSplit(index: number, screenX: number): void;
+  /** Row splitter `index` is being dragged; the pointer is at `screenY`. */
+  dragRowSplit(index: number, screenY: number): void;
+  /** Either kind let go. */
   endSplit(): void;
+  /** The focused pane a step wider or narrower; false when there's nothing beside it to take from. */
+  resizeFocusedPane(delta: -1 | 1): boolean;
 }
 
 export type CommandType = Command['type'];

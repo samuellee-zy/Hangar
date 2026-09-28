@@ -33,15 +33,16 @@ const paneRects = () =>
     return shell.state().panes.map((p) => shell.services.get(p.serviceId)?.view.getBounds() ?? null);
   });
 
-/** The splitter views on the window, left to right. */
-const splitterRects = () =>
-  h.app.evaluate(() => {
+/** The splitter views on the window: between columns left to right, or between rows top to bottom. */
+const splitterRects = (axis: 'column' | 'row' = 'column') =>
+  h.app.evaluate((_electron, axis) => {
     const shell = (globalThis as never as { __hangarShell: { win: Electron.BaseWindow } }).__hangarShell;
+    const route = axis === 'row' ? /#splitter-row-\d+$/ : /#splitter-\d+$/;
     return shell.win.contentView.children
-      .filter((v) => 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().includes('#splitter-'))
+      .filter((v) => 'webContents' in v && route.test((v as Electron.WebContentsView).webContents.getURL()))
       .map((v) => v.getBounds())
-      .sort((a, b) => a.x - b.x);
-  });
+      .sort((a, b) => (axis === 'row' ? a.y - b.y : a.x - b.x));
+  }, axis);
 
 const panesOf = () =>
   h.app.evaluate(() =>
@@ -50,12 +51,35 @@ const panesOf = () =>
       .panes.map((p) => p.serviceId),
   );
 
-async function splitterPage(index: number): Promise<Page> {
-  await expect.poll(() => h.app.windows().some((w) => w.url().includes(`#splitter-${index}`))).toBeTruthy();
-  const page = h.app.windows().find((w) => w.url().includes(`#splitter-${index}`))!;
+async function splitterPage(index: number, axis: 'column' | 'row' = 'column'): Promise<Page> {
+  const route = axis === 'row' ? `#splitter-row-${index}` : `#splitter-${index}`;
+  await expect.poll(() => h.app.windows().some((w) => w.url().endsWith(route))).toBeTruthy();
+  const page = h.app.windows().find((w) => w.url().endsWith(route))!;
   await page.waitForSelector('.splitter');
   return page;
 }
+
+/** A real drag on a splitter's own page, from its middle, `dx` across and `dy` down, in ten moves. */
+async function drag(page: Page, dx: number, dy: number) {
+  const box = await page.evaluate(() => ({ x: window.innerWidth / 2, y: window.innerHeight / 2 }));
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step++) await page.mouse.move(box.x + (dx * step) / 10, box.y + (dy * step) / 10);
+  await page.mouse.up();
+}
+
+/** A config with `n` services, all in the one workspace. */
+const withServices = (n: number) => (origin: string) => {
+  const config = seedConfig(origin) as ReturnType<typeof seedConfig> & {
+    services: Array<Record<string, unknown>>;
+    workspaces: Array<{ items: unknown[] }>;
+  };
+  for (const id of ['three', 'four'].slice(0, n - 2)) {
+    config.services.push({ ...config.services[0], id, name: id, accountId: 'acct-one' });
+    config.workspaces[0]!.items.push({ kind: 'service', id });
+  }
+  return config;
+};
 
 test('DRAGGING THE GAP BETWEEN PANES RESIZES THEM — and the widths survive a relaunch', async () => {
   h = await launch();
@@ -193,4 +217,95 @@ test('ONE LARGE PANE AND THE REST STACKED BESIDE IT', async () => {
   await dispatch({ type: 'toggle-layout-shape' });
   await expect.poll(async () => (await splitterRects()).length).toBe(2);
   await expect.poll(shape).toBeUndefined();
+});
+
+test('THE STACK BESIDE THE LARGE PANE HAS A SPLITTER BETWEEN ITS ROWS — a real drag, and the heights survive a relaunch', async () => {
+  h = await launch(withServices(3));
+  await h.rail();
+  await dispatch({ type: 'split' });
+  await dispatch({ type: 'split' });
+  await dispatch({ type: 'toggle-layout-shape' });
+  await expect.poll(async () => (await splitterRects('row')).length, 'one between the two stacked').toBe(1);
+  const [, top, bottom] = (await paneRects()) as Rect[];
+  const [handle] = await splitterRects('row');
+  expect(handle!.x).toBe(top!.x);
+  expect(handle!.y).toBeLessThanOrEqual(top!.y + top!.height);
+  expect(handle!.y + handle!.height).toBeGreaterThanOrEqual(bottom!.y);
+
+  // Above the panes after a relayout, which re-attaches them on top — as the column handle is.
+  const above = await h.app.evaluate(() => {
+    const shell = (globalThis as never as { __hangarShell: { win: Electron.BaseWindow; relayout: () => void } }).__hangarShell;
+    shell.relayout();
+    const url = (v: Electron.View) => ('webContents' in v ? (v as Electron.WebContentsView).webContents.getURL() : '');
+    const children = shell.win.contentView.children;
+    const handle = children.findIndex((v) => url(v).includes('#splitter-row-'));
+    return handle > Math.max(...children.map((v, i) => (url(v).startsWith('http://127.0.0.1') ? i : -1)));
+  });
+  expect(above).toBe(true);
+
+  await drag(await splitterPage(0, 'row'), 0, 150);
+  await expect.poll(async () => ((await paneRects())[1] as Rect).height).toBeGreaterThan(top!.height + 100);
+  const [, taller, shorter] = (await paneRects()) as Rect[];
+  expect(taller!.height + shorter!.height, 'the pair shares what it had').toBe(top!.height + bottom!.height);
+  const [moved] = await splitterRects('row');
+  expect(moved!.y, 'the handle went with the gutter').toBeGreaterThan(handle!.y + 100);
+
+  const config = () => JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
+  await expect.poll(() => config().layouts.w1?.rowWeights?.length ?? 0).toBe(2);
+  const userData = h.userData;
+  await h.close({ keepProfile: true });
+  h = await launch(undefined, { reuseUserData: userData });
+  await h.rail();
+  await expect.poll(async () => ((await paneRects())[1] as Rect | null)?.height ?? 0).toBe(taller!.height);
+});
+
+test('IN THE 2×2 GRID ONE ROW SPLITTER SPANS BOTH COLUMNS, and moves both', async () => {
+  h = await launch(withServices(4));
+  await h.rail();
+  for (let i = 0; i < 3; i++) await dispatch({ type: 'split' });
+  await expect.poll(async () => (await paneRects()).filter(Boolean).length).toBe(4);
+  await expect.poll(async () => (await splitterRects('row')).length).toBe(1);
+  const [a, b] = (await paneRects()) as Rect[];
+  const [row] = await splitterRects('row');
+  expect(row!.x).toBe(a!.x);
+  expect(row!.x + row!.width).toBe(b!.x + b!.width);
+
+  await drag(await splitterPage(0, 'row'), 0, -120);
+  await expect.poll(async () => ((await paneRects())[0] as Rect).height).toBeLessThan(a!.height - 80);
+  const [ta, tb, bc, bd] = (await paneRects()) as Rect[];
+  expect(ta!.height, 'both top panes').toBe(tb!.height);
+  expect(bc!.height, 'both bottom panes').toBe(bd!.height);
+});
+
+test('⌃⌘→ AND ⌃⌘← WIDEN AND NARROW THE FOCUSED PANE — through the real key path', async () => {
+  h = await launch();
+  await h.rail();
+  await dispatch({ type: 'split' });
+  await expect.poll(async () => (await paneRects()).filter(Boolean).length).toBe(2);
+  const [left] = (await paneRects()) as Rect[];
+  const focusFirst = () =>
+    h.app.evaluate(() => {
+      const shell = (globalThis as never as {
+        __hangarShell: { state: () => { panes: Array<{ id: string }> }; dispatch: (c: unknown) => boolean };
+      }).__hangarShell;
+      shell.dispatch({ type: 'focus-pane', paneId: shell.state().panes[0]!.id });
+    });
+  await focusFirst();
+  // Through `before-input-event`, as a real key comes: `page.keyboard` would skip the shortcut layer.
+  const press = (keyCode: string) =>
+    h.app.evaluate((_electron, keyCode) => {
+      const shell = (globalThis as never as { __hangarShell: { contentsForService: (id: string) => Electron.WebContents | null } })
+        .__hangarShell;
+      const wc = shell.contentsForService('one')!;
+      const event = { keyCode, modifiers: ['meta', 'control'] as never };
+      wc.sendInputEvent({ ...event, type: 'keyDown' });
+      wc.sendInputEvent({ ...event, type: 'keyUp' });
+    }, keyCode);
+  await press('Right');
+  await expect.poll(async () => ((await paneRects())[0] as Rect).width).toBe(left!.width + 48);
+  await press('Left');
+  await press('Left');
+  await expect.poll(async () => ((await paneRects())[0] as Rect).width).toBe(left!.width - 48);
+  const config = () => JSON.parse(fs.readFileSync(path.join(h.userData, 'config.json'), 'utf8'));
+  await expect.poll(() => config().layouts.w1?.weights?.length ?? 0, 'saved, with no let-go to wait for').toBe(2);
 });

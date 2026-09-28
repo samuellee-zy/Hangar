@@ -7,7 +7,9 @@ import assert from 'node:assert/strict';
 import {
   COMPACT_RAIL_SIZE,
   EXPANDED_RAIL_SIZE,
+  KEYBOARD_RESIZE_STEP,
   Layout,
+  MIN_PANE_HEIGHT,
   MIN_PANE_WIDTH,
   TOP_STRIP,
   columnWidths,
@@ -692,5 +694,133 @@ describe('a service is in one pane at most', () => {
     l.toggleMaximise();
     l.show('a');
     assert.equal(l.maximisedPaneId, a.id);
+  });
+});
+
+describe('row splitters', () => {
+  const layoutOf = (n: number, shape: 'columns' | 'main-stack') => {
+    const l = new Layout();
+    for (let i = 0; i < n; i++) l.add(`s${i}`);
+    l.shape = shape;
+    return l;
+  };
+  const rects = (l: Layout) => [...l.bounds(chrome('left'), W, H).values()];
+
+  it('ONE BETWEEN EACH PAIR IN THE STACK, spanning only the stack — and none for a stack of one', () => {
+    assert.deepEqual(layoutOf(2, 'main-stack').rowBoundaries(chrome('left'), W, H), []);
+    const l = layoutOf(4, 'main-stack');
+    const rows = l.rowBoundaries(chrome('left'), W, H);
+    assert.equal(rows.length, 2);
+    const [, top, middle] = rects(l);
+    assert.equal(rows[0]!.rect.x, top!.x, 'over the stack, not the large pane');
+    assert.equal(rows[0]!.rect.width, top!.width);
+    assert.equal(rows[0]!.rect.y, top!.y + top!.height, 'on the gutter under the first');
+    assert.equal(rows[1]!.rect.y, middle!.y + middle!.height);
+  });
+
+  it('IN THE GRID, ONE ACROSS BOTH COLUMNS — the four corners move together', () => {
+    const l = layoutOf(4, 'columns');
+    const [row] = l.rowBoundaries(chrome('left'), W, H);
+    const [a, b] = rects(l);
+    assert.equal(row!.rect.x, a!.x);
+    assert.equal(row!.rect.x + row!.rect.width, b!.x + b!.width);
+    assert.deepEqual(layoutOf(3, 'columns').rowBoundaries(chrome('left'), W, H), [], 'three columns have no rows');
+  });
+
+  it('DRAGGING ONE MOVES ONLY THE TWO ROWS EITHER SIDE, and the column keeps its height', () => {
+    const l = layoutOf(4, 'main-stack');
+    const before = rects(l);
+    const [first] = l.rowBoundaries(chrome('left'), W, H);
+    l.resizeRowAt(0, first!.rect.y + first!.rect.height / 2 + 80, chrome('left'), W, H);
+    const after = rects(l);
+    assert.equal(after[1]!.height, before[1]!.height + 80);
+    assert.equal(after[2]!.height, before[2]!.height - 80);
+    assert.deepEqual(after[3], before[3], 'the third row untouched');
+    assert.deepEqual(after[0], before[0], 'the large pane untouched');
+    const bottom = (r: { y: number; height: number }) => r.y + r.height;
+    assert.equal(bottom(after[3]!), bottom(before[3]!), 'the far gutter stays where it was');
+  });
+
+  it('IN THE GRID, A ROW DRAG MOVES BOTH COLUMNS AT ONCE', () => {
+    const l = layoutOf(4, 'columns');
+    const [row] = l.rowBoundaries(chrome('left'), W, H);
+    l.resizeRowAt(0, row!.rect.y - 100, chrome('left'), W, H);
+    const [a, b, c, d] = rects(l);
+    assert.equal(a!.height, b!.height);
+    assert.equal(c!.height, d!.height);
+    assert.ok(a!.height < c!.height);
+  });
+
+  it(`NO ROW IS DRAGGED UNDER ${MIN_PANE_HEIGHT}PX — or a third of the pair, where the pair is short`, () => {
+    const l = layoutOf(3, 'main-stack');
+    l.resizeRowAt(0, 0, chrome('left'), W, H);
+    assert.equal(rects(l)[1]!.height, MIN_PANE_HEIGHT);
+    l.resizeRowAt(0, 10_000, chrome('left'), W, H);
+    assert.equal(rects(l)[2]!.height, MIN_PANE_HEIGHT);
+    const short = 300; // two rows in 282px: not room for two floors
+    const s = layoutOf(3, 'main-stack');
+    s.resizeRowAt(0, 0, chrome('left'), W, short);
+    const [, top, under] = [...s.bounds(chrome('left'), W, short).values()];
+    assert.equal(top!.height, Math.round((top!.height + under!.height) / 3));
+  });
+
+  it('HEIGHTS ARE LET GO OF WITH THE WIDTHS — a pane opened or closed, or the shape changed', () => {
+    const l = layoutOf(3, 'main-stack');
+    l.resizeRowAt(0, 300, chrome('left'), W, H);
+    assert.ok(l.rowWeights.length);
+    l.add('s3');
+    assert.deepEqual(l.rowWeights, []);
+    l.resizeRowAt(0, 300, chrome('left'), W, H);
+    l.close(l.panes[3]!.id);
+    assert.deepEqual(l.rowWeights, []);
+    l.resizeRowAt(0, 300, chrome('left'), W, H);
+    l.resetSizes();
+    assert.deepEqual([l.weights, l.rowWeights], [[], []]);
+  });
+});
+
+describe('resizing from the keyboard', () => {
+  const two = () => {
+    const l = new Layout();
+    l.add('a');
+    l.add('b');
+    return l;
+  };
+  const widths = (l: Layout) => [...l.bounds(chrome('left'), W, H).values()].map((r) => r.width);
+
+  it('WIDEN GROWS THE FOCUSED PANE BY A STEP, whichever side its neighbour is on', () => {
+    const l = two();
+    const [a0, b0] = widths(l);
+    l.focusedPaneId = l.panes[0]!.id;
+    assert.equal(l.nudgeFocused(1, chrome('left'), W, H), true);
+    assert.deepEqual(widths(l), [a0! + KEYBOARD_RESIZE_STEP, b0! - KEYBOARD_RESIZE_STEP]);
+    // The last column's neighbour is on its left: widening it moves that boundary left.
+    l.focusedPaneId = l.panes[1]!.id;
+    l.nudgeFocused(1, chrome('left'), W, H);
+    l.nudgeFocused(1, chrome('left'), W, H);
+    assert.deepEqual(widths(l), [a0! - KEYBOARD_RESIZE_STEP, b0! + KEYBOARD_RESIZE_STEP]);
+    l.nudgeFocused(-1, chrome('left'), W, H);
+    assert.deepEqual(widths(l), [a0, b0]);
+  });
+
+  it('STOPS AT THE FLOOR, and does nothing with one column', () => {
+    const l = two();
+    l.focusedPaneId = l.panes[0]!.id;
+    for (let i = 0; i < 40; i++) l.nudgeFocused(-1, chrome('left'), W, H);
+    assert.equal(widths(l)[0], MIN_PANE_WIDTH);
+    const one = new Layout();
+    one.add('a');
+    assert.equal(one.nudgeFocused(1, chrome('left'), W, H), false);
+  });
+
+  it('IN ONE LARGE PANE AND A STACK, A STACKED PANE WIDENS THE STACK', () => {
+    const l = new Layout();
+    ['a', 'b', 'c'].forEach((id) => l.add(id));
+    l.shape = 'main-stack';
+    const before = widths(l);
+    l.focusedPaneId = l.panes[2]!.id;
+    l.nudgeFocused(1, chrome('left'), W, H);
+    assert.equal(widths(l)[2], before[2]! + KEYBOARD_RESIZE_STEP);
+    assert.equal(widths(l)[1], widths(l)[2], 'the stack is one column');
   });
 });

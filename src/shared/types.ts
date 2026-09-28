@@ -383,6 +383,8 @@ export interface StoredLayout {
   shape?: 'columns' | 'main-stack';
   /** Column widths as weights, from dragging a splitter. Equal when absent. */
   weights?: number[];
+  /** Row heights as weights, for the stack or the grid's rows. Equal when absent. */
+  rowWeights?: number[];
 }
 
 export interface WindowBounds {
@@ -737,6 +739,10 @@ export type Command =
    * coordinates, because the splitter's own view moves with the boundary it is dragging.
    */
   | { type: 'drag-split'; index: number; screenX: number }
+  /** A row splitter moved: the stack beside the large pane, or the grid's rows. */
+  | { type: 'drag-row-split'; index: number; screenY: number }
+  /** The focused pane a step wider (1) or narrower (-1), from the keyboard. */
+  | { type: 'resize-pane'; delta: -1 | 1 }
   /** The drag let go: save where it ended. */
   | { type: 'end-split' }
   /** Back to equal widths — a splitter double-clicked. */
