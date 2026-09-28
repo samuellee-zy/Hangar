@@ -75,6 +75,46 @@ export interface DomUnreadProbe {
   values: string[];
 }
 
+/** A meeting control a Stream Deck (or script) can read and press. */
+export type MeetingControl = 'mute' | 'video' | 'share' | 'hand' | 'leave';
+
+/**
+ * How to find one meeting control in a service's page. Data, like `DomUnreadRule`: one evaluator in
+ * core/services/meeting.ts reads every entry, and the page-side probe only collects strings.
+ */
+export interface MeetingControlRule {
+  /** CSS selector for the control. */
+  selector: string;
+  /**
+   * How to tell whether it's ON (muted, camera on, sharing, hand raised):
+   *   - `label` (default) — its aria-label, title or text starts with one of `on`;
+   *   - `attr` — attribute `attr` is one of `on`;
+   *   - `child` — it contains a match for `child`.
+   * A control with no `on` (leave) is only ever pressed.
+   */
+  read?: 'label' | 'attr' | 'child';
+  attr?: string;
+  child?: string;
+  on?: string[];
+}
+
+export interface MeetingRules {
+  /** A selector present only while you're in a call. */
+  inCall: string;
+  controls: Partial<Record<MeetingControl, MeetingControlRule>>;
+  /**
+   * Also look in the windows the page opens. Slack runs a huddle in its own `about:blank` window,
+   * so its controls are never in the service's view.
+   */
+  popups?: boolean;
+}
+
+/** What a service's meeting looks like right now: ON/OFF per control, null when found but unreadable. */
+export interface MeetingState {
+  inCall: boolean;
+  controls: Partial<Record<MeetingControl, boolean | null>>;
+}
+
 /**
  * An endpoint of the service's own that reports its unread count, called with the login the service
  * already has. See core/notify/endpoint.ts for what it is for and what guards it.
@@ -138,6 +178,14 @@ export interface CatalogEntry {
    * For services that refuse any product token beside `Chrome/…` — see core/services/user-agent.ts.
    */
   plainUserAgent?: boolean;
+  /** How to read and press this service's meeting controls — see `MeetingRules`. */
+  meeting?: MeetingRules;
+  /**
+   * Let the page open `about:blank` windows, kept in the service's cookie jar. Off everywhere else,
+   * since a blank window is how some pages open an external link before pointing it somewhere, and
+   * the allowlist can only judge a real URL. Slack needs it for the huddle window.
+   */
+  blankPopups?: boolean;
   /**
    * How to read this service's unread count from its own UI. Opt-in per entry, and deliberately
    * absent for custom connections: a universal title parser produces phantom counts from any page
@@ -457,6 +505,8 @@ export type ServiceView = ServiceInstance & {
   unread: number;
   /** Changes when a new favicon has been cached. Absent is 0. */
   iconVersion?: number;
+  /** The service's meeting, for entries with meeting rules and a page to read them from. */
+  meeting?: MeetingState;
 };
 
 /**
@@ -736,6 +786,12 @@ export type Command =
   | { type: 'print' }
   /** `ignoreCache`: ⇧⌘R, for a page stuck on a stale script or stylesheet. */
   | { type: 'reload-service'; serviceId: string; ignoreCache?: boolean }
+  /**
+   * Presses a meeting control in the service's page (or its huddle window). `want` makes it
+   * idempotent — mute only if not muted — and null presses regardless. Never a link verb: a web
+   * page must not be able to unmute you or end your call.
+   */
+  | { type: 'meeting-control'; serviceId: string; control: MeetingControl; want: boolean | null }
   | { type: 'sleep-service'; serviceId: string }
   | { type: 'show-service-menu'; serviceId: string }
   | { type: 'show-rail-menu' }

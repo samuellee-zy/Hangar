@@ -61,10 +61,12 @@ import {
   onDownloadsChanged,
   recentDownloads,
 } from '@main/platform/system';
-import { clearBlockedHost, hostBlockedFor, setLinkRouter } from '@main/platform/session';
+import { clearBlockedHost, hostBlockedFor, setLinkRouter, setPopupListener } from '@main/platform/session';
+import { MeetingBridge } from '@main/features/meeting-bridge';
 import { routable, routeTarget } from '@core/services/routing';
 import { canCompose, composeUrlFor } from '@shared/mailto';
 import { destroyTray, refreshTray } from '@main/features/tray';
+import { publishControlState } from '@main/features/control-server';
 import { isQuitting } from '@main/platform/quit-state';
 import { findOrphanPartitions } from '@core/runtime/permissions';
 import { isValidHost } from '@core/services/patch';
@@ -222,6 +224,8 @@ export class AppWindow {
    * cost nothing, and two absolute sources for one service is a badge that flips.
    */
   private endpoints: EndpointPoller;
+  /** Meeting controls in services' pages, for the control socket. See meeting-bridge.ts. */
+  private meetings: MeetingBridge;
 
   constructor() {
     this.win = new BaseWindow({
@@ -331,6 +335,12 @@ export class AppWindow {
       (serviceId, count) => this.attention.applyEndpointCount(serviceId, count),
     );
 
+    this.meetings = new MeetingBridge({
+      services: () => loadConfig().services,
+      contents: (serviceId) => this.contentsForService(serviceId),
+      changed: () => this.sync(),
+    });
+
     this.configSync = new ConfigSync({
       // Optional-chained: a config from before this preference existed has no `sync` section, and
       // reading through it unguarded threw inside a `void`-ed promise where nothing surfaced it.
@@ -370,6 +380,8 @@ export class AppWindow {
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
     setLinkRouter((url, fromServiceId) => this.routeLink(url, fromServiceId));
+    setPopupListener((serviceId, contents) => this.meetings.notePopup(serviceId, contents));
+    this.meetings.start();
     onDownloadsChanged(() => this.sync());
 
     // Safe to start here despite `onApplied` touching panes: `reconcile` awaits `git --version`
@@ -548,6 +560,7 @@ export class AppWindow {
       fullScreen: this.win.isFullScreen(),
       unreadEvidence: this.attention.evidenceSnapshot(),
       iconVersions: iconVersions(),
+      meetings: this.meetings.snapshot(),
       // Only while it means something: with one pane, maximised and not are the same picture.
       maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
       layoutShape: this.layout.shape,
@@ -852,6 +865,7 @@ export class AppWindow {
       safeSend(wc, 'shell:state', payload);
     }
     refreshTray(state, (c) => this.dispatch(c));
+    publishControlState(state);
     this.refreshMenuIfChanged(state);
     this.refreshPaneChrome(state);
   }
@@ -1342,6 +1356,7 @@ export class AppWindow {
       rebuildPanes: () => this.rebuildPanes(),
       paneRect: (id) => this.paneRect(id),
       contentsForService: (id) => this.contentsForService(id),
+      meetingControl: (id, control, want) => this.meetings.control(id, control, want),
       activeWorkspace: (id) => this.activeWorkspace(id),
       activeServices: (id) => this.activeServices(id),
       mutateWorkspace: (mutate) => this.mutateWorkspace(mutate),
@@ -1654,11 +1669,13 @@ export class AppWindow {
     // An in-flight fetch resolving after teardown would call `applyDetectedUnread` on a window
     // whose views are gone.
     this.endpoints.dispose();
+    this.meetings.stop();
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = null;
 
     releaseGlobalShortcut();
     setLinkRouter(null);
+    setPopupListener(null);
     onDownloadsChanged(null);
     closePopOuts();
     destroyTray();

@@ -1,5 +1,6 @@
 import {
   app,
+  BrowserWindow,
   desktopCapturer,
   dialog,
   session,
@@ -249,6 +250,26 @@ export function setLinkRouter(router: LinkRouter | null): void {
   routeLink = router;
 }
 
+/**
+ * Told about each window a service's page opens, and which service it belongs to — for the meeting
+ * bridge, which needs Slack's huddle window (popups don't get the preload). Set by the window.
+ */
+type PopupListener = (serviceId: string, contents: Electron.WebContents) => void;
+let onPopup: PopupListener | null = null;
+export function setPopupListener(listener: PopupListener | null): void {
+  onPopup = listener;
+}
+
+/** `window.open()` with no URL, or `about:blank`: a window the page fills in itself. */
+const isBlankUrl = (url: string): boolean => url === '' || url === 'about:blank';
+
+/**
+ * Blank popups opened by entries that allow them (`blankPopups`), for as long as they've shown
+ * nothing else. Their first navigation off the allowlist closes them: the link was going somewhere
+ * else, and an empty window left behind would be all that remained of it.
+ */
+const blankWindows = new WeakSet<Electron.WebContents>();
+
 /** Hands a link to the router, or to the system browser when the router declines it. */
 function leave(url: string, svc: ServiceInstance): void {
   if (routeLink?.(url, svc.id)) return;
@@ -301,7 +322,10 @@ export function attachNavigationGuards(
   ownerOf.set(wc, svc.id);
 
   wc.setWindowOpenHandler(({ url }) => {
-    if (isAllowedHost(current(), url)) {
+    // A blank window only for entries that opt in (Slack's huddle), since the allowlist can't judge
+    // a page the opener fills in itself. Whatever it navigates to next is still guarded below.
+    const blankAllowed = isBlankUrl(url) && catalogById(current().catalogId)?.blankPopups === true;
+    if (isAllowedHost(current(), url) || blankAllowed) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -321,8 +345,10 @@ export function attachNavigationGuards(
   // could then navigate anywhere while still carrying the service's cookie jar — the allowlist
   // guarded the front door and left the window open. Recursive, because an IdP flow is a chain of
   // redirects and any of them can spawn another popup.
-  wc.on('did-create-window', (child) => {
+  wc.on('did-create-window', (child, details) => {
     attachNavigationGuards(child.webContents, svc, partition);
+    if (isBlankUrl(details.url)) blankWindows.add(child.webContents);
+    onPopup?.(svc.id, child.webContents);
     // The service's own user agent, which is set per page now rather than on the session: a sign-in
     // popup is often exactly what the user agent was set to get through. From its next request on —
     // the first has already been sent by the time the window exists.
@@ -344,6 +370,12 @@ export function attachNavigationGuards(
     // Routed to another of your services, the pane stays where it was: the link went somewhere.
     if (routeLink?.(url, svc.id)) return true;
     openExternalSafely(url, svc.name);
+
+    // A blank popup that was on its way somewhere else: close it rather than leave it empty.
+    if (blankWindows.has(wc) && isBlankUrl(wc.getURL())) {
+      BrowserWindow.fromWebContents(wc)?.close();
+      return true;
+    }
 
     // The pane is only replaced when it holds nothing worth keeping. Clicking an external link in
     // a working service must leave that service exactly where it was.
@@ -381,6 +413,8 @@ export function attachNavigationGuards(
   // Otherwise it stayed armed after "Back to …", and any script in the service could call
   // `__hangar.allowHost()` and widen its own allowlist to a host the user had just declined.
   wc.on('did-navigate', (_event, url) => {
+    // It showed a real page, so it's an ordinary popup now.
+    if (!isBlankUrl(url)) blankWindows.delete(wc);
     if (!url.startsWith('data:')) clearBlockedHost(svc.id);
   });
 }

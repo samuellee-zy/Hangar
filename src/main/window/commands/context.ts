@@ -4,7 +4,7 @@ import type { ConfigSync } from '@main/features/sync';
 import type { FindBar } from '@main/features/find-bar';
 import type { Overlay } from '@main/window/overlay';
 import type { ServiceManager } from '@main/window/service-manager';
-import type { Command, DragOrigin, OverlayMode, Preferences, ServiceInstance, Workspace } from '@shared/types';
+import type { Command, DragOrigin, MeetingControl, OverlayMode, Preferences, ServiceInstance, Workspace } from '@shared/types';
 
 /**
  * What a command handler may reach in the window, listed.
@@ -35,6 +35,8 @@ export interface ShellContext {
   rebuildPanes(): void;
   paneRect(paneId: string): Rect | null;
   contentsForService(serviceId: string): WebContents | null;
+  /** Presses a meeting control in a service's page or its huddle window. See meeting-bridge.ts. */
+  meetingControl(serviceId: string, control: MeetingControl, want: boolean | null): Promise<boolean>;
   activeWorkspace(workspaceId: string | null): Workspace | undefined;
   activeServices(workspaceId: string | null): ServiceInstance[];
   mutateWorkspace(mutate: (w: Workspace) => void): void;

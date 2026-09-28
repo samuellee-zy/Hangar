@@ -166,6 +166,18 @@ const COMMS: CatalogEntry[] = [
     id: 'meet', icon: 'google-meet', name: 'Meet', url: 'https://meet.google.com/',
     initials: 'Me', color: '#00897B', provider: 'google',
     allowedHosts: ['meet.google.com', 'workspace.google.com', ...GOOGLE_AUTH],
+    // jsname hooks as the open-source Meet controllers use them (they change with redesigns; this
+    // is data so a fix is a one-line edit). The camera's `data-is-muted` is true when it's *off*.
+    meeting: {
+      inCall: '[jsname="CQylAd"]',
+      controls: {
+        mute: { selector: 'button[jsname="hw0c9"]', read: 'attr', attr: 'data-is-muted', on: ['true'] },
+        video: { selector: 'button[jsname="psRWwc"]', read: 'attr', attr: 'data-is-muted', on: ['false'] },
+        share: { selector: 'button[aria-label^="Stop presenting" i], button[aria-label^="Present" i], button[aria-label^="Share screen" i]', on: ['Stop presenting'] },
+        hand: { selector: 'button[jsname="FpSaz"]', read: 'attr', attr: 'aria-pressed', on: ['true'] },
+        leave: { selector: '[jsname="CQylAd"]' },
+      },
+    },
   },
   {
     id: 'messenger', aliases: ['facebook'], icon: 'facebook-messenger', name: 'Messenger',
@@ -605,6 +617,18 @@ export const catalog: CatalogEntry[] = [
       ...MS_AUTH,
     ],
     provider: 'microsoft',
+    // The call bar's ids, which Teams has kept across redesigns; state from the mic's `data-state`
+    // and the other buttons' labels.
+    meeting: {
+      inCall: '#hangup-button',
+      controls: {
+        mute: { selector: '#microphone-button', read: 'attr', attr: 'data-state', on: ['mic-off'] },
+        video: { selector: '#video-button', on: ['Turn camera off', 'Turn off camera'] },
+        share: { selector: '#share-button', on: ['Stop sharing', 'Stop presenting'] },
+        hand: { selector: '#raisehands-button', on: ['Lower'] },
+        leave: { selector: '#hangup-button' },
+      },
+    },
   },
   {
     id: 'slack',
@@ -619,6 +643,18 @@ export const catalog: CatalogEntry[] = [
     // ⌘K jump-to, ⌘F search this channel, ⌘[ / ⌘] Slack's own history. All four are chords Hangar
     // would otherwise take, and all four are the reason this feature exists.
     passthrough: ['mod+k', 'mod+f', 'mod+[', 'mod+]'],
+    // A huddle runs in its own `about:blank` window, which the allowlist alone would refuse.
+    blankPopups: true,
+    meeting: {
+      inCall: '[data-qa="huddle_toolbar__leave_button"]',
+      popups: true,
+      controls: {
+        mute: { selector: '[data-qa="segmented-mute-button-main"]', on: ['Unmute'] },
+        video: { selector: '[data-qa="huddle_camera_huddle_toolbar"]', read: 'child', child: '[data-qa="huddle_video_icon_camera_on"]' },
+        share: { selector: '[data-qa="huddle_toolbar_screenshare_button"]', read: 'attr', attr: 'aria-pressed', on: ['true'] },
+        leave: { selector: '[data-qa="huddle_toolbar__leave_button"]' },
+      },
+    },
   },
   {
     id: 'notion',
