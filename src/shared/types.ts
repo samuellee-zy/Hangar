@@ -91,11 +91,18 @@ export interface MeetingControlRule {
    *   - `attr` — attribute `attr` is one of `on`;
    *   - `child` — it contains a match for `child`.
    * A control with no `on` (leave) is only ever pressed.
+   *
+   * `off` is what OFF looks like, and makes the reading three-way: ON, OFF, or unknown (`null`).
+   * Required for `label`: labels are English text that changes with the UI's language and with
+   * redesigns, and "doesn't say ON" read as OFF — so in another language the camera would always
+   * read off, and a press meant to turn it off would be skipped. Optional for `attr`, whose values
+   * (`aria-pressed`, `data-is-muted`) don't change with language; without it, anything but ON is OFF.
    */
   read?: 'label' | 'attr' | 'child';
   attr?: string;
   child?: string;
   on?: string[];
+  off?: string[];
 }
 
 export interface MeetingRules {
@@ -376,6 +383,8 @@ export interface StoredLayout {
   shape?: 'columns' | 'main-stack';
   /** Column widths as weights, from dragging a splitter. Equal when absent. */
   weights?: number[];
+  /** Row heights as weights, for the stack or the grid's rows. Equal when absent. */
+  rowWeights?: number[];
 }
 
 export interface WindowBounds {
@@ -420,6 +429,11 @@ export interface Preferences {
      */
     relaunchOnCrash: boolean;
     closeToTray: boolean;
+    /**
+     * Every service loads at launch and never hibernates, as if each had "Keep running" on. Each is
+     * its own set of processes, so this is memory for being told about everything.
+     */
+    keepAllRunning: boolean;
     /** Open a link that leaves a service in another of your services when it belongs there. */
     routeLinks: boolean;
     /** The mail service a `mailto:` link opens a compose in, or `''` for none. */
@@ -725,6 +739,10 @@ export type Command =
    * coordinates, because the splitter's own view moves with the boundary it is dragging.
    */
   | { type: 'drag-split'; index: number; screenX: number }
+  /** A row splitter moved: the stack beside the large pane, or the grid's rows. */
+  | { type: 'drag-row-split'; index: number; screenY: number }
+  /** The focused pane a step wider (1) or narrower (-1), from the keyboard. */
+  | { type: 'resize-pane'; delta: -1 | 1 }
   /** The drag let go: save where it ended. */
   | { type: 'end-split' }
   /** Back to equal widths — a splitter double-clicked. */

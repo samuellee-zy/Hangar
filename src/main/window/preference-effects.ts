@@ -28,6 +28,8 @@ export interface EffectsHost {
   readonly push: PushManager;
   /** What the global shortcut does: hide the window if it's showing, show it otherwise. */
   toggleWindow(): void;
+  /** Loads, a few at a time, every service that should be running and isn't. */
+  startBackgroundServices(): void;
 }
 
 export class PreferenceEffects {
@@ -143,6 +145,10 @@ export class PreferenceEffects {
         for (const ses of allLiveSessions().values()) {
           ses.setSpellCheckerLanguages(prefs.behaviour.spellcheckLanguages);
         }
+        return;
+
+      case 'background-services':
+        this.host.startBackgroundServices();
         return;
     }
   }

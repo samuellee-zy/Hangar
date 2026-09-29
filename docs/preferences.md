@@ -47,17 +47,18 @@ renderer honours a plain media query.
 
 | Setting | Effect |
 | --- | --- |
-| Hibernate after | Minutes idle before a background service is unloaded. **0 = never** |
+| Keep every service running | Every service loads at launch, half a second apart after the panes, and never hibernates — as if each had its own Keep running on. Each is its own set of processes, so this is memory. Takes effect at once |
+| Hibernate after | Minutes idle before a background service is unloaded. **0 = never**. Unused while every service is kept running |
 | Launch at login | Writes a user LaunchAgent, which needs no signature where `setLoginItemSettings` did ([decisions #93](decisions.md)). Ignored in development — an unpackaged binary would register Electron, not Hangar. **Applies from the next login** |
 | Relaunch if it stops unexpectedly | Adds `KeepAlive` to the same job, so launchd restarts Hangar after a crash or Force Quit but never after a deliberate quit. Needs launch at login, since launchd can only supervise what it started |
 | Close to tray | Closing the window hides it instead of quitting. The Dock icon, Window → Show Hangar, the Dock menu and the tray all bring it back. (There is no "start hidden": [decisions #96](decisions.md)) |
 | Global shortcut | One accelerator to summon/hide. The only `globalShortcut` in the app — everything else goes through `before-input-event` |
-| Confirm before quitting | Shows a Quit/Cancel dialog on ⌘Q |
+| Confirm before quitting | Shows a Quit/Cancel dialog on ⌘Q. With a service in a call or playing sound, ⌘Q asks whether or not this is on; `Hangar --quit` and a logout never ask |
 | Default zoom | A percentage, applied to newly added services; existing ones keep their own |
 
-Hibernation never touches a visible service, one you've opted out per-service, or anything when the
-timeout is 0. The decision is a pure function so it can be tested exhaustively —
-[decisions #22](decisions.md).
+Hibernation never touches a visible service, one in a call or playing sound, one you've opted out
+per-service or set to keep running, or anything when the timeout is 0. The decision is a pure
+function so it can be tested exhaustively — [decisions #22](decisions.md) and #116.
 
 ## Notifications
 
@@ -147,6 +148,7 @@ Separate from global preferences and stored on the `ServiceInstance`:
 | --- | --- |
 | Name | Commits on blur, not per keystroke ([decisions #4](decisions.md) neighbourhood) |
 | Account | Which cookie jar it signs in with |
+| Keep running | Loads at launch and never hibernates. On for all, and not changeable here, while Keep every service running is on |
 | Hibernate | Per-service opt-out |
 | Zoom | Applies immediately |
 | Custom CSS / JS | Injected on every `dom-ready`, not just the first — an SPA navigation drops injected styles. A syntax error in custom JS is caught and logged rather than taking the service down |

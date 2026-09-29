@@ -82,7 +82,10 @@ export function asMeetingProbe(value: unknown): MeetingProbe | null {
   return { inCall, found: clean };
 }
 
-/** ON/OFF for one control from what the probe saw; null when it's there but says neither. */
+/**
+ * ON/OFF for one control from what the probe saw; null when it's there but says neither — which
+ * a press with `want` treats as "don't know", not as OFF. See `MeetingControlRule.off`.
+ */
 function readControl(rule: MeetingControlRule, probe: ControlProbe): boolean | null {
   const read = rule.read ?? 'label';
   // A child's presence is the answer on its own; no ON values to compare with.
@@ -90,12 +93,19 @@ function readControl(rule: MeetingControlRule, probe: ControlProbe): boolean | n
   const on = rule.on ?? [];
   if (on.length === 0) return null;
   switch (read) {
-    case 'attr':
-      return probe.attr === null ? null : on.includes(probe.attr);
+    case 'attr': {
+      if (probe.attr === null) return null;
+      if (on.includes(probe.attr)) return true;
+      // Without an OFF list an attribute's other values are OFF, as before: they're the page's
+      // own state, not words in some language.
+      return rule.off ? (rule.off.includes(probe.attr) ? false : null) : false;
+    }
     default: {
       if (!probe.label) return null;
       const label = probe.label.toLowerCase();
-      return on.some((prefix) => label.startsWith(prefix.toLowerCase()));
+      if (on.some((prefix) => label.startsWith(prefix.toLowerCase()))) return true;
+      if ((rule.off ?? []).some((prefix) => label.startsWith(prefix.toLowerCase()))) return false;
+      return null;
     }
   }
 }

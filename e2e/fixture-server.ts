@@ -58,12 +58,25 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
         document.body.append(embed);
       </script>`,
   },
+  // In a Slack huddle, as far as the meeting probe can tell: the toolbar's Leave button, found by
+  // the `data-qa` Slack's own tests use. `endCall()` takes it away.
+  '/in-call': {
+    body: `<!doctype html><title>In a call</title>
+      <button data-qa="huddle_toolbar__leave_button">Leave</button>
+      <script>window.endCall = () => { document.querySelector('[data-qa]').remove(); return true; };</script>`,
+  },
   '/embed': {
     body: `<!doctype html><title>Embed</title><script>
       const blank = document.createElement('iframe');
       document.documentElement.append(blank);
       window.blankMicrophone = () =>
         blank.contentWindow.navigator.permissions.query({ name: 'microphone' }).then((p) => p.state);
+      // A blank window opened by the embed, which isn't the service, and written into.
+      window.openBlank = () => {
+        const w = window.open('', 'from-embed');
+        if (w) w.document.write('<h1 id=planted>Not Slack</h1>');
+        return true;
+      };
     </script>`,
   },
   // Title-based unread detection reads this shape — see core/notify/unread.ts.

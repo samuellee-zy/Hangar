@@ -45,8 +45,10 @@ createRoot(document.getElementById('root')!).render(
         <EmptyState />
       ) : route === 'drag' ? (
         <DragLayer />
+      ) : route.startsWith('splitter-row-') ? (
+        <Splitter axis="row" index={Number(route.slice('splitter-row-'.length))} />
       ) : route.startsWith('splitter-') ? (
-        <Splitter index={Number(route.slice('splitter-'.length))} />
+        <Splitter axis="column" index={Number(route.slice('splitter-'.length))} />
       ) : route === 'titlebar' ? (
         <PaneBar kind="titlebar" />
       ) : route.startsWith('header-') ? (

@@ -1,5 +1,7 @@
 import { loadConfig, updateConfig } from '@main/platform/config';
 import { popOut } from '@main/features/popout';
+import { interruptPrompt } from '@core/runtime/busy';
+import { keepsRunning } from '@core/runtime/hibernate';
 import { workspaceHolding } from '@core/workspace/workspaces';
 import { resolveUrl } from '@shared/catalog';
 import type { CommandTable } from '@main/window/commands/context';
@@ -116,19 +118,24 @@ export const paneCommands: CommandTable = {
 
   'toggle-layout-shape': (_command, shell) => {
     shell.layout.shape = shell.layout.shape === 'columns' ? 'main-stack' : 'columns';
-    // The columns change, and widths dragged for one arrangement say nothing about the other.
-    shell.layout.weights = [];
+    // The columns change, and sizes dragged for one arrangement say nothing about the other.
+    shell.layout.resetSizes();
     shell.relayout();
     shell.saveLayout();
   },
 
   'drag-split': (command, shell) => shell.dragSplit(command.index, command.screenX),
 
+  'drag-row-split': (command, shell) => shell.dragRowSplit(command.index, command.screenY),
+
+  // False with one column, so the chord reaches the page rather than doing nothing here.
+  'resize-pane': (command, shell) => shell.resizeFocusedPane(command.delta),
+
   'end-split': (_command, shell) => shell.endSplit(),
 
   'reset-splits': (_command, shell) => {
-    if (!shell.layout.weights.length) return false;
-    shell.layout.weights = [];
+    if (!shell.layout.weights.length && !shell.layout.rowWeights.length) return false;
+    shell.layout.resetSizes();
     shell.relayout();
     shell.saveLayout();
   },
@@ -176,17 +183,33 @@ export const paneCommands: CommandTable = {
   },
 
   'sleep-service': (command, shell) => {
-    shell.sleep(command.serviceId);
-    shell.relayout();
+    const put = () => {
+      shell.sleep(command.serviceId);
+      shell.relayout();
+    };
+    // Asked, not refused: you may well mean to end it, and it's one service you named.
+    const busy = shell.busyReason(command.serviceId);
+    const svc = busy && loadConfig().services.find((s) => s.id === command.serviceId);
+    if (!busy || !svc) return put();
+    void shell.confirm(interruptPrompt({ name: svc.name, reason: busy }, 'sleep')).then((go) => go && put());
   },
 
   'sleep-others': (_command, shell) => {
     const keep = shell.layout.visibleServiceIds();
+    const config = loadConfig();
     // Nor the ones set to keep running — that setting exists so they don't go quiet off screen.
     // Each can still be put to sleep on its own, from its tile's menu.
-    for (const svc of loadConfig().services) if (svc.keepRunning) keep.add(svc.id);
+    for (const svc of config.services) if (keepsRunning(svc, config.preferences.behaviour)) keep.add(svc.id);
     for (const [serviceId] of [...shell.services.all()]) {
-      if (!keep.has(serviceId)) shell.sleep(serviceId);
+      if (keep.has(serviceId)) continue;
+      // Skipped rather than asked about: this is a sweep, and a call off screen is exactly the one
+      // you'd forget was there.
+      const busy = shell.busyReason(serviceId);
+      if (busy) {
+        console.log(`[sleep] kept ${serviceId}: ${busy === 'call' ? 'in a call' : 'playing audio'}`);
+        continue;
+      }
+      shell.sleep(serviceId);
     }
     shell.relayout();
   },
@@ -194,11 +217,21 @@ export const paneCommands: CommandTable = {
   'pop-out-service': (command, shell) => {
     const svc = loadConfig().services.find((s) => s.id === command.serviceId);
     if (!svc) return;
-    // The page on screen, not the start page — popping out a call must not restart it.
-    const url = shell.contentsForService(svc.id)?.getURL() || resolveUrl(svc);
-    // And only one copy: two of the same call, or of the same chat, is two sets of everything.
-    if (shell.services.has(svc.id)) shell.dispatch({ type: 'sleep-service', serviceId: svc.id });
-    popOut(svc, url);
+    const go = () => {
+      // The page on screen, not the start page — popping out a call must not restart it.
+      const url = shell.contentsForService(svc.id)?.getURL() || resolveUrl(svc);
+      // And only one copy: two of the same call, or of the same chat, is two sets of everything.
+      // Slept here rather than through `sleep-service`, which would ask a second time.
+      if (shell.services.has(svc.id)) {
+        shell.sleep(svc.id);
+        shell.relayout();
+      }
+      popOut(svc, url);
+    };
+    // The same address, but a fresh load: a call in the pane ends when its page is unloaded.
+    const busy = shell.busyReason(svc.id);
+    if (!busy) return go();
+    void shell.confirm(interruptPrompt({ name: svc.name, reason: busy }, 'pop-out')).then((ok) => ok && go());
   },
 
   'open-find': (_command, shell) => {

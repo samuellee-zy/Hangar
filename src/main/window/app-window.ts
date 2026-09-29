@@ -45,10 +45,11 @@ import { AttentionCenter } from '@main/window/attention';
 import { PreferenceEffects } from '@main/window/preference-effects';
 import { TileDrag } from '@main/window/tile-drag';
 import { route, type ShellContext } from '@main/window/commands';
-import { closePopOuts } from '@main/features/popout';
+import { closePopOuts, popOutContents } from '@main/features/popout';
 import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
-import { LONG_SUSPEND_MS, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import { LONG_SUSPEND_MS, keepsRunning, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import type { BusyReason, BusyService, Prompt } from '@core/runtime/busy';
 import { expiredQuiet, unmute } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
 import { openExternalSafely } from '@main/platform/external';
@@ -139,6 +140,8 @@ const isSettingsView = (wc: WebContents): boolean => !wc.isDestroyed() && wc.get
 
 /** How often config sync asks the remote for changes made on another machine. */
 const SYNC_POLL_MS = 5 * 60_000;
+/** Between one background service starting to load and the next. */
+const BACKGROUND_STAGGER_MS = 500;
 
 /**
  * Composes the shell: window, rail, panes, overlay. Every mutation funnels through `dispatch`,
@@ -159,6 +162,8 @@ export class AppWindow {
   private dragLayer: DragLayer;
   /** The handles on the gutters between columns. See features/splitters.ts. */
   private splitters: Splitters;
+  /** And between rows: the stack beside the large pane, and the grid's two rows. */
+  private rowSplitters: Splitters;
   /** A splitter is being dragged: its moves are applied without a full relayout. */
   private splitDragging = false;
   /** The title bar on the top strip, and a header per pane. See features/pane-chrome.ts. */
@@ -226,6 +231,10 @@ export class AppWindow {
   private endpoints: EndpointPoller;
   /** Meeting controls in services' pages, for the control socket. See meeting-bridge.ts. */
   private meetings: MeetingBridge;
+  /** Every window each service's page opened, while open: a huddle, a player. For `busyReason`. */
+  private popups = new Map<string, Set<WebContents>>();
+  /** The next background service to load, a moment after the last. See `startBackgroundServices`. */
+  private backgroundTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.win = new BaseWindow({
@@ -271,6 +280,11 @@ export class AppWindow {
     // Shortcuts: a press focuses the splitter's view, and a chord pressed then used to go nowhere.
     this.splitters = new Splitters(this.win, (wc) =>
       attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
+    );
+    this.rowSplitters = new Splitters(
+      this.win,
+      (wc) => attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
+      'row',
     );
     this.paneChrome = new PaneChrome(this.win, (wc) =>
       attachShortcuts(wc, (c) => this.dispatch(c), () => this.shellKeyContext()),
@@ -380,7 +394,13 @@ export class AppWindow {
     // `set-preference`, so adding a service or a workspace never travelled.
     onConfigSaved(() => this.configSync.schedule());
     setLinkRouter((url, fromServiceId) => this.routeLink(url, fromServiceId));
-    setPopupListener((serviceId, contents) => this.meetings.notePopup(serviceId, contents));
+    setPopupListener((serviceId, contents) => {
+      let open = this.popups.get(serviceId);
+      if (!open) this.popups.set(serviceId, (open = new Set()));
+      open.add(contents);
+      contents.once('destroyed', () => open.delete(contents));
+      this.meetings.notePopup(serviceId, contents);
+    });
     this.meetings.start();
     onDownloadsChanged(() => this.sync());
 
@@ -450,25 +470,82 @@ export class AppWindow {
     // widths saved for three mean nothing for the two left after a service was removed — and only a
     // list that is all finite, positive numbers: `Infinity` from a hand-edited file made every
     // rectangle NaN, on every launch. Whole or not at all, so one bad entry can't shift the rest.
-    const weights = stored?.weights;
-    const sound =
+    // Heights the same way, and on the same condition.
+    const sound = (weights: unknown): weights is number[] =>
       Array.isArray(weights) &&
       weights.every((w) => typeof w === 'number' && Number.isFinite(w) && w > 0) &&
       Number.isFinite(weights.reduce((a, b) => a + b, 0));
-    this.layout.weights = sound && serviceIds.length === stored!.panes.length ? [...weights] : [];
+    const whole = serviceIds.length === stored?.panes.length;
+    this.layout.weights = whole && sound(stored.weights) ? [...stored.weights] : [];
+    this.layout.rowWeights = whole && sound(stored.rowWeights) ? [...stored.rowWeights] : [];
     this.saveLayout();
     this.startBackgroundServices();
   }
 
   /**
-   * Loads every `keepRunning` service that isn't already, from every workspace — a message in
+   * Loads every service that keeps running and isn't loaded yet, from every workspace — a message in
    * another workspace is still one to hear about. No pane: a view with no bounds renders nothing and
    * still runs, notifies and reports its unread count.
+   *
+   * One every half second, after the panes, not all at once. With "Keep every service running" on
+   * that's every service you have, and twenty pages starting together at launch were twenty
+   * renderers competing with the panes you're looking at. Asked again — a setting turned on while a
+   * round is under way — it starts a fresh round over whatever still isn't loaded.
    */
   private startBackgroundServices(): void {
-    for (const svc of loadConfig().services) {
-      if (svc.keepRunning && !this.services.has(svc.id)) this.services.ensure(svc);
+    if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
+    const next = () => {
+      this.backgroundTimer = null;
+      const config = loadConfig();
+      // Read afresh each time: in half a second a service can be removed, opened in a pane, or the
+      // setting turned back off.
+      const svc = config.services.find(
+        (s) => keepsRunning(s, config.preferences.behaviour) && !this.services.has(s.id),
+      );
+      if (!svc) return;
+      this.services.ensure(svc);
+      this.backgroundTimer = setTimeout(next, BACKGROUND_STAGGER_MS);
+    };
+    this.backgroundTimer = setTimeout(next, BACKGROUND_STAGGER_MS);
+  }
+
+  /**
+   * Why unloading this service now would cost you something, or null if it wouldn't: it's in a call
+   * (the meeting probe saw one, in its page or its huddle window), or it or one of its windows is
+   * making sound.
+   */
+  private busyReason(serviceId: string): BusyReason | null {
+    if (this.meetings.snapshot().get(serviceId)?.inCall) return 'call';
+    const pages = [this.services.get(serviceId)?.view.webContents, ...(this.popups.get(serviceId) ?? [])];
+    return pages.some((wc) => wc && !wc.isDestroyed() && wc.isCurrentlyAudible()) ? 'audio' : null;
+  }
+
+  /** Every service that quitting would interrupt, pop-outs included, for the quit prompt. */
+  busyServices(): BusyService[] {
+    const names = new Map(loadConfig().services.map((svc) => [svc.id, svc.name]));
+    const busy = new Map<string, BusyReason>();
+    for (const id of names.keys()) {
+      const reason = this.busyReason(id);
+      if (reason) busy.set(id, reason);
     }
+    // A pop-out isn't probed for a meeting, so sound is what shows a call in one.
+    for (const [id, wc] of popOutContents()) {
+      if (!busy.has(id) && wc.isCurrentlyAudible()) busy.set(id, 'audio');
+    }
+    return [...busy].map(([id, reason]) => ({ name: names.get(id) ?? 'A service', reason }));
+  }
+
+  /** Asks a question on the window, answered asynchronously. True when the user chose to go ahead. */
+  private async confirm(prompt: Prompt): Promise<boolean> {
+    const { response } = await dialog.showMessageBox(this.win, {
+      type: 'warning',
+      buttons: [prompt.confirm, 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: prompt.message,
+      detail: prompt.detail,
+    });
+    return response === 0;
   }
 
   private saveLayout(): void {
@@ -485,6 +562,7 @@ export class AppWindow {
         // Only what differs from the default, so a layout nobody has shaped stays as it was.
         ...(this.layout.shape !== 'columns' && { shape: this.layout.shape }),
         ...(this.layout.weights.length && { weights: [...this.layout.weights] }),
+        ...(this.layout.rowWeights.length && { rowWeights: [...this.layout.rowWeights] }),
       };
     });
   }
@@ -1187,6 +1265,7 @@ export class AppWindow {
     this.paneChrome.placeTitlebar(chrome.topStrip > 0 ? { x: 0, y: 0, width, height: chrome.topStrip } : null);
     this.drawFocusRing(bounds, chrome.gutter);
     this.splitters.sync(this.layout.boundaries(chrome, width, height));
+    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, width, height));
 
     // A pane whose service has no runtime renders nothing, so treat that as empty too.
     const hasVisibleContent = this.layout.panes.some((p) => this.services.has(p.serviceId));
@@ -1224,7 +1303,10 @@ export class AppWindow {
     const panes = new Set<View>([...this.services.all().values()].map((runtime) => runtime.view));
     // Beneath the rail and everything above it, which they never overlap. Not while one is being
     // dragged: re-attaching the view under a press can end the press. `endSplit` raises it after.
-    if (!this.splitDragging) this.splitters.raiseAbove(panes);
+    if (!this.splitDragging) {
+      this.splitters.raiseAbove(panes);
+      this.rowSplitters.raiseAbove(panes);
+    }
     const children = this.win.contentView.children;
     const railAt = children.indexOf(this.rail);
     if (railAt < 0 || children.slice(railAt + 1).some((child) => panes.has(child))) {
@@ -1244,14 +1326,40 @@ export class AppWindow {
    */
   private dragSplit(index: number, screenX: number): void {
     const content = this.win.getContentBounds();
+    this.layout.resizeAt(index, screenX - content.x, this.chrome(), content.width, content.height);
+    this.placeDraggedSplit();
+  }
+
+  /** A row splitter moved, the same way: the pointer is at `screenY`. */
+  private dragRowSplit(index: number, screenY: number): void {
+    const content = this.win.getContentBounds();
+    this.layout.resizeRowAt(index, screenY - content.y, this.chrome(), content.width, content.height);
+    this.placeDraggedSplit();
+  }
+
+  /**
+   * After either drag: the panes, both sets of splitters — a column drag moves the grid's row
+   * boundary, which spans the columns — and the focus ring. Nothing re-attached.
+   */
+  private placeDraggedSplit(): void {
+    const content = this.win.getContentBounds();
     const chrome = this.chrome();
-    this.layout.resizeAt(index, screenX - content.x, chrome, content.width, content.height);
     this.splitDragging = true;
     const bounds = this.layout.bounds(chrome, content.width, content.height);
     this.placePanes(bounds, { reorder: false });
     this.splitters.sync(this.layout.boundaries(chrome, content.width, content.height));
+    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, content.width, content.height));
     this.drawFocusRing(bounds, chrome.gutter);
     if (this.layout.focusedPaneId) this.findBar.raise(this.paneRect(this.layout.focusedPaneId));
+  }
+
+  /** ⌃⌘→ and ⌃⌘←: the focused pane a step wider or narrower. Saved at once — a key has no let-go. */
+  private resizeFocusedPane(delta: -1 | 1): boolean {
+    const content = this.win.getContentBounds();
+    if (!this.layout.nudgeFocused(delta, this.chrome(), content.width, content.height)) return false;
+    this.relayout();
+    this.saveLayout();
+    return true;
   }
 
   /**
@@ -1357,6 +1465,8 @@ export class AppWindow {
       paneRect: (id) => this.paneRect(id),
       contentsForService: (id) => this.contentsForService(id),
       meetingControl: (id, control, want) => this.meetings.control(id, control, want),
+      busyReason: (id) => this.busyReason(id),
+      confirm: (prompt) => this.confirm(prompt),
       activeWorkspace: (id) => this.activeWorkspace(id),
       activeServices: (id) => this.activeServices(id),
       mutateWorkspace: (mutate) => this.mutateWorkspace(mutate),
@@ -1382,7 +1492,9 @@ export class AppWindow {
       dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
       endTileDrag: () => void this.tileDrag.end('cancel'),
       dragSplit: (index, screenX) => this.dragSplit(index, screenX),
+      dragRowSplit: (index, screenY) => this.dragRowSplit(index, screenY),
       endSplit: () => this.endSplit(),
+      resizeFocusedPane: (delta) => this.resizeFocusedPane(delta),
     };
   })();
 
@@ -1482,6 +1594,7 @@ export class AppWindow {
     if (!runtime) return;
     this.win.contentView.removeChildView(runtime.view);
     this.services.destroy(serviceId);
+    this.meetings.forget(serviceId);
     // Nothing is watching this service's count from now on, so let the endpoint poller ask at the
     // next sweep rather than waiting out an interval that started while the page was still live.
     this.endpoints.forget(serviceId);
@@ -1560,8 +1673,9 @@ export class AppWindow {
         serviceId: svc.id,
         visible: visible.has(svc.id),
         sleeping: !this.services.has(svc.id),
-        // Running in the background is the point of `keepRunning`; sleeping it would undo that.
-        hibernate: svc.hibernate && !svc.keepRunning,
+        // Running in the background is the point of keeping it running; sleeping it would undo that.
+        hibernate: svc.hibernate && !keepsRunning(svc, config.preferences.behaviour),
+        busy: this.busyReason(svc.id) !== null,
         lastActiveAt: this.services.get(svc.id)?.lastActiveAt ?? Date.now(),
       })),
       timeout,
@@ -1615,6 +1729,7 @@ export class AppWindow {
         if (this.win.isVisible() && !this.win.isMinimized()) this.hideWindow();
         else this.showWindow();
       },
+      startBackgroundServices: () => this.startBackgroundServices(),
     });
   })();
 
@@ -1670,6 +1785,8 @@ export class AppWindow {
     // whose views are gone.
     this.endpoints.dispose();
     this.meetings.stop();
+    if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
+    this.backgroundTimer = null;
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = null;
 
@@ -1707,6 +1824,7 @@ export class AppWindow {
     this.overlay.destroy();
     this.dragLayer.destroy();
     this.splitters.destroy();
+    this.rowSplitters.destroy();
     this.paneChrome.destroy();
     // The rail and the empty view too. They were thought to go with the window as attached children;
     // they don't — a view's webContents lives until it is closed — so each ⌘W and reopen left one

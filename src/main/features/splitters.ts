@@ -5,7 +5,8 @@ import type { Boundary } from '@core/workspace/layout';
 import type { Rect } from '@shared/types';
 
 /**
- * The handles between pane columns, one thin view per boundary.
+ * The handles between pane columns, or between rows, one thin view per boundary. One of these for
+ * each axis: columns load `#splitter-N`, rows `#splitter-row-N`.
  *
  * A gutter is bare window background: nothing is drawn there that could take a pointer — a
  * `View` in Electron has no mouse events — so a splitter has to be a renderer of its own, sat on
@@ -22,8 +23,10 @@ import type { Rect } from '@shared/types';
  * mouse-down, and taking that view off the window mid-gesture ends it; see `raiseAbove`.
  */
 
-/** Wider than a 6px gutter, so it can be found with a pointer; overlaps each pane by a hair. */
+/** Thicker than a 6px gutter, so it can be found with a pointer; overlaps each pane by a hair. */
 const HIT_WIDTH = 10;
+
+export type SplitAxis = 'column' | 'row';
 
 export class Splitters {
   /**
@@ -37,6 +40,7 @@ export class Splitters {
   constructor(
     private readonly win: BaseWindow,
     private readonly onViewCreated: (wc: WebContents) => void,
+    private readonly axis: SplitAxis = 'column',
   ) {}
 
   /** One view per boundary, placed on it. */
@@ -51,8 +55,14 @@ export class Splitters {
       this.attached++;
     }
     boundaries.forEach(({ rect }, i) => {
-      const width = Math.max(HIT_WIDTH, rect.width);
-      const hit: Rect = { x: Math.round(rect.x + rect.width / 2 - width / 2), y: rect.y, width, height: rect.height };
+      let hit: Rect;
+      if (this.axis === 'column') {
+        const width = Math.max(HIT_WIDTH, rect.width);
+        hit = { x: Math.round(rect.x + rect.width / 2 - width / 2), y: rect.y, width, height: rect.height };
+      } else {
+        const height = Math.max(HIT_WIDTH, rect.height);
+        hit = { x: rect.x, y: Math.round(rect.y + rect.height / 2 - height / 2), width: rect.width, height };
+      }
       this.pool[i]!.setBounds(hit);
     });
   }
@@ -67,7 +77,7 @@ export class Splitters {
       },
     });
     view.setBackgroundColor('#00000000');
-    loadRoute(view.webContents, `splitter-${index}`);
+    loadRoute(view.webContents, this.axis === 'column' ? `splitter-${index}` : `splitter-row-${index}`);
     this.onViewCreated(view.webContents);
     this.pool[index] = view;
     return view;

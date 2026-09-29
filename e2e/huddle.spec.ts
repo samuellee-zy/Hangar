@@ -96,3 +96,104 @@ test("A BLANK FRAME INSIDE SOMEONE ELSE'S EMBED ISN'T THE SERVICE — it's judge
   expect(state).toBe('denied');
 });
 
+/** The blank windows open now — the huddle, or anything else about:blank — by what they show. */
+const blankWindows = () =>
+  h.app.evaluate(async ({ BrowserWindow }) =>
+    Promise.all(
+      BrowserWindow.getAllWindows()
+        .filter((w) => !w.isDestroyed() && ['about:blank', ''].includes(w.webContents.getURL()))
+        .map((w) => w.webContents.executeJavaScript('document.body ? document.body.innerText : ""') as Promise<string>),
+    ),
+  );
+
+const slackPage = () =>
+  h.app.evaluate(async ({ webContents }) => {
+    for (let i = 0; i < 60; i++) {
+      if (webContents.getAllWebContents().some((c) => c.getURL().endsWith('/huddle') && !c.isLoading())) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
+  });
+
+test("A BLANK WINDOW OPENED BY SOMEONE ELSE'S EMBED IS CLOSED — only the service may open one", async () => {
+  // A third-party frame in Slack could open a window with no address bar and Slack's cookie jar,
+  // and write anything into it. The opener's origin is what gives it away.
+  h = await launchAsSlack();
+  await h.rail();
+  expect(await slackPage()).toBe(true);
+  await h.app.evaluate(async ({ webContents }) => {
+    for (let i = 0; i < 60; i++) {
+      const slack = webContents.getAllWebContents().find((c) => c.getURL().endsWith('/huddle'));
+      const embed = slack?.mainFrame.frames.find((f) => f.url.endsWith('/embed'));
+      if (embed) {
+        try {
+          await embed.executeJavaScript('window.openBlank()', true);
+          return;
+        } catch {
+          // Not ready yet.
+        }
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(await blankWindows(), 'no window left open, planted or otherwise').toEqual([]);
+});
+
+test('A LINK REFUSED INSIDE THE HUDDLE LEAVES THE CALL UP — its address is about:blank all its life', async () => {
+  h = await launchAsSlack();
+  await h.rail();
+  expect(await slackPage()).toBe(true);
+  const opened = await h.app.evaluate(async ({ BrowserWindow, shell, webContents }) => {
+    const sent: string[] = [];
+    const original = shell.openExternal;
+    shell.openExternal = async (url: string) => void sent.push(url);
+    try {
+      const slack = webContents.getAllWebContents().find((c) => c.getURL().endsWith('/huddle'))!;
+      await slack.executeJavaScript("document.getElementById('start').click(); true", true);
+      await new Promise((r) => setTimeout(r, 800));
+      const huddle = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === 'about:blank')!;
+      // A link clicked in the call, off Slack's allowlist.
+      await huddle.webContents.executeJavaScript("location.href = 'https://example.com/shared-doc'; true", true);
+      await new Promise((r) => setTimeout(r, 1200));
+      return sent;
+    } finally {
+      shell.openExternal = original;
+    }
+  });
+  expect(opened, 'the link went to the browser').toEqual(['https://example.com/shared-doc']);
+  expect(await blankWindows(), 'and the huddle is still there, as it was drawn').toEqual(['In a huddle']);
+});
+
+test('A BLANK WINDOW WHOSE LINK GOES TO ANOTHER OF YOUR SERVICES CLOSES TOO — it was left open and empty', async () => {
+  h = await launch((origin) => {
+    const localhost = origin.replace('127.0.0.1', 'localhost');
+    const config = seedConfig(origin, { preferences: { behaviour: { routeLinks: true } } }) as ReturnType<typeof seedConfig> & {
+      services: Array<Record<string, unknown>>;
+    };
+    config.services[0] = { ...config.services[0], catalogId: 'slack', name: 'Slack', url: `${origin}/huddle` };
+    config.services[1] = { ...config.services[1], url: `${localhost}/unread`, allowedHosts: ['localhost'] };
+    return config;
+  });
+  await h.rail();
+  expect(await slackPage()).toBe(true);
+  const target = `${h.fixture.origin.replace('127.0.0.1', 'localhost')}/unread/routed`;
+  const landed = await h.app.evaluate(async ({ shell, webContents }, target) => {
+    const original = shell.openExternal;
+    shell.openExternal = async () => {};
+    try {
+      const slack = webContents.getAllWebContents().find((c) => c.getURL().endsWith('/huddle'))!;
+      await slack.executeJavaScript(
+        `const w = window.open('about:blank'); w.location = ${JSON.stringify(target)}; true`,
+        true,
+      );
+      await new Promise((r) => setTimeout(r, 2000));
+      return webContents.getAllWebContents().some((c) => c.getURL() === target);
+    } finally {
+      shell.openExternal = original;
+    }
+  }, target);
+  expect(landed, 'routed to the other service').toBe(true);
+  expect(await blankWindows(), 'and no empty window left behind').toEqual([]);
+});
+

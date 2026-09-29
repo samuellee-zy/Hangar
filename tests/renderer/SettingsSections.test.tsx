@@ -313,6 +313,16 @@ describe("a service's own page: start page, CSS, running", () => {
     expect(sent).toContainEqual({ type: 'update-service', serviceId: 'slack', patch: { keepRunning: false } });
   });
 
+  it('WITH EVERY SERVICE KEPT RUNNING, ITS OWN SWITCH SAYS SO — and waits, rather than looking off', () => {
+    const everything = { ...DEFAULT_PREFERENCES, behaviour: { ...DEFAULT_PREFERENCES.behaviour, keepAllRunning: true } };
+    const service = svc('slack');
+    render(<ServiceSettings state={state({ allServices: [service], preferences: everything })} svc={service} onBack={() => {}} />);
+    expect(screen.getByLabelText('Keep running')).toBeChecked();
+    expect(screen.getByLabelText('Keep running')).toBeDisabled();
+    expect(screen.getByText('On for every service, under General')).toBeInTheDocument();
+    expect(screen.getByLabelText('Hibernate when idle')).toBeDisabled();
+  });
+
   it('removing goes back to the list, since the page it was on no longer has a service', async () => {
     let back = 0;
     const service = svc('gmail');
@@ -322,6 +332,19 @@ describe("a service's own page: start page, CSS, running", () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove gmail?' }));
     expect(sent).toContainEqual({ type: 'remove-service', serviceId: 'gmail' });
     expect(back).toBe(1);
+  });
+});
+
+describe('keeping every service running', () => {
+  it('IS ONE SWITCH, AND HIBERNATION SAYS IT IS UNUSED WHILE IT IS ON', async () => {
+    const { Behaviour } = await import('../../src/renderer/settings/Behaviour');
+    const { rerender } = render(<Behaviour behaviour={DEFAULT_PREFERENCES.behaviour} />);
+    await userEvent.click(screen.getByLabelText('Keep every service running'));
+    expect(sent).toContainEqual({ type: 'set-preference', path: 'behaviour.keepAllRunning', value: true });
+
+    rerender(<Behaviour behaviour={{ ...DEFAULT_PREFERENCES.behaviour, keepAllRunning: true }} />);
+    expect(screen.getByText('Unused while every service is kept running')).toBeInTheDocument();
+    expect(screen.getByLabelText('Hibernate after')).toBeDisabled();
   });
 });
 

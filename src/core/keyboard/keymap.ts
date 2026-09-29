@@ -110,6 +110,8 @@ export type ActionId =
   | 'focus-next-pane'
   | 'move-pane-left'
   | 'move-pane-right'
+  | 'widen-pane'
+  | 'narrow-pane'
   | 'reopen-pane'
   | 'layout-shape'
   | 'equal-widths'
@@ -265,6 +267,23 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     menu: 'view',
     defaultChord: primaryChord('arrowright', { alt: true, shift: true }),
   },
+  // The keyboard's splitter. ⌃ with the primary: free in macOS, in the text fields of every page,
+  // and in every service we ship — where ⌥ is word by word and ⌘ is line by line. `ctrl` spelled
+  // out, since on macOS the primary is ⌘ and this wants both.
+  {
+    id: 'widen-pane',
+    label: 'Widen pane',
+    command: { type: 'resize-pane', delta: 1 },
+    menu: 'view',
+    defaultChord: formatChord({ key: 'arrowright', meta: PRIMARY_MODIFIER === 'meta', ctrl: true, alt: false, shift: false }),
+  },
+  {
+    id: 'narrow-pane',
+    label: 'Narrow pane',
+    command: { type: 'resize-pane', delta: -1 },
+    menu: 'view',
+    defaultChord: formatChord({ key: 'arrowleft', meta: PRIMARY_MODIFIER === 'meta', ctrl: true, alt: false, shift: false }),
+  },
   // No default chords: a layout is set once and left, and these are in the menu and the palette.
   {
     id: 'layout-shape',
@@ -277,7 +296,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   },
   {
     id: 'equal-widths',
-    label: 'Make panes equal width',
+    label: 'Make panes equal size',
     command: { type: 'reset-splits' },
     menu: 'view',
     defaultChord: '',

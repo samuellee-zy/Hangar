@@ -7,9 +7,11 @@
  *
  * The rules, in order of precedence:
  *   1. Never sleep a service that's on screen. Obvious, but it's the one that would be catastrophic.
- *   2. Never sleep one the user opted out of.
- *   3. Never sleep when the timeout is 0 — that's the "off" setting.
- *   4. Otherwise sleep anything idle longer than the timeout.
+ *   2. Never sleep one that's busy — in a call, or playing sound. Off screen isn't idle: a huddle
+ *      runs in its own window with the pane long gone, and music plays with no pane at all.
+ *   3. Never sleep one the user opted out of.
+ *   4. Never sleep when the timeout is 0 — that's the "off" setting.
+ *   5. Otherwise sleep anything idle longer than the timeout.
  */
 
 export interface HibernationCandidate {
@@ -20,9 +22,21 @@ export interface HibernationCandidate {
   sleeping: boolean;
   /** Per-service opt-out. */
   hibernate: boolean;
+  /** In a call or playing sound: unloading it would end what you're in the middle of. */
+  busy: boolean;
   /** Epoch ms when this service was last visible or interacted with. */
   lastActiveAt: number;
 }
+
+/**
+ * Whether a service stays loaded off screen: its own "Keep running", or "Keep every service
+ * running". One answer for the three places that ask — loading at launch, the idle sweep, and
+ * "Sleep background services" — which each read `svc.keepRunning` on their own before.
+ */
+export const keepsRunning = (
+  svc: { keepRunning?: boolean },
+  behaviour: { keepAllRunning: boolean },
+): boolean => behaviour.keepAllRunning || svc.keepRunning === true;
 
 export function servicesToHibernate(
   candidates: HibernationCandidate[],
@@ -33,7 +47,7 @@ export function servicesToHibernate(
   const cutoff = now - timeoutMinutes * 60_000;
 
   return candidates
-    .filter((c) => !c.visible && !c.sleeping && c.hibernate && c.lastActiveAt <= cutoff)
+    .filter((c) => !c.visible && !c.sleeping && !c.busy && c.hibernate && c.lastActiveAt <= cutoff)
     .map((c) => c.serviceId);
 }
 

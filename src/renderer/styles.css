@@ -107,6 +107,20 @@ body[data-route^='splitter-'] {
   transition: opacity 120ms ease 150ms;
 }
 
+/* Between rows: the same line, across. */
+.splitter.is-row {
+  cursor: row-resize;
+}
+
+.splitter.is-row::after {
+  top: calc(50% - 1px);
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 2px;
+}
+
 .splitter:hover::after,
 .splitter.is-dragging::after {
   opacity: 1;

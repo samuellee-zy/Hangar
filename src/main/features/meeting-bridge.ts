@@ -20,6 +20,11 @@ const IDLE_MS = 2_000;
 const IN_CALL_MS = 500;
 /** A busy or hung page mustn't stall the loop. */
 const PROBE_TIMEOUT_MS = 1_000;
+/**
+ * The longest a press holds its service's lock. A page that never answers — hung, or gone in a way
+ * that leaves the call pending — would otherwise refuse every later press until a relaunch.
+ */
+const PRESS_LOCK_MAX_MS = 10_000;
 
 interface Deps {
   /** Every configured service: id and catalog entry. */
@@ -56,6 +61,12 @@ export class MeetingBridge {
   private readonly where = new Map<string, Map<MeetingControl, WebContents>>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private busy = false;
+  /**
+   * Services with a press still running in the page. Held until the page has actually run it, not
+   * until `withTimeout` gives up waiting: a click queued in a busy page still fires later, so two
+   * presses of mute during a slow join would both land, and cancel out.
+   */
+  private readonly pressing = new Set<string>();
 
   constructor(private readonly deps: Deps) {}
 
@@ -71,6 +82,18 @@ export class MeetingBridge {
   /** The current meetings, for `ShellState`: only services with a state worth reporting. */
   snapshot(): ReadonlyMap<string, MeetingState> {
     return this.states;
+  }
+
+  /**
+   * The service was unloaded: its call is over as far as anyone can tell until the next probe says
+   * otherwise. Kept, it read "in a call" for up to half a second after a sleep, and a quit in that
+   * half second asked about a call that had already ended.
+   */
+  forget(serviceId: string): void {
+    this.states.delete(serviceId);
+    this.signatures.delete(serviceId);
+    this.where.delete(serviceId);
+    this.lastProbe.delete(serviceId);
   }
 
   /** A window a service's page opened. Tracked until it closes. */
@@ -98,18 +121,43 @@ export class MeetingBridge {
     if (!rules || !rule) return false;
     const current = this.states.get(serviceId)?.controls[control];
     if (want !== null && current === want) return true;
-    const known = this.where.get(serviceId)?.get(control);
-    const windows = known && !known.isDestroyed() ? [known] : this.windowsFor(serviceId, rules);
-    for (const wc of windows) {
-      // A user gesture, because starting a screen share is refused without one (see session.ts).
-      const pressed = await withTimeout(wc.executeJavaScriptInIsolatedWorld(WORLD, [{ code: clickScript(rule) }], true), PROBE_TIMEOUT_MS);
-      if (pressed === true) {
-        this.lastProbe.delete(serviceId);
-        setTimeout(() => void this.tick(), 150);
-        return true;
-      }
+    // "Make it ON" with the state unknown is a toggle pressed blind, which could unmute a muted user
+    // whose label didn't read. Only a plain toggle (no `want`) presses without knowing.
+    if (want !== null && (current === null || current === undefined) && rule.on?.length) {
+      console.log(`[meeting] ${serviceId}: ${control} state unknown — not pressed`);
+      return false;
     }
-    return false;
+    if (this.pressing.has(serviceId)) {
+      console.log(`[meeting] ${serviceId}: a press is still running — ${control} dropped`);
+      return false;
+    }
+    this.pressing.add(serviceId);
+    let ceiling: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise((resolve) => (ceiling = setTimeout(resolve, PRESS_LOCK_MAX_MS)));
+    const running: Promise<unknown>[] = [];
+    try {
+      const known = this.where.get(serviceId)?.get(control);
+      const windows = known && !known.isDestroyed() ? [known] : this.windowsFor(serviceId, rules);
+      for (const wc of windows) {
+        // A user gesture, because starting a screen share is refused without one (see session.ts).
+        const click = wc.executeJavaScriptInIsolatedWorld(WORLD, [{ code: clickScript(rule) }], true);
+        running.push(click.catch(() => {}));
+        const pressed = await withTimeout(click, PROBE_TIMEOUT_MS);
+        if (pressed === true) {
+          this.lastProbe.delete(serviceId);
+          setTimeout(() => void this.tick(), 150);
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      // Released when the page has run every click this press sent, or at the ceiling if it never
+      // says.
+      void Promise.race([Promise.all(running), gaveUp]).finally(() => {
+        clearTimeout(ceiling);
+        this.pressing.delete(serviceId);
+      });
+    }
   }
 
   private rulesFor(serviceId: string): MeetingRules | undefined {

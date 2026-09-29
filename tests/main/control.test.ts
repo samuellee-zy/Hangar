@@ -169,4 +169,30 @@ describe('what a client is told', () => {
       { id: 'svc-1', name: 'Slack', catalogId: 'slack', icon: 'slack', unread: 0, muted: true, mutedUntil: null, sleeping: false },
     ]);
   });
+
+  it("A TIMED QUIET THAT HAS ENDED READS AS OFF — with no window, nothing sweeps the config", () => {
+    const now = 1_900_000_000_000;
+    const config = {
+      services: [
+        { id: 'ended', catalogId: 'slack', name: 'Slack', notificationLevel: 'muted', mutedUntil: now - 1 },
+        { id: 'running', catalogId: 'slack', name: 'Slack 2', notificationLevel: 'muted', mutedUntil: now + 60_000 },
+      ],
+      workspaces: [],
+      activeWorkspaceId: null,
+      preferences: { notifications: { dnd: true, dndUntil: now - 1 } },
+    } as unknown as Config;
+    const control = controlStateFromConfig(config, now);
+    assert.equal(control.dnd, false, 'the Do Not Disturb key showed on long after it had ended');
+    assert.equal(control.dndUntil, null);
+    assert.deepEqual(
+      control.services.map(({ id, muted, mutedUntil }) => ({ id, muted, mutedUntil })),
+      [
+        { id: 'ended', muted: false, mutedUntil: null },
+        { id: 'running', muted: true, mutedUntil: now + 60_000 },
+      ],
+    );
+
+    const later = { ...config, preferences: { notifications: { dnd: true, dndUntil: now + 1 } } } as Config;
+    assert.deepEqual([controlStateFromConfig(later, now).dnd, controlStateFromConfig(later, now).dndUntil], [true, now + 1]);
+  });
 });

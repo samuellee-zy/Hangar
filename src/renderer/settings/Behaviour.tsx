@@ -47,9 +47,15 @@ export function Behaviour({
     <section>
       <h2>Behaviour</h2>
       <ul className="rows">
-        <Num name="Hibernate after" note="Minutes idle before a background service is unloaded. 0 = never"
+        <Toggle name="Keep every service running"
+                note="Each loads at launch and never hibernates, so each can notify without a pane. Every one is its own set of processes, so this costs memory"
+                path="behaviour.keepAllRunning" value={behaviour.keepAllRunning} />
+        <Num name="Hibernate after"
+             note={behaviour.keepAllRunning
+               ? 'Unused while every service is kept running'
+               : 'Minutes idle before a background service is unloaded. 0 = never. Never one in a call or playing sound'}
              path="behaviour.hibernateAfterMinutes" value={behaviour.hibernateAfterMinutes}
-             min={0} max={240} step={5} />
+             min={0} max={240} step={5} disabled={behaviour.keepAllRunning} />
         <Toggle name="Launch at login"
                 note="Starts Hangar when you log in. Takes effect from your next login"
                 path="behaviour.launchAtLogin" value={behaviour.launchAtLogin} />

@@ -42,6 +42,8 @@ const SCHEMA = {
   'mark-all-read': {},
   'open-activity': {},
   'drag-split': { index: 'number', screenX: 'number' },
+  'drag-row-split': { index: 'number', screenY: 'number' },
+  'resize-pane': { delta: [-1, 1] },
   'end-split': {},
   'reset-splits': {},
   'toggle-layout-shape': {},

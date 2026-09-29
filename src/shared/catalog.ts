@@ -171,10 +171,10 @@ const COMMS: CatalogEntry[] = [
     meeting: {
       inCall: '[jsname="CQylAd"]',
       controls: {
-        mute: { selector: 'button[jsname="hw0c9"]', read: 'attr', attr: 'data-is-muted', on: ['true'] },
-        video: { selector: 'button[jsname="psRWwc"]', read: 'attr', attr: 'data-is-muted', on: ['false'] },
-        share: { selector: 'button[aria-label^="Stop presenting" i], button[aria-label^="Present" i], button[aria-label^="Share screen" i]', on: ['Stop presenting'] },
-        hand: { selector: 'button[jsname="FpSaz"]', read: 'attr', attr: 'aria-pressed', on: ['true'] },
+        mute: { selector: 'button[jsname="hw0c9"]', read: 'attr', attr: 'data-is-muted', on: ['true'], off: ['false'] },
+        video: { selector: 'button[jsname="psRWwc"]', read: 'attr', attr: 'data-is-muted', on: ['false'], off: ['true'] },
+        share: { selector: 'button[aria-label^="Stop presenting" i], button[aria-label^="Present" i], button[aria-label^="Share screen" i]', on: ['Stop presenting'], off: ['Present', 'Share screen'] },
+        hand: { selector: 'button[jsname="FpSaz"]', read: 'attr', attr: 'aria-pressed', on: ['true'], off: ['false'] },
         leave: { selector: '[jsname="CQylAd"]' },
       },
     },
@@ -622,10 +622,13 @@ export const catalog: CatalogEntry[] = [
     meeting: {
       inCall: '#hangup-button',
       controls: {
+        // No OFF list for the mic: `data-state`'s other values haven't been seen, and it's the page's
+        // own state rather than words. The labels below are English; in another language they read
+        // as unknown and a `want` press is refused, rather than guessed.
         mute: { selector: '#microphone-button', read: 'attr', attr: 'data-state', on: ['mic-off'] },
-        video: { selector: '#video-button', on: ['Turn camera off', 'Turn off camera'] },
-        share: { selector: '#share-button', on: ['Stop sharing', 'Stop presenting'] },
-        hand: { selector: '#raisehands-button', on: ['Lower'] },
+        video: { selector: '#video-button', on: ['Turn camera off', 'Turn off camera'], off: ['Turn camera on', 'Turn on camera'] },
+        share: { selector: '#share-button', on: ['Stop sharing', 'Stop presenting'], off: ['Share', 'Present'] },
+        hand: { selector: '#raisehands-button', on: ['Lower'], off: ['Raise'] },
         leave: { selector: '#hangup-button' },
       },
     },
@@ -649,9 +652,9 @@ export const catalog: CatalogEntry[] = [
       inCall: '[data-qa="huddle_toolbar__leave_button"]',
       popups: true,
       controls: {
-        mute: { selector: '[data-qa="segmented-mute-button-main"]', on: ['Unmute'] },
+        mute: { selector: '[data-qa="segmented-mute-button-main"]', on: ['Unmute'], off: ['Mute'] },
         video: { selector: '[data-qa="huddle_camera_huddle_toolbar"]', read: 'child', child: '[data-qa="huddle_video_icon_camera_on"]' },
-        share: { selector: '[data-qa="huddle_toolbar_screenshare_button"]', read: 'attr', attr: 'aria-pressed', on: ['true'] },
+        share: { selector: '[data-qa="huddle_toolbar_screenshare_button"]', read: 'attr', attr: 'aria-pressed', on: ['true'], off: ['false'] },
         leave: { selector: '[data-qa="huddle_toolbar__leave_button"]' },
       },
     },
