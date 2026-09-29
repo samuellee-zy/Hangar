@@ -17,7 +17,8 @@ import reactHooks from 'eslint-plugin-react-hooks';
  * - The rules of hooks, and hooks reading values their dependency lists leave out.
  */
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'spikes/**', 'out-check/**'] },
+  // coverage/ is `npm run test:coverage`'s report, generated like out/.
+  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'spikes/**', 'out-check/**', 'coverage/**'] },
   {
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: {

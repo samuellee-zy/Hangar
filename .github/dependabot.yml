@@ -21,12 +21,18 @@ updates:
     # Majors taken on purpose, by hand, not as a routine bump:
     # - Electron: new APIs, removed ones, a different Chromium.
     # - The build toolchain: TypeScript, Vite, Vitest, electron-vite and the React plugin move
-    #   together — each constrains the next's versions — so one on its own can't install.
+    #   together — each constrains the next's versions — so one on its own can't install. As of
+    #   TypeScript 6, Vite 7 and electron-vite 5, the next ones wait upstream: TypeScript 7 on
+    #   typescript-eslint (<6.1), Vite 8 and plugin-react 6 on electron-vite 6 (beta). See backlog §14.3.
     ignore:
       - dependency-name: electron
         update-types: ['version-update:semver-major']
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
+      # And 6.1 on: typescript-eslint's peer range stops below it, so the grouped PR would fail
+      # `npm ci` with it in, as the first one did. package.json holds it at 6.0.x for the same reason.
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
       - dependency-name: vite
         update-types: ['version-update:semver-major']
       - dependency-name: vitest

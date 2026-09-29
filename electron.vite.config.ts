@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
 /**
@@ -16,15 +16,16 @@ const alias = {
   '@shared': resolve('src/shared'),
 };
 
+// Main and preload leave `dependencies` for `require` at runtime rather than bundling them. That was
+// `externalizeDepsPlugin()` in each, which electron-vite 5 deprecates: it's `build.externalizeDeps`
+// now, and on by default.
 export default defineConfig({
   main: {
     resolve: { alias },
-    plugins: [externalizeDepsPlugin()],
     build: { lib: { entry: resolve('src/main/boot/index.ts') } },
   },
   preload: {
     resolve: { alias },
-    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         // Two preloads: one for the sidebar (our own UI), one injected into every service view.

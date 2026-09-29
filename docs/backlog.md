@@ -619,7 +619,17 @@ And in the same round ([decision #116](decisions.md)):
   the widths; ⌃⌘→ and ⌃⌘← widen and narrow the focused pane. Both were §14.2's "built but not
   finished".
 
+- **The build toolchain, a major each:** TypeScript 6, Vite 7, electron-vite 5,
+  `@vitejs/plugin-react` 5, Vitest 5. The build's output is unchanged, and so is the renderer's
+  size. `baseUrl` went from tsconfig.json (deprecated in 6, and `paths` don't need it) and
+  `externalizeDepsPlugin` from the Vite config (deprecated in electron-vite 5, whose default does the
+  same). `npm audit` is clean.
+
 **Still open from these:**
+- **The rest of the toolchain waits on two upstreams.** TypeScript 7: typescript-eslint supports
+  TypeScript below 6.1. Vite 8, and `@vitejs/plugin-react` 6 with it, which needs Vite 8:
+  electron-vite 5 supports Vite up to 7, and electron-vite 6, which takes 8, is in beta. Each is one
+  line in package.json once its blocker ships; Dependabot's ignore list holds them back until then.
 - The meeting labels are English. In another language a label-read control reads `null`: safe,
   but not useful. Each language is a line in the catalog.
 - The rules were written from the services' markup, not a real call.

@@ -20,11 +20,11 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["node"],
-    "baseUrl": ".",
+    // Relative to this file. `baseUrl` said the same, and TypeScript 6 deprecates it.
     "paths": {
-      "@core/*": ["src/core/*"],
-      "@main/*": ["src/main/*"],
-      "@shared/*": ["src/shared/*"]
+      "@core/*": ["./src/core/*"],
+      "@main/*": ["./src/main/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
   // tests/ is typechecked by tsconfig.test.json (`npm run typecheck:tests`), which extends this one
