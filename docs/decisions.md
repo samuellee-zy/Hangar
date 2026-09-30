@@ -2574,3 +2574,27 @@ divided, and so were the grid's rows, and there was no way to resize without a p
   moves right, or, in the last column, its left one moves left. So one key widens whichever pane
   has focus. ⌃⌘ because ⌘⌥ arrows move focus, ⇧⌘⌥ arrows move the pane, ⌥ and ⌘ arrows are word
   and line in every text field, and ⌃ arrows are Spaces. Saved at once, since a key has no let-go.
+
+## 118. A download says it happened
+
+A file clicked in Slack, Messenger or WhatsApp was saved to Downloads, and nothing on screen said
+so. A browser has a download bubble and bounces the Dock's Downloads stack; Hangar has no toolbar
+for a bubble, and did neither. It read as a click that did nothing.
+
+- **A banner when one finishes**, naming the file and the service whose page started it — "From
+  Slack" — since the file could be from any of them. Clicking it shows the file in Finder, never
+  opens it: `safeToAutoOpen` exists because opening what a page downloaded can run it. A failed
+  download gets one too; a cancelled one doesn't, since that was you at the save dialog.
+- **Silent, and not held back by Do Not Disturb.** It answers a click you just made, and a
+  browser doesn't chime for a file you asked for either. macOS's own Focus still applies.
+- **Not when the file opens by itself** ("Open when complete"): the file appearing is the notice.
+- **The Dock does what it does for a browser.** `app.dock.downloadFinished` bounces the Downloads
+  stack, which macOS does only for a file saved in it, and the icon's progress bar covers every
+  download still running. The bar counts a download whose size the server didn't send as not
+  started, so it never runs backwards when the size arrives.
+- **Which service is the page's owner**, the same map the permission handler reads
+  (`platform/session.ts`), shown in the Activity sheet as well. A download nobody's page started
+  has no "From".
+- **Logged by name only:** `[download] Slack: report.pdf — completed`. The log is what gets pasted
+  into a bug report, and a path says whose Mac it's from. There was no line at all before, so
+  "did it download?" had no answer short of looking in the folder.

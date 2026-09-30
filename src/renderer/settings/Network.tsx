@@ -77,6 +77,11 @@ export function Downloads({ downloads }: { downloads: Preferences['downloads'] }
                 value={downloads.askWhereToSave} />
         <Toggle name="Open when complete" path="downloads.openOnComplete"
                 value={downloads.openOnComplete} />
+        <Toggle name="Notify when a download finishes"
+                note={downloads.openOnComplete
+                  ? 'Not for one that opens by itself, which says so already. Also when one fails'
+                  : 'A banner naming the file and where it came from; click it to show the file in Finder. Also when one fails'}
+                path="downloads.notify" value={downloads.notify} />
         <li className="pref">
           <span className="pref-label">
             <span className="pref-name">Folder</span>

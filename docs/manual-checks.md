@@ -62,6 +62,16 @@ In a call in Teams, Google Meet, or a Slack huddle, with `nc -U` running:
 - Play something in a service that isn't in a pane, then **Sleep background services**. It keeps
   playing.
 
+## Downloads
+
+| Check | Do | Read |
+|---|---|---|
+| **A file from a chat says so** | Download a file someone sent you in Slack, Messenger and WhatsApp. | A banner, "Downloaded report.pdf — From Slack. Click to show it in Finder.", and clicking it shows the file in Finder. The Downloads stack bounces in the Dock, if it's there and the file went to Downloads. The log says `[download] Slack: report.pdf — completed`. |
+| **Progress** | Download something large. | A progress bar on Hangar's Dock icon, gone when it's done. |
+
+No banner, but the file and the log line are there: macOS isn't showing Hangar's notifications. Check
+**System Settings → Notifications → Hangar**.
+
 ## Links and the window
 
 | Check | Do | Read |

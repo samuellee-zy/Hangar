@@ -50,6 +50,7 @@ import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
 import { LONG_SUSPEND_MS, keepsRunning, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
 import type { BusyReason, BusyService, Prompt } from '@core/runtime/busy';
+import { downloadProgress } from '@core/runtime/downloads';
 import { expiredQuiet, unmute } from '@core/notify/policy';
 import { safeSend } from '@main/platform/safe-send';
 import { openExternalSafely } from '@main/platform/external';
@@ -402,7 +403,10 @@ export class AppWindow {
       this.meetings.notePopup(serviceId, contents);
     });
     this.meetings.start();
-    onDownloadsChanged(() => this.sync());
+    onDownloadsChanged(() => {
+      this.showDownloadProgress();
+      this.sync();
+    });
 
     // Safe to start here despite `onApplied` touching panes: `reconcile` awaits `git --version`
     // before doing anything, so the constructor's own `restoreLayout()` below has always run by the
@@ -533,6 +537,20 @@ export class AppWindow {
       if (!busy.has(id) && wc.isCurrentlyAudible()) busy.set(id, 'audio');
     }
     return [...busy].map(([id, reason]) => ({ name: names.get(id) ?? 'A service', reason }));
+  }
+
+  /** What the Dock's progress bar last showed, so an unchanged figure isn't set again. */
+  private shownProgress = -1;
+
+  /**
+   * The Dock icon's progress bar, while anything is downloading — the one sign a browser gives that
+   * Hangar had no equivalent of. Gone when the last one ends.
+   */
+  private showDownloadProgress(): void {
+    const progress = downloadProgress(recentDownloads());
+    if (progress === this.shownProgress || this.win.isDestroyed()) return;
+    this.shownProgress = progress;
+    this.win.setProgressBar(progress);
   }
 
   /** Asks a question on the window, answered asynchronously. True when the user chose to go ahead. */

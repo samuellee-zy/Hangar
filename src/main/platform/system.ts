@@ -1,7 +1,7 @@
-import { app, globalShortcut, session, shell } from 'electron';
+import { Notification, app, globalShortcut, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { safeToAutoOpen } from '@core/runtime/downloads';
+import { downloadNotice, safeToAutoOpen } from '@core/runtime/downloads';
 import { applyLaunchAgent } from '@main/platform/launch-agent';
 import type { DownloadEntry, Preferences, ProxyConfig } from '@shared/types';
 
@@ -99,7 +99,7 @@ export const onDownloadsChanged = (listener: (() => void) | null): void => {
 };
 export const downloadPath = (id: string): string | null => recent.find((d) => d.id === id)?.path || null;
 
-function track(item: Electron.DownloadItem): void {
+function track(item: Electron.DownloadItem, service: string | null): DownloadEntry {
   const entry: DownloadEntry = {
     id: String(++nextDownloadId),
     name: item.getFilename(),
@@ -108,6 +108,7 @@ function track(item: Electron.DownloadItem): void {
     received: 0,
     total: item.getTotalBytes(),
     at: Date.now(),
+    service,
   };
   recent.unshift(entry);
   recent.length = Math.min(recent.length, 20);
@@ -127,20 +128,54 @@ function track(item: Electron.DownloadItem): void {
     entry.state = state;
     entry.path = item.getSavePath() || entry.path;
     entry.received = item.getReceivedBytes();
+    // The name only: the log gets pasted into bug reports, and a path says whose Mac it is.
+    console.log(`[download] ${entry.service ?? 'Hangar'}: ${entry.name} — ${state}`);
     downloadsChanged?.();
   });
   downloadsChanged?.();
+  return entry;
+}
+
+/**
+ * Banners for downloads, held until they close. Only this set references one once `notice` returns,
+ * and a banner collected before it's clicked does nothing when it is — the same trap the service
+ * banners in window/attention.ts are held against. Bounded for the same reason as theirs.
+ */
+const liveNotices = new Set<Notification>();
+
+/** The banner for a download that's ended, if it wants one. See `downloadNotice`. */
+function notice(entry: DownloadEntry): void {
+  const text = downloadNotice(entry, entry.service);
+  if (!text) return;
+  // Silent: a browser doesn't chime for a file you asked for, and neither should this.
+  const banner = new Notification({ title: text.title, body: text.body, silent: true });
+  const saved = entry.path;
+  // Finder, never the file itself: showing a file can't run it. A failed one has nothing to show.
+  if (entry.state === 'completed' && saved) banner.on('click', () => shell.showItemInFolder(saved));
+  banner.on('close', () => liveNotices.delete(banner));
+  banner.on('failed', (_event, error) => {
+    console.error(`[download] banner for ${entry.name} not delivered — ${error}`);
+    liveNotices.delete(banner);
+  });
+  liveNotices.add(banner);
+  while (liveNotices.size > 20) liveNotices.delete(liveNotices.values().next().value!);
+  banner.show();
 }
 
 /**
  * Downloads land in the configured folder without a prompt unless asked otherwise. Attaching per
  * session rather than globally, because each service has its own. Idempotent — see above.
  */
-export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Preferences): void {
+export function attachDownloadHandler(
+  ses: Electron.Session,
+  getPrefs: () => Preferences,
+  /** The service a page belongs to, by name, for "From Slack". Null for a page that is no service's. */
+  serviceNameOf: (wc: Electron.WebContents) => string | null = () => null,
+): void {
   if (downloadHandlerAttached.has(ses)) return;
   downloadHandlerAttached.add(ses);
 
-  ses.on('will-download', (_event, item) => {
+  ses.on('will-download', (_event, item, source) => {
     const prefs = getPrefs().downloads;
     if (!prefs.askWhereToSave) {
       const folder = prefs.folder ?? app.getPath('downloads');
@@ -148,9 +183,17 @@ export function attachDownloadHandler(ses: Electron.Session, getPrefs: () => Pre
       // twice silently destroyed the first copy. Reproduce it ourselves.
       item.setSavePath(uniqueDownloadPath(folder, item.getFilename()));
     }
-    track(item);
+    const entry = track(item, source && !source.isDestroyed() ? serviceNameOf(source) : null);
     item.once('done', (_e, state) => {
-      if (state !== 'completed' || !prefs.openOnComplete) return;
+      // Read now rather than at the start: the setting may have changed while it downloaded.
+      const now = getPrefs().downloads;
+      // The Downloads stack in the Dock bounces, as it does for a browser's. macOS does nothing
+      // for a file saved anywhere else.
+      if (state === 'completed') app.dock?.downloadFinished(item.getSavePath());
+      // Opening it is its own notice; a banner on top would be two for one file.
+      const opens = state === 'completed' && now.openOnComplete;
+      if (now.notify && !opens) notice(entry);
+      if (!opens) return;
       const saved = item.getSavePath();
       // Never *run* something because a page downloaded it — see `safeToAutoOpen`.
       if (!safeToAutoOpen(path.basename(saved))) {

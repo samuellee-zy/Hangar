@@ -92,7 +92,15 @@ export function ActivitySheet() {
                       disabled={d.state !== 'completed'}
                       onClick={() => window.hangar.send({ type: 'reveal-download', id: d.id })}
                     >
-                      <span className="activity-title">{d.name}</span>
+                      {/* Which service it came from, as a notification row says. */}
+                      <span className="activity-title">
+                        {d.service && (
+                          <>
+                            <strong>{d.service}</strong> ·{' '}
+                          </>
+                        )}
+                        {d.name}
+                      </span>
                       <span className="activity-detail">
                         {d.state === 'completed'
                           ? 'Show in Finder'
