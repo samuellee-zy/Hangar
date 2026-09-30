@@ -55,7 +55,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   keyboard: { bindings: { ...DEFAULT_BINDINGS } },
   network: { proxy: { mode: 'system', host: '', port: 0 }, blockAds: true },
   sync: { repoPath: '', allowPublicRepo: false },
-  downloads: { folder: null, askWhereToSave: false, openOnComplete: false },
+  // `notify` on: a file saved without a word looked like a click that did nothing.
+  downloads: { folder: null, askWhereToSave: false, openOnComplete: false, notify: true },
 };
 
 type Json = Record<string, unknown>;

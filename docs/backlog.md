@@ -625,6 +625,11 @@ And in the same round ([decision #116](decisions.md)):
   `externalizeDepsPlugin` from the Vite config (deprecated in electron-vite 5, whose default does the
   same). `npm audit` is clean.
 
+After that round:
+- **A download says it happened** ([decision #118](decisions.md)): a banner naming the file and
+  the service it came from, which shows it in Finder when clicked; the Dock's progress bar and
+  Downloads-stack bounce; a log line; and the service in the Activity sheet's list.
+
 **Still open from these:**
 - **The rest of the toolchain waits on two upstreams.** TypeScript 7: typescript-eslint supports
   TypeScript below 6.1. Vite 8, and `@vitejs/plugin-react` 6 with it, which needs Vite 8:

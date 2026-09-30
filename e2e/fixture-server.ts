@@ -65,6 +65,13 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
       <button data-qa="huddle_toolbar__leave_button">Leave</button>
       <script>window.endCall = () => { document.querySelector('[data-qa]').remove(); return true; };</script>`,
   },
+  // A chat's attachments, as a messaging service links them: a same-origin link the page marks for
+  // download, and a big one that arrives slowly enough to show progress.
+  '/downloads': {
+    body: `<!doctype html><title>Files</title>
+      <a id="report" href="/files/report.pdf" download>report.pdf</a>
+      <a id="slow" href="/files/slow.bin" download>slow.bin</a>`,
+  },
   '/embed': {
     body: `<!doctype html><title>Embed</title><script>
       const blank = document.createElement('iframe');
@@ -115,6 +122,32 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       const signedIn = (req.headers.cookie ?? '').includes(`${SESSION_COOKIE}=ok`);
       res.writeHead(signedIn ? 200 : 401, { 'content-type': 'application/json' });
       res.end(signedIn ? JSON.stringify({ counts: { unread: 5 } }) : '{"error":"sign in"}');
+      return;
+    }
+
+    // Files, served as attachments. `slow.bin` trickles in over about a second.
+    if (path === '/files/report.pdf') {
+      res.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="report.pdf"' });
+      res.end('%PDF-1.4\n% a report\n%%EOF\n');
+      return;
+    }
+    if (path === '/files/slow.bin') {
+      const chunk = Buffer.alloc(16 * 1024, 7);
+      const chunks = 16;
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-disposition': 'attachment; filename="slow.bin"',
+        'content-length': String(chunk.length * chunks),
+      });
+      let sent = 0;
+      const timer = setInterval(() => {
+        if (res.destroyed) return clearInterval(timer);
+        res.write(chunk);
+        if (++sent === chunks) {
+          clearInterval(timer);
+          res.end();
+        }
+      }, 70);
       return;
     }
 

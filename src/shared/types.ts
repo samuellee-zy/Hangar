@@ -478,7 +478,13 @@ export interface Preferences {
    * with 200 — off by default, and only ever consulted when the probe was decisive.
    */
   sync: { repoPath: string; allowPublicRepo: boolean };
-  downloads: { folder: string | null; askWhereToSave: boolean; openOnComplete: boolean };
+  downloads: {
+    folder: string | null;
+    askWhereToSave: boolean;
+    openOnComplete: boolean;
+    /** A banner when one finishes, or fails. Not when it opens itself: that says so already. */
+    notify: boolean;
+  };
 }
 
 /** Mirrors core/config/sync.ts. Declared here because ShellState crosses the IPC boundary. */
@@ -576,6 +582,8 @@ export interface DownloadEntry {
   /** 0 when the server didn't say. */
   total: number;
   at: number;
+  /** The service whose page started it, by name. Null for one nobody's page asked for. */
+  service: string | null;
 }
 
 /** Everything the rail renders. The renderer holds no state of its own — it draws this. */

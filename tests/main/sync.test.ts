@@ -275,7 +275,7 @@ describe('machine-local preferences never travel', () => {
   it('the proxy, downloads folder, dndUntil and the launchd settings are stripped', () => {
     const local = withPrefs({
       network: { proxy: { mode: 'http' as const, host: 'work-proxy.internal', port: 8080 } },
-      downloads: { folder: '/Users/alice/Downloads', askWhereToSave: false, openOnComplete: false },
+      downloads: { folder: '/Users/alice/Downloads', askWhereToSave: false, openOnComplete: false, notify: true },
     });
     const out = serialise(local);
     expect(out).not.toContain('work-proxy.internal');

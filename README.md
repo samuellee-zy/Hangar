@@ -106,9 +106,10 @@ Settings is grouped and searchable; ⌘/ lists every shortcut.
 **Web Push** — a hibernated service can still reach you, so sleeping one is a saving rather than
 silence. Needs a free Firebase project of your own; see [push.md](docs/push.md) for why.
 
-**Browser affordances.** Find in page (⌘F) with match counts, zoom per service (⌘+/−/0), print,
-a window title that follows the focused service, screen sharing through a picker, and a downloads
-list in the tray.
+**Browser affordances.** Find in page (⌘F) with match counts, zoom per service (⌘+/−/0), print, a
+window title that follows the focused service, screen sharing through a picker, and downloads that
+say when they're done — a banner naming the file and the service, progress on the Dock icon — listed
+in the tray and ⇧⌘J.
 
 **Right-click everywhere** — including inside the web views, where Electron gives you nothing by
 default: copy/paste, open-link-in-browser, and spelling suggestions.

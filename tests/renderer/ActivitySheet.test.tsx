@@ -53,8 +53,8 @@ describe('recent notifications and downloads', () => {
     await renderSheet(
       state({
         downloads: [
-          { id: 'd1', name: 'done.pdf', path: '/x', state: 'completed', received: 1, total: 1, at: 0 },
-          { id: 'd2', name: 'half.zip', path: '', state: 'progressing', received: 5, total: 10, at: 0 },
+          { id: 'd1', name: 'done.pdf', path: '/x', state: 'completed', received: 1, total: 1, at: 0, service: 'Slack' },
+          { id: 'd2', name: 'half.zip', path: '', state: 'progressing', received: 5, total: 10, at: 0, service: null },
         ],
       }),
     );
@@ -62,6 +62,19 @@ describe('recent notifications and downloads', () => {
     expect(sent).toContainEqual({ type: 'reveal-download', id: 'd1' });
     expect(screen.getByRole('button', { name: /half\.zip/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /half\.zip/ })).toHaveTextContent('50%');
+  });
+
+  it('SAYS WHICH SERVICE A DOWNLOAD CAME FROM — a file from one of six chat apps', async () => {
+    await renderSheet(
+      state({
+        downloads: [
+          { id: 'd1', name: 'done.pdf', path: '/x', state: 'completed', received: 1, total: 1, at: 0, service: 'Slack' },
+          { id: 'd2', name: 'own.png', path: '/y', state: 'completed', received: 1, total: 1, at: 0, service: null },
+        ],
+      }),
+    );
+    expect(screen.getByRole('button', { name: /done\.pdf/ })).toHaveTextContent(/^Slack · done\.pdf/);
+    expect(screen.getByRole('button', { name: /own\.png/ })).toHaveTextContent(/^own\.png/);
   });
 
   it('says what collects here when nothing has yet', async () => {

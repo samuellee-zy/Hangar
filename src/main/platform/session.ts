@@ -246,7 +246,10 @@ export function sessionFor(svc: ServiceInstance): Session {
   // Same reasoning as the proxy above, and the same trap: applied here rather than in a bulk pass
   // so a view woken from hibernation is covered too.
   applyAdBlocking(ses, adsBlockedFor(partition));
-  attachDownloadHandler(ses, () => loadConfig().preferences);
+  attachDownloadHandler(ses, () => loadConfig().preferences, (wc) => {
+    const serviceId = ownerOf.get(wc);
+    return (serviceId && loadConfig().services.find((s) => s.id === serviceId)?.name) || null;
+  });
 
   return ses;
 }

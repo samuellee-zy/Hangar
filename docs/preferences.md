@@ -96,8 +96,12 @@ Building from the lists takes ~530ms and spikes RSS ~275MB, against ~8ms to read
 the cache. Applied in `sessionFor`, not a bulk pass, so a view woken from hibernation is covered.
 A failed fetch is non-fatal: no blocking, services load as normal.
 
-Downloads: target folder, ask-where-to-save, open-on-complete. Attached per session, since each
-service has its own.
+Downloads: target folder, ask-where-to-save, open-on-complete, and notify. Attached per session,
+since each service has its own. With notify on (the default), a finished download shows a banner
+naming the file and the service it came from, and clicking it shows the file in Finder; a failed
+one says so too. Not for one that opens by itself, or one cancelled at the save dialog. Whatever
+the setting, the Dock icon shows progress while anything downloads, and the Downloads stack
+bounces when a file lands in it ([decisions #118](decisions.md)).
 
 ## Sync
 
