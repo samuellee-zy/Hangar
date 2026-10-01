@@ -2598,3 +2598,30 @@ for a bubble, and did neither. It read as a click that did nothing.
 - **Logged by name only:** `[download] Slack: report.pdf — completed`. The log is what gets pasted
   into a bug report, and a path says whose Mac it's from. There was no line at all before, so
   "did it download?" had no answer short of looking in the folder.
+
+## 119. Who's waiting: chat lists read from main, by catalog rule, for the socket only
+
+A Stream Deck's Chats screen should show the people and channels waiting on you — "Jon (2)",
+"#deal-asos" — not just Slack's total. The names and badges are DOM in each chat app's list, so
+reading them is a rule list per catalog entry (`conversations`), like unread (#90) and meetings
+(#115): one evaluator in `core/services/conversations.ts`, tested against markup shaped like each
+service's.
+
+- **Probed from main, in an isolated world (1109).** As the meeting bridge does, and for the same
+  reasons: the page's scripts can neither see the probe nor answer for it. Every five seconds, for
+  entries with rules and a running page — a sleeping service has no list to read, and says nothing.
+- **Names and counts, never messages.** The probe returns a row's name, an id, the badge's text
+  and three flags. What comes back is shape-checked and clamped: 80 rows read, 30 reported, names
+  to 120 characters.
+- **The app's order, not ours.** Each list is already most-recent-first; `order` keeps that, and a
+  client interleaves services itself. Muted conversations are left out, like a muted service's count.
+- **A list of rules, first match wins.** A redesign is met by adding a rule above the old one. A
+  rule set that matches no row is logged once, which is where a redesign shows first.
+- **Opening one is a click on its row**, after showing the service: pointer and mouse events and
+  then `click()`, as a user gesture, because chat lists listen for different ones.
+- **The socket only, never a link.** `open-conversation` is on the control allowlist and not among
+  the link verbs, and the lists are only in the socket's state. A page that can open `hangar://`
+  must not be able to read your chat list or open your chats.
+- **Slack and WhatsApp from their markup; Teams and Messenger are guesses.** Slack's sidebar has
+  carried its channel id and `--unread` class for years, and WhatsApp's list is what the unread
+  count already reads. The Teams and Messenger rules haven't met a live page yet.

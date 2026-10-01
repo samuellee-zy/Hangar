@@ -64,6 +64,7 @@ import {
   recentDownloads,
 } from '@main/platform/system';
 import { clearBlockedHost, hostBlockedFor, setLinkRouter, setPopupListener } from '@main/platform/session';
+import { ConversationBridge } from '@main/features/conversation-bridge';
 import { MeetingBridge } from '@main/features/meeting-bridge';
 import { routable, routeTarget } from '@core/services/routing';
 import { canCompose, composeUrlFor } from '@shared/mailto';
@@ -232,6 +233,8 @@ export class AppWindow {
   private endpoints: EndpointPoller;
   /** Meeting controls in services' pages, for the control socket. See meeting-bridge.ts. */
   private meetings: MeetingBridge;
+  /** Who's waiting in each chat service's list, for the control socket. See conversation-bridge.ts. */
+  private conversations: ConversationBridge;
   /** Every window each service's page opened, while open: a huddle, a player. For `busyReason`. */
   private popups = new Map<string, Set<WebContents>>();
   /** The next background service to load, a moment after the last. See `startBackgroundServices`. */
@@ -356,6 +359,14 @@ export class AppWindow {
       changed: () => this.sync(),
     });
 
+    this.conversations = new ConversationBridge({
+      services: () => loadConfig().services,
+      contents: (serviceId) => this.contentsForService(serviceId),
+      focus: (serviceId) => void this.dispatch({ type: 'focus-service', serviceId }),
+      changed: () => this.sync(),
+      log: (message) => console.log(`[conversations] ${message}`),
+    });
+
     this.configSync = new ConfigSync({
       // Optional-chained: a config from before this preference existed has no `sync` section, and
       // reading through it unguarded threw inside a `void`-ed promise where nothing surfaced it.
@@ -403,6 +414,7 @@ export class AppWindow {
       this.meetings.notePopup(serviceId, contents);
     });
     this.meetings.start();
+    this.conversations.start();
     onDownloadsChanged(() => {
       this.showDownloadProgress();
       this.sync();
@@ -657,6 +669,7 @@ export class AppWindow {
       unreadEvidence: this.attention.evidenceSnapshot(),
       iconVersions: iconVersions(),
       meetings: this.meetings.snapshot(),
+      conversations: this.conversations.snapshot(),
       // Only while it means something: with one pane, maximised and not are the same picture.
       maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
       layoutShape: this.layout.shape,
@@ -1483,6 +1496,7 @@ export class AppWindow {
       paneRect: (id) => this.paneRect(id),
       contentsForService: (id) => this.contentsForService(id),
       meetingControl: (id, control, want) => this.meetings.control(id, control, want),
+      openConversation: (id, conversationId) => this.conversations.open(id, conversationId),
       busyReason: (id) => this.busyReason(id),
       confirm: (prompt) => this.confirm(prompt),
       activeWorkspace: (id) => this.activeWorkspace(id),
@@ -1803,6 +1817,7 @@ export class AppWindow {
     // whose views are gone.
     this.endpoints.dispose();
     this.meetings.stop();
+    this.conversations.stop();
     if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
     this.backgroundTimer = null;
     if (this.flashTimer) clearTimeout(this.flashTimer);

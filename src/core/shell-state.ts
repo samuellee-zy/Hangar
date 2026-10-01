@@ -5,6 +5,7 @@ import type {
   Config,
   Command,
   KeyboardMap,
+  Conversation,
   MeetingState,
   Pane,
   ServiceInstance,
@@ -85,6 +86,8 @@ export interface ProjectionInput {
   iconVersions?: ReadonlyMap<string, number>;
   /** Meetings found in services' pages (main/features/meeting-bridge.ts), by service id. */
   meetings?: ReadonlyMap<string, MeetingState>;
+  /** Conversations waiting in chat services' lists (main/features/conversation-bridge.ts), by service id. */
+  conversations?: ReadonlyMap<string, Conversation[]>;
   /** Services by most recent use, newest first. */
   recentServiceIds?: string[];
   maximisedPaneId?: string | null;
@@ -113,6 +116,7 @@ export function projectShellState(input: ProjectionInput): ShellState {
       unread: input.unread.get(svc.id) ?? 0,
       iconVersion: input.iconVersions?.get(svc.id) ?? 0,
       ...(input.meetings?.has(svc.id) ? { meeting: input.meetings.get(svc.id) } : {}),
+      ...(input.conversations?.has(svc.id) ? { conversations: input.conversations.get(svc.id) } : {}),
     };
   };
   return {

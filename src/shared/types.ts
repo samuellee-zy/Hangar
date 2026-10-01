@@ -123,6 +123,47 @@ export interface MeetingState {
 }
 
 /**
+ * How to read a chat service's conversation list — who's waiting on you — from its own UI. Data,
+ * like `DomUnreadRule` and `MeetingRules`: one evaluator in core/services/conversations.ts reads
+ * every entry, and the page-side probe only collects strings. Selectors are relative to a row
+ * except `row` itself. Several rules may be given; the first whose `row` matches anything is used,
+ * so a redesign can be met by adding one without losing the other.
+ */
+export interface ConversationRule {
+  /** One conversation in the list. */
+  row: string;
+  /** Inside the row: its name. Its text, or attribute `nameAttr` when given. */
+  name: string;
+  nameAttr?: string;
+  /** Inside the row: the unread badge. Its number is the count; no number reads as 1. */
+  badge?: string;
+  /** Inside the row (or the row itself): marks it unread without a count — bold text, a dot. */
+  unread?: string;
+  /** The row's aria-label containing this (case-insensitive) marks it unread. Teams says so there. */
+  unreadLabel?: string;
+  /** Inside the row (or the row itself): you're mentioned, or it's a direct message. */
+  mention?: string;
+  /** Inside the row (or the row itself): muted. Left out. */
+  muted?: string;
+  /** An attribute on the row, or on `idFrom` inside it, that names it stably. Else its name. */
+  idAttr?: string;
+  idFrom?: string;
+  /** Inside the row: what to click to open it. Default: the row. */
+  click?: string;
+}
+
+/** One conversation with something unread, as a client is told. */
+export interface Conversation {
+  /** Stable within the service: `idAttr`'s value, or the name. */
+  id: string;
+  name: string;
+  unread: number;
+  mention: boolean;
+  /** Its place in the app's own list, 0 at the top — the app's own idea of recent. */
+  order: number;
+}
+
+/**
  * An endpoint of the service's own that reports its unread count, called with the login the service
  * already has. See core/notify/endpoint.ts for what it is for and what guards it.
  */
@@ -187,6 +228,8 @@ export interface CatalogEntry {
   plainUserAgent?: boolean;
   /** How to read and press this service's meeting controls — see `MeetingRules`. */
   meeting?: MeetingRules;
+  /** How to read who's waiting on you in its conversation list — see `ConversationRule`. */
+  conversations?: ConversationRule[];
   /**
    * Let the page open `about:blank` windows, kept in the service's cookie jar. Off everywhere else,
    * since a blank window is how some pages open an external link before pointing it somewhere, and
@@ -527,6 +570,8 @@ export type ServiceView = ServiceInstance & {
   iconVersion?: number;
   /** The service's meeting, for entries with meeting rules and a page to read them from. */
   meeting?: MeetingState;
+  /** Conversations with something unread, for entries with conversation rules. */
+  conversations?: Conversation[];
 };
 
 /**
@@ -818,6 +863,11 @@ export type Command =
    * page must not be able to unmute you or end your call.
    */
   | { type: 'meeting-control'; serviceId: string; control: MeetingControl; want: boolean | null }
+  /**
+   * Shows the service and opens one of its conversations — a click on its row in the app's own
+   * list. Control-socket only, like `meeting-control`: a link must not be able to open your chats.
+   */
+  | { type: 'open-conversation'; serviceId: string; conversationId: string }
   | { type: 'sleep-service'; serviceId: string }
   | { type: 'show-service-menu'; serviceId: string }
   | { type: 'show-rail-menu' }

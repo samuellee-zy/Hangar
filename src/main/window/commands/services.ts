@@ -22,6 +22,12 @@ export const serviceCommands: CommandTable = {
     void shell.meetingControl(command.serviceId, command.control, command.want);
   },
 
+  // From the control socket too — a Stream Deck's Chats screen opening the conversation on a key.
+  // Not a link verb either: a page mustn't be able to open your chats (#119).
+  'open-conversation': (command, shell) => {
+    void shell.openConversation(command.serviceId, command.conversationId);
+  },
+
   'add-service': (command, shell) => {
     const svc = updateConfigReturning((c) =>
       addService(c, makeInstance(c, command.catalogId, { forceNewAccount: command.forceNewAccount })),

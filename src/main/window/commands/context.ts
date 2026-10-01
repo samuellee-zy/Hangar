@@ -38,6 +38,8 @@ export interface ShellContext {
   contentsForService(serviceId: string): WebContents | null;
   /** Presses a meeting control in a service's page or its huddle window. See meeting-bridge.ts. */
   meetingControl(serviceId: string, control: MeetingControl, want: boolean | null): Promise<boolean>;
+  /** Shows a service and opens one of its conversations. See conversation-bridge.ts. */
+  openConversation(serviceId: string, conversationId: string): Promise<boolean>;
   /** Whether unloading the service now would end a call or its sound. See core/runtime/busy.ts. */
   busyReason(serviceId: string): BusyReason | null;
   /** Asks on the window; true when the user chose to go ahead. */
