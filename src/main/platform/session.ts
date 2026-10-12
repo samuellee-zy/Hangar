@@ -13,8 +13,8 @@ import { catalogById } from '@shared/catalog';
 import { accountById } from '@core/services/accounts';
 import { userAgentFor } from '@core/services/user-agent';
 import { decidePermission } from '@core/runtime/permissions';
-import { blockedPageHtml, shouldShowBlockedPage } from '@core/runtime/recovery';
-import { isBlankPage, isWebUrl, redactUrl } from '@core/runtime/urls';
+import { blockedPageHtml, shouldShowBlockedPage, signInBlockedPageHtml } from '@core/runtime/recovery';
+import { isBlankPage, isSignInRequest, isWebUrl, redactUrl } from '@core/runtime/urls';
 import { applyProxy, attachDownloadHandler } from '@main/platform/system';
 import { applyAdBlocking } from '@main/platform/adblock';
 import { loadConfig } from '@main/platform/config';
@@ -305,19 +305,23 @@ function leave(url: string, svc: ServiceInstance): void {
 }
 
 /**
- * The host of the most recent navigation we both blocked *and* showed a blocked page for, per
- * service. The blocked page's Allow button carries no argument; this is what it means.
+ * The most recent navigation we both blocked *and* showed a blocked page for, per service: its
+ * host, and where it was going. The page's Allow button carries no argument; this is what it means.
  *
- * Only written on the path that renders the page, so the button can never allow a host the user
- * was not just shown. Never read for any other purpose.
+ * Only written on the paths that render a page, so the button can never allow a host the user was
+ * not just shown. The address is where Allow carries on to — the sign-in step that was stopped,
+ * rather than the service's front page and its sign-in button again.
  */
-const lastBlockedHost = new Map<string, string>();
+const lastBlocked = new Map<string, { host: string; url: string }>();
 
 export const hostBlockedFor = (serviceId: string): string | null =>
-  lastBlockedHost.get(serviceId) ?? null;
+  lastBlocked.get(serviceId)?.host ?? null;
+
+export const urlBlockedFor = (serviceId: string): string | null =>
+  lastBlocked.get(serviceId)?.url ?? null;
 
 export const clearBlockedHost = (serviceId: string): void => {
-  lastBlockedHost.delete(serviceId);
+  lastBlocked.delete(serviceId);
 };
 
 const hostOf = (rawUrl: string): string => {
@@ -336,7 +340,12 @@ const hostOf = (rawUrl: string): string => {
 export function attachNavigationGuards(
   wc: Electron.WebContents,
   svc: ServiceInstance,
-  partition: string
+  partition: string,
+  /**
+   * The service's own pane, rather than a popup or pop-out. Only a pane can show the sign-in page
+   * below: its buttons answer to the service's view, and nothing else (see `serviceIdForContents`).
+   */
+  { pane = false }: { pane?: boolean } = {},
 ): void {
   // Guards are attached once per view, in `ServiceManager.ensure()`, and `ensure()` returns early
   // for a live runtime — so a captured `svc` would hold the allowlist as it stood when the view was
@@ -407,6 +416,19 @@ export function attachNavigationGuards(
    */
   const refuse = (url: string, via: string): boolean => {
     if (isAllowedHost(current(), url)) return false;
+
+    // A sign-in step, not a link: the service sending you to an identity provider it doesn't list —
+    // a company's own Google, Okta or Microsoft sign-in. In the browser it signed the browser in,
+    // and the pane sat on the sign-in page with nothing to say why. Asked about here instead, and
+    // never routed: a sign-in belongs to the service that started it, not to the Gmail that lists
+    // accounts.google.com.
+    if (pane && isSignInRequest(url)) {
+      console.log(`[nav] ${svc.name}: ${hostOf(url)} is a sign-in step not on the allowlist (${via}) — asking`);
+      lastBlocked.set(svc.id, { host: hostOf(url), url });
+      void wc.loadURL(signInBlockedPageHtml({ serviceName: svc.name, host: hostOf(url) }));
+      return true;
+    }
+
     console.log(`[nav] ${svc.name}: ${hostOf(url)} not on allowlist (${via}) — leaving the service`);
     // Routed to another of your services, the pane stays where it was: the link went somewhere.
     const routed = routeLink?.(url, svc.id) === true;
@@ -426,7 +448,7 @@ export function attachNavigationGuards(
     // The pane is only replaced when it holds nothing worth keeping. Clicking an external link in
     // a working service must leave that service exactly where it was.
     if (shouldShowBlockedPage(wc.getURL())) {
-      lastBlockedHost.set(svc.id, hostOf(url));
+      lastBlocked.set(svc.id, { host: hostOf(url), url });
       void wc.loadURL(
         blockedPageHtml({ serviceName: svc.name, url, host: hostOf(url) })
       );

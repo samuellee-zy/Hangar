@@ -2598,3 +2598,27 @@ for a bubble, and did neither. It read as a click that did nothing.
 - **Logged by name only:** `[download] Slack: report.pdf — completed`. The log is what gets pasted
   into a bug report, and a path says whose Mac it's from. There was no line at all before, so
   "did it download?" had no answer short of looking in the folder.
+
+## 119. A sign-in step isn't a link: it asks in the pane, and Allow carries on
+
+The Decagon Slack workspace signs in with Google ("Sign in with Google IDP"). Slack's entry listed
+only `slack.com`, so the redirect to accounts.google.com was refused like any link off the
+allowlist: handed to the browser, which signed *itself* in, while the pane stayed on Slack's
+sign-in page with nothing to say why. The blocked page with its Allow button only appears in an
+empty pane, and this one wasn't empty.
+
+- **Slack lists Google, Apple and Microsoft sign-in.** Its own sign-in page offers Google and
+  Apple, and a workspace's single sign-on is often Google's or Microsoft's.
+- **Any other identity provider asks, in the pane.** No list keeps up with every company's Okta,
+  OneLogin or ADFS, so a sign-in step is told from a link by the protocols' own parameter names
+  (`isSignInRequest`): SAML's `SAMLRequest`, or its endpoint for the form-post binding; OAuth's and
+  OpenID's `client_id` with `redirect_uri` or `response_type`. Such a step to an unlisted host shows
+  "Sign in to Slack through okta.com?" instead of going to the browser, and is never routed to
+  another service, though Gmail lists accounts.google.com.
+- **Allow carries on from the step that was stopped.** It used to reload the service's front page,
+  which meant the sign-in button and the redirect again; the address is kept beside the host, and
+  loaded if it's on the host just allowed.
+- **In a pane only.** The page's buttons answer to the service's own view (`serviceIdForContents`),
+  so in a popup or a pop-out they'd do nothing; there it opens in the browser, as before.
+- **An ordinary link is unchanged:** a redirect that isn't a sign-in still opens in the browser and
+  leaves the page alone.

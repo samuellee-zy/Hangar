@@ -273,3 +273,22 @@ export function blockedPageHtml(opts: { serviceName: string; url: string; host: 
     <button onclick="window.__hangar && window.__hangar.retry()">Back to ${escape(opts.serviceName)}</button>
   </div>`);
 }
+
+/**
+ * Shown in-pane when a sign-in step went to a host the service doesn't list — Slack sending a
+ * workspace to Google, Okta or Microsoft to sign in. Not handed to the browser, as a link is: the
+ * browser would finish the sign-in for itself, and the pane would still be asking.
+ *
+ * No address on the page: a SAML request is a long run of encoding that tells a person nothing,
+ * and the host is the decision. Allow carries on from the step that was stopped.
+ */
+export function signInBlockedPageHtml(opts: { serviceName: string; host: string }): string {
+  return page(`
+  <h1>Sign in to ${escape(opts.serviceName)} through ${escape(opts.host)}?</h1>
+  <p>${escape(opts.serviceName)} wants to sign you in through <strong>${escape(opts.host)}</strong>, which isn't on its list of allowed hosts.</p>
+  <p>Allow it to carry on signing in here. In your browser, it would sign the browser in instead.</p>
+  <div class="actions">
+    <button onclick="window.__hangar && window.__hangar.allowHost()">Allow ${escape(opts.host)} and continue</button>
+    <button onclick="window.__hangar && window.__hangar.retry()">Back to ${escape(opts.serviceName)}</button>
+  </div>`);
+}

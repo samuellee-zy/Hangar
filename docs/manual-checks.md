@@ -62,6 +62,13 @@ In a call in Teams, Google Meet, or a Slack huddle, with `nc -U` running:
 - Play something in a service that isn't in a pane, then **Sleep background services**. It keeps
   playing.
 
+## Signing in
+
+| Check | Do | Read |
+|---|---|---|
+| **Slack through Google** | Sign out of Slack, then **Sign in with Google IDP**. | Google's sign-in opens in the Slack pane, not the browser, and hands back to Slack. |
+| **A provider Hangar doesn't list** | Sign in to a service through your company's Okta, OneLogin or similar. | The pane asks "Sign in to … through …?". **Allow … and continue** goes on to the provider's sign-in, in the pane. The log says `[nav] …: … is a sign-in step not on the allowlist`. |
+
 ## Downloads
 
 | Check | Do | Read |

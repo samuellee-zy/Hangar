@@ -139,7 +139,7 @@ export class ServiceManager {
     };
     this.runtimes.set(svc.id, runtime);
 
-    attachNavigationGuards(view.webContents, svc, partition);
+    attachNavigationGuards(view.webContents, svc, partition, { pane: true });
     // Bound here, once per view, rather than on the focus path — see attachShortcuts.
     attachShortcuts(view.webContents, this.onCommand, () => this.keyContext(svc.id));
     // No-op for services with a vendored logo; only custom connections need this.
