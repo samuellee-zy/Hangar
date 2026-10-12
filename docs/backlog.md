@@ -632,7 +632,8 @@ After that round:
 
 - **Signing in through a provider the service doesn't list** ([decision #119](decisions.md)): Slack
   lists Google, Apple and Microsoft, and any other company's sign-in asks in the pane, where Allow
-  carries on signing in, instead of going to the browser.
+  carries on signing in, instead of going to the browser. Google's country account domains
+  (accounts.google.co.uk, …), the last hop of every Google sign-in, stay in the pane too.
 
 **Still open from these:**
 - **A sign-in popup to an unlisted provider still opens in the browser.** Only a pane can show the

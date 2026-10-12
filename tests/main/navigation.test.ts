@@ -303,3 +303,28 @@ describe("Slack's own sign-in hosts", () => {
     }
   });
 });
+
+describe("Google's account domain in each country", () => {
+  const signsInWithGoogle = service({ allowedHosts: ['example.com', 'accounts.google.com'] });
+
+  it("COMES WITH accounts.google.com — the last step of a sign-in went to Chrome, and the pane showed nothing until reloaded", () => {
+    for (const host of ['accounts.google.co.uk', 'accounts.google.com.au', 'accounts.google.de', 'accounts.google.co.jp']) {
+      assert.equal(isAllowedHost(signsInWithGoogle, `https://${host}/accounts/SetSID?ssdc=1&continue=x`), true, host);
+    }
+  });
+
+  it('and only with it, and only that exact shape', () => {
+    assert.equal(isAllowedHost(service(), 'https://accounts.google.co.uk/accounts/SetSID'), false, 'a service that never signs in with Google');
+    for (const host of ['accounts.google.co.uk.example.net', 'xaccounts.google.co.uk', 'accounts.google.evil', 'accounts.google.co.evil.uk', 'mail.google.co.uk']) {
+      assert.equal(isAllowedHost(signsInWithGoogle, `https://${host}/`), false, host);
+    }
+  });
+
+  it("and Google's and Microsoft's other sign-in steps are listed", () => {
+    const gmail = { id: 'g', catalogId: 'gmail', name: 'Gmail', accountId: 'a' } as ServiceInstance;
+    const teams = { id: 't', catalogId: 'teams', name: 'Teams', accountId: 'a' } as ServiceInstance;
+    assert.equal(isAllowedHost(gmail, 'https://gds.google.com/web/recoveryoptions'), true);
+    assert.equal(isAllowedHost(gmail, 'https://accounts.google.co.uk/accounts/SetSID'), true);
+    assert.equal(isAllowedHost(teams, 'https://passwordreset.microsoftonline.com/?ru=x'), true);
+  });
+});

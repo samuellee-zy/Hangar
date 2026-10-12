@@ -6,12 +6,17 @@ import type { CatalogEntry, DomUnreadRule } from './types';
 // here means sign-in silently fails, and a missing CDN host means a blank page. Err on including
 // the identity provider.
 
-const GOOGLE_AUTH = ['accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com'];
+// `gds.google.com` is the "keep your account secure" check partway through a sign-in. Google's
+// country account domains (accounts.google.co.uk, …) come with accounts.google.com: see
+// `isAllowedHost`.
+const GOOGLE_AUTH = ['accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com', 'gds.google.com'];
 // A personal Microsoft account signs in through the live.com side rather than the AAD side, and
 // the flow steps through account/signup pages before it hands back. `msauth.net` and `msftauth.net`
 // host the login UI itself for both.
 const MS_AUTH = [
   'login.microsoftonline.com',
+  // Where a sign-in goes when the password has to be changed first.
+  'passwordreset.microsoftonline.com',
   'login.live.com',
   'login.microsoft.com',
   'account.live.com',

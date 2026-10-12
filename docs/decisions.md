@@ -2622,3 +2622,11 @@ empty pane, and this one wasn't empty.
   so in a popup or a pop-out they'd do nothing; there it opens in the browser, as before.
 - **An ordinary link is unchanged:** a redirect that isn't a sign-in still opens in the browser and
   leaves the page alone.
+- **The way back counts too.** The last step of a Google sign-in sets its cookie on the country's
+  own account domain — accounts.google.co.uk for a British account — and every service that signs
+  in through Google refused it: Gmail, Calendar, Slack, YouTube Music, Perplexity, Claude (on
+  `.com.au`). The hop went to Chrome; the sign-in had already worked, so the pane showed the
+  service only once it was reloaded. A list with accounts.google.com now covers Google's country
+  account domains, by one anchored pattern rather than some 190 entries. `gds.google.com` (Google's
+  "keep your account secure" step) and Microsoft's `passwordreset.microsoftonline.com` joined the
+  sign-in lists, from the same search of the log for every sign-in hop refused.

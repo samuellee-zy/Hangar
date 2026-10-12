@@ -67,6 +67,7 @@ In a call in Teams, Google Meet, or a Slack huddle, with `nc -U` running:
 | Check | Do | Read |
 |---|---|---|
 | **Slack through Google** | Sign out of Slack, then **Sign in with Google IDP**. | Google's sign-in opens in the Slack pane, not the browser, and hands back to Slack. |
+| **Gmail, Calendar and the rest, to the end** | Sign in to a Google service from signed out. | It lands on the service in the pane by itself: no Chrome tab, and no reload needed. The log has no `accounts.google.co.uk not on allowlist` line. |
 | **A provider Hangar doesn't list** | Sign in to a service through your company's Okta, OneLogin or similar. | The pane asks "Sign in to … through …?". **Allow … and continue** goes on to the provider's sign-in, in the pane. The log says `[nav] …: … is a sign-in step not on the allowlist`. |
 
 ## Downloads

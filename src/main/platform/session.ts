@@ -84,6 +84,16 @@ export function pruneSessions(stillNeeded: Set<string>): string[] {
   return dropped;
 }
 
+/**
+ * Google's account domain in each country: accounts.google.co.uk, accounts.google.com.au,
+ * accounts.google.de. The last step of a Google sign-in sets its cookie on the country's domain
+ * too, so it lies on the way back to every service that signs in through Google — and, refused, it
+ * went to the browser at the very end, leaving a pane that showed nothing until it was reloaded.
+ * One list entry per country would be some 190, so they come with `accounts.google.com`, and only
+ * with it. Anchored at both ends: accounts.google.co.uk.example.com is nobody's country.
+ */
+const GOOGLE_COUNTRY_ACCOUNTS = /^accounts\.google\.(?:com?\.)?[a-z]{2}$/;
+
 /** True when the URL belongs to the service (or its identity provider) rather than the open web. */
 export function isAllowedHost(svc: ServiceInstance, rawUrl: string): boolean {
   // Instance list first: custom connections have no catalog entry, and without their own list
@@ -99,7 +109,8 @@ export function isAllowedHost(svc: ServiceInstance, rawUrl: string): boolean {
   // made from a `file:` URL had an allowlist of `['']` — which matched every one of them.
   if (!isWebUrl(rawUrl)) return false;
   const host = new URL(rawUrl).hostname;
-  return allowed.some((h) => h !== '' && (host === h || host.endsWith(`.${h}`)));
+  if (allowed.some((h) => h !== '' && (host === h || host.endsWith(`.${h}`)))) return true;
+  return GOOGLE_COUNTRY_ACCOUNTS.test(host) && allowed.includes('accounts.google.com');
 }
 
 /**
