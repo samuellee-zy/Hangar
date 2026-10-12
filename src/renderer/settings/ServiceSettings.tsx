@@ -342,8 +342,9 @@ function AllowedHosts({ svc }: { svc: ServiceView }) {
   return (
     <>
       <p className="hint">
-        It only stays in the app on these domains; anything else opens in your browser. If it signs
-        in through Google, Okta or your company's SSO, add that domain — separate several with commas.
+        It only stays in the app on these domains; anything else opens in your browser. Signing in
+        through a domain that isn't here asks you first, in the pane. Add one by hand for a sign-in
+        that opens in its own window — separate several with commas.
       </p>
       <ul className="rows">
         <li>

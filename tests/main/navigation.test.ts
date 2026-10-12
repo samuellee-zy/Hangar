@@ -15,7 +15,7 @@ import { describe, it, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { shell } from 'electron';
-import { attachNavigationGuards, isAllowedHost } from '@main/platform/session';
+import { attachNavigationGuards, hostBlockedFor, isAllowedHost, urlBlockedFor } from '@main/platform/session';
 import { forgetExternalOpens } from '@main/platform/external';
 import type { ServiceInstance } from '@shared/types';
 
@@ -237,5 +237,94 @@ describe('attachNavigationGuards', () => {
     };
     assert.equal(allowed.action, 'allow');
     assert.equal(allowed.overrideBrowserWindowOptions.webPreferences.partition, 'persist:test');
+  });
+});
+
+describe('a sign-in step to a host the service does not list', () => {
+  const SAML = 'https://idp.example.org/o/saml2/idp?SAMLRequest=fZJdb&RelayState=r1';
+
+  it('IN A PANE, ASKS THERE — the browser signed itself in and the pane sat on its sign-in page', () => {
+    // A loaded page, so an ordinary block would leave it alone and say nothing.
+    const wc = new FakeContents('https://example.com/signin');
+    attachNavigationGuards(wc.asContents, service(), 'persist:test', { pane: true });
+
+    assert.equal(wc.navigate('will-redirect', SAML), true);
+    assert.deepEqual(openedUrls(), [], 'not to the browser');
+    const page = decodeURIComponent(wc.loaded[0]!);
+    assert.ok(page.includes('Sign in to Example through idp.example.org?'));
+    assert.ok(!page.includes('SAMLRequest'), 'a SAML request means nothing to a person');
+    // What Allow will add, and carry on to.
+    assert.equal(hostBlockedFor('svc-1'), 'idp.example.org');
+    assert.equal(urlBlockedFor('svc-1'), SAML);
+  });
+
+  it("asked about from a link click as well as a redirect: a page's own sign-in button", () => {
+    const wc = new FakeContents('https://example.com/signin');
+    attachNavigationGuards(wc.asContents, service(), 'persist:test', { pane: true });
+    wc.navigate('will-navigate', 'https://login.example.org/authorize?client_id=a&redirect_uri=https%3A%2F%2Fexample.com');
+    assert.deepEqual(openedUrls(), []);
+    assert.equal(wc.loaded.length, 1);
+  });
+
+  it("IN A POPUP, STILL THE BROWSER — the page's buttons answer only in a pane", () => {
+    const wc = new FakeContents('https://example.com/signin');
+    attachNavigationGuards(wc.asContents, service(), 'persist:test');
+    wc.navigate('will-redirect', SAML);
+    assert.deepEqual(openedUrls(), [SAML]);
+  });
+
+  it('an ordinary link from a pane still goes to the browser, and the page stays', () => {
+    const wc = new FakeContents('https://example.com/inbox');
+    attachNavigationGuards(wc.asContents, service(), 'persist:test', { pane: true });
+    wc.navigate('will-redirect', 'https://elsewhere.test/article');
+    assert.deepEqual(openedUrls(), ['https://elsewhere.test/article']);
+    assert.deepEqual(wc.loaded, []);
+  });
+
+  it('escapes the service name and host it shows', () => {
+    const wc = new FakeContents('https://example.com/');
+    attachNavigationGuards(wc.asContents, service({ name: '<img src=x onerror=alert(1)>' }), 'p', { pane: true });
+    wc.navigate('will-redirect', SAML);
+    const page = decodeURIComponent(wc.loaded[0]!);
+    assert.ok(!page.includes('<img src=x'));
+    assert.ok(page.includes('&lt;img src=x'));
+  });
+});
+
+describe("Slack's own sign-in hosts", () => {
+  it("SIGN IN WITH GOOGLE, APPLE OR MICROSOFT STAYS IN THE PANE — the Decagon workspace's went to the browser", () => {
+    const slack = { id: 's', catalogId: 'slack', name: 'Slack', accountId: 'a' } as ServiceInstance;
+    for (const url of [
+      'https://accounts.google.com/o/saml2/idp?idpid=C0abc&SAMLRequest=x',
+      'https://appleid.apple.com/auth/authorize?client_id=com.slack&redirect_uri=x',
+      'https://login.microsoftonline.com/tenant/saml2?SAMLRequest=x',
+    ]) {
+      assert.equal(isAllowedHost(slack, url), true, url);
+    }
+  });
+});
+
+describe("Google's account domain in each country", () => {
+  const signsInWithGoogle = service({ allowedHosts: ['example.com', 'accounts.google.com'] });
+
+  it("COMES WITH accounts.google.com — the last step of a sign-in went to Chrome, and the pane showed nothing until reloaded", () => {
+    for (const host of ['accounts.google.co.uk', 'accounts.google.com.au', 'accounts.google.de', 'accounts.google.co.jp']) {
+      assert.equal(isAllowedHost(signsInWithGoogle, `https://${host}/accounts/SetSID?ssdc=1&continue=x`), true, host);
+    }
+  });
+
+  it('and only with it, and only that exact shape', () => {
+    assert.equal(isAllowedHost(service(), 'https://accounts.google.co.uk/accounts/SetSID'), false, 'a service that never signs in with Google');
+    for (const host of ['accounts.google.co.uk.example.net', 'xaccounts.google.co.uk', 'accounts.google.evil', 'accounts.google.co.evil.uk', 'mail.google.co.uk']) {
+      assert.equal(isAllowedHost(signsInWithGoogle, `https://${host}/`), false, host);
+    }
+  });
+
+  it("and Google's and Microsoft's other sign-in steps are listed", () => {
+    const gmail = { id: 'g', catalogId: 'gmail', name: 'Gmail', accountId: 'a' } as ServiceInstance;
+    const teams = { id: 't', catalogId: 'teams', name: 'Teams', accountId: 'a' } as ServiceInstance;
+    assert.equal(isAllowedHost(gmail, 'https://gds.google.com/web/recoveryoptions'), true);
+    assert.equal(isAllowedHost(gmail, 'https://accounts.google.co.uk/accounts/SetSID'), true);
+    assert.equal(isAllowedHost(teams, 'https://passwordreset.microsoftonline.com/?ru=x'), true);
   });
 });

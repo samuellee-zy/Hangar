@@ -6,12 +6,17 @@ import type { CatalogEntry, DomUnreadRule } from './types';
 // here means sign-in silently fails, and a missing CDN host means a blank page. Err on including
 // the identity provider.
 
-const GOOGLE_AUTH = ['accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com'];
+// `gds.google.com` is the "keep your account secure" check partway through a sign-in. Google's
+// country account domains (accounts.google.co.uk, …) come with accounts.google.com: see
+// `isAllowedHost`.
+const GOOGLE_AUTH = ['accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com', 'gds.google.com'];
 // A personal Microsoft account signs in through the live.com side rather than the AAD side, and
 // the flow steps through account/signup pages before it hands back. `msauth.net` and `msftauth.net`
 // host the login UI itself for both.
 const MS_AUTH = [
   'login.microsoftonline.com',
+  // Where a sign-in goes when the password has to be changed first.
+  'passwordreset.microsoftonline.com',
   'login.live.com',
   'login.microsoft.com',
   'account.live.com',
@@ -22,6 +27,8 @@ const MS_AUTH = [
 // Atlassian, GitHub and Slack all front their own identity provider. Omitting one of these doesn't
 // fail loudly — the sign-in page is treated as an external navigation and opens in Safari, which
 // reads as "the service is broken" rather than "one host is missing from a list".
+// Sign in with Apple, on the web.
+const APPLE_AUTH = ['appleid.apple.com', 'idmsa.apple.com'];
 const ATLASSIAN_AUTH = ['id.atlassian.com', 'auth.atlassian.com', 'atlassian.net'];
 const GITHUB_AUTH = ['github.com', 'github.githubassets.com'];
 
@@ -405,7 +412,7 @@ const MAIL: CatalogEntry[] = [
   {
     id: 'icloudmail', name: 'iCloud Mail', url: 'https://www.icloud.com/mail/',
     initials: 'iC', color: '#3693F3', provider: 'apple',
-    allowedHosts: ['icloud.com', 'idmsa.apple.com', 'appleid.apple.com'],
+    allowedHosts: ['icloud.com', ...APPLE_AUTH],
   },
   {
     id: 'yahoomail', name: 'Yahoo Mail', url: 'https://mail.yahoo.com/',
@@ -641,7 +648,10 @@ export const catalog: CatalogEntry[] = [
     url: 'https://app.slack.com/client',
     initials: 'Sl',
     color: '#4A154B',
-    allowedHosts: ['app.slack.com', 'slack.com'],
+    // Slack's own sign-in offers Google and Apple, and a workspace's single sign-on is often
+    // Google's or Microsoft's: missing, "Sign in with Google IDP" went to the browser and the pane
+    // never signed in. Any other company's sign-in asks in the pane (decision #119).
+    allowedHosts: ['app.slack.com', 'slack.com', ...GOOGLE_AUTH, ...APPLE_AUTH, ...MS_AUTH],
     provider: 'slack',
     // ⌘K jump-to, ⌘F search this channel, ⌘[ / ⌘] Slack's own history. All four are chords Hangar
     // would otherwise take, and all four are the reason this feature exists.
