@@ -310,7 +310,9 @@ try {
         if (!Array.isArray(rules) || rules.length === 0) return;
 
         let previous = '';
+        let reportedAt = 0;
         const report = () => {
+          reportedAt = Date.now();
           const probes = rules.map(probeRule);
           // A chat app rewrites its DOM continuously. Without this, every keystroke anyone types in
           // a channel is an IPC message saying the count is still 3.
@@ -322,6 +324,16 @@ try {
 
         let pending = 0;
         const schedule = () => {
+          // Off screen the page is throttled and can hold this timer for up to a minute, so the
+          // count would lag that long. The mutation itself isn't throttled — it arrives with the
+          // message that caused it — so a hidden page reports on it at once, at the same 400ms
+          // rate, and leaves only the trailing change to the timer.
+          if (document.hidden && Date.now() - reportedAt >= 400) {
+            clearTimeout(pending);
+            pending = 0;
+            report();
+            return;
+          }
           if (pending) return;
           pending = window.setTimeout(() => {
             pending = 0;
