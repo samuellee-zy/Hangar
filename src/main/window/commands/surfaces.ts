@@ -42,6 +42,10 @@ export const surfaceCommands: CommandTable = {
     if (wasOpen) {
       shell.overlay.close();
       shell.focusActivePane();
+    } else if (shell.findBar.isOpen) {
+      shell.findBar.close();
+      shell.focusActivePane();
+      return true;
     }
     return wasOpen || shell.closeAi();
   },

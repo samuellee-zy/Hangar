@@ -98,7 +98,9 @@ describe('assistant authorization and evidence', () => {
     f.controller.clear(); emit({ type: 'text', delta: 'Revoked content' }); finish();
     expect((await f.snapshot()).run).toBeNull();
     expect((await f.controller.request('start', input)).ok).toBe(true);
-    f.controller.cancel(); finish();
+    f.controller.cancel();
+    expect((await f.snapshot()).run?.state).toBe('cancelled'); // UI unlocks before an uncooperative provider finishes.
+    finish();
     await vi.waitFor(async () => expect((await f.snapshot()).run?.state).toBe('cancelled'));
     expect((await f.snapshot()).run?.answer).toBe('');
     f.controller.dispose();

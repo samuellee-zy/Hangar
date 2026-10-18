@@ -6,7 +6,7 @@ Research checked 18 October 2026. **Approved for implementation in two phases: u
 
 - **Git consolidation:** merged through [PR 30](https://github.com/samuellee-zy/Hangar/pull/30), preserving branch history.
 - **Phase 1 — unified inbox:** merged through [PR 31](https://github.com/samuellee-zy/Hangar/pull/31), with grouped read-only Slack/Gmail connectors, workspace/account scope, thread previews and limited other-app rows. [Setup and limitations](inbox.md).
-- **Phase 2 — AI search:** implemented with isolated Codex and Claude Code adapters, native panel, account selection, streaming, citations, cancellation and follow-ups. Both pinned runtime protocols passed local synthetic inference/tool probes. [Setup and architecture](ai-search.md).
+- **Phase 2 — AI search:** implemented in [PR 32](https://github.com/samuellee-zy/Hangar/pull/32) with isolated Codex and Claude Code adapters, native panel, account selection, streaming, citations, cancellation and follow-ups. Both pinned runtime protocols passed local synthetic inference/tool probes. [Setup and architecture](ai-search.md).
 - **Release dependencies:** registered OAuth test clients, provider browser sign-in and a real-account trial; the [20-case retrieval-quality evaluation](ai-search-evaluation.md) remains a beta gate. No live OAuth access, model quality or production latency is claimed by fixture tests.
 
 The research and scope choices below remain the design record. The shipped first pass uses bounded in-memory snapshots rather than persistent history sync, fixed resource budgets rather than an editable multi-step search plan, and plain-text answers with validated citation buttons. Claude Code is included after its tool-isolation probe passed; other optional rows remain deferred.

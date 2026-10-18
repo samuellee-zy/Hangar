@@ -8,7 +8,7 @@ import { launch, seedConfig, tearDown, type Harness } from './harness';
 let h: Harness;
 test.afterEach(async ({}, info) => tearDown(h, info));
 type View = { getBounds(): { x: number; width: number } };
-type Shell = { __hangarShell: { dispatch(c: unknown): void; win: { setSize(w: number, h: number): void }; inboxHub: ConnectorHub; aiController: AiController & { engines: Record<string, AgentEngine> }; services: { get(id: string): { view: View & { webContents: { getBackgroundThrottling(): boolean } } } }; aiSurface: { view: View; contents: { getURL(): string; sendInputEvent(event: { type: 'keyDown' | 'keyUp'; keyCode: string }): void } }; dragLayer: { view: View }; opened?: unknown } };
+type Shell = { __hangarShell: { dispatch(c: unknown): void; win: { setSize(w: number, h: number): void }; inboxHub: ConnectorHub; aiController: AiController & { engines: Record<string, AgentEngine> }; services: { get(id: string): { view: View & { webContents: { getBackgroundThrottling(): boolean } } } }; aiSurface: { view: View; contents: { getURL(): string; sendInputEvent(event: { type: 'keyDown' | 'keyUp'; keyCode: string }): void } }; dragLayer: { view: View }; findBar: { isOpen: boolean }; opened?: unknown } };
 const dispatch = async (c: unknown) => h.app.evaluate((_e, command) => (globalThis as unknown as Shell).__hangarShell.dispatch(command), c);
 
 test('AI: native panel reserves space, denies unrelated IPC, respects compact layout and restores apps', async () => {
@@ -42,6 +42,11 @@ test('AI: native panel reserves space, denies unrelated IPC, respects compact la
     return drag.x + drag.width === panel.x;
   })).toBe(true);
   await dispatch({ type: 'cancel-tile-drag' });
+  await dispatch({ type: 'open-find' });
+  expect(await h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.findBar.isOpen)).toBe(true);
+  await dispatch({ type: 'close-overlay' });
+  expect(await h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.findBar.isOpen)).toBe(false);
+  await expect(rail.getByRole('button', { name: 'Search with AI' })).toHaveAttribute('aria-pressed', 'true');
   await h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.win.setSize(720, 650));
   await expect.poll(() => h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.services.get('one').view.webContents.getBackgroundThrottling())).toBe(true);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

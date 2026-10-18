@@ -120,7 +120,14 @@ export class AiController {
       if (!this.disposed) this.changed();
     });
   }
-  cancel(): void { const active = this.active; this.active = null; active?.abort(); for (const engine of Object.values(this.engines)) engine.dispose(); }
+  cancel(): void {
+    const active = this.active; this.active = null; active?.abort();
+    if (active && this.run?.state === 'running') {
+      this.run.state = 'cancelled'; this.run.error ??= 'Search stopped. Partial results may be incomplete.';
+      this.changed();
+    }
+    for (const engine of Object.values(this.engines)) engine.dispose();
+  }
   clear(): void { this.cancel(); this.run = null; this.allowed.clear(); this.changed(); }
   async request(action: unknown, payload: unknown): Promise<InboxReply<unknown>> {
     try {
