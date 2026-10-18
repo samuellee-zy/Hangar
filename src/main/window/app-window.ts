@@ -37,6 +37,10 @@ import { Overlay } from '@main/window/overlay';
 import { ContentSurface } from '@main/features/content-surface';
 import { ConnectorHub } from '@main/connectors/hub';
 import { ConnectorVault } from '@main/connectors/vault';
+import { AiController } from '@main/ai/controller';
+import { assistantLayout } from '@core/ai/layout';
+import { isRef } from '@core/inbox/policy';
+import type { SourceRef } from '@shared/inbox';
 import { inboxRequest } from '@main/connectors/ipc';
 import { DragLayer } from '@main/features/drag-layer';
 import { Splitters } from '@main/features/splitters';
@@ -162,6 +166,9 @@ export class AppWindow {
   private overlay: Overlay;
   private inboxSurface: ContentSurface;
   private inboxHub: ConnectorHub;
+  private aiSurface: ContentSurface;
+  private aiController: AiController;
+  private aiChangeTimer: ReturnType<typeof setTimeout> | null = null;
   private findBar: FindBar;
   /**
    * Attached only while a rail tile is in flight. See `features/drag-layer.ts` — the short version
@@ -196,7 +203,7 @@ export class AppWindow {
    * member is read at call time), so it is safe to build before the constructor has run.
    */
   private attention = new AttentionCenter({
-    drawnServiceIds: () => this.inboxSurface?.isOpen ? new Set<string>() : this.layout.drawnServiceIds(),
+    drawnServiceIds: () => (this.inboxSurface?.isOpen || this.aiSurface?.isOpen && this.aiLayout().covered) ? new Set<string>() : this.layout.drawnServiceIds(),
     paneServiceIds: () => this.layout.panes.map((p) => p.serviceId),
     isLive: (serviceId) => this.services.has(serviceId),
     contentsFor: (serviceId) => this.contentsForService(serviceId),
@@ -295,6 +302,8 @@ export class AppWindow {
       openPage: (id, conversation) => this.conversations.open(id, conversation),
       openUrl: async (url) => { openExternalSafely(url, 'Inbox'); },
     }, new ConnectorVault(app.getPath('userData')));
+    this.aiSurface = new ContentSurface(this.win, 'ai', (wc) => this.adoptSurface(wc));
+    this.aiController = new AiController(this.inboxHub, app.getPath('userData'), async (url) => { openExternalSafely(url, 'AI sign-in'); }, () => this.aiChanged());
     this.dragLayer = new DragLayer(this.win);
     // Shortcuts: a press focuses the splitter's view, and a chord pressed then used to go nowhere.
     this.splitters = new Splitters(this.win, (wc) =>
@@ -702,14 +711,14 @@ export class AppWindow {
       isDefaultMailApp: this.isDefaultMailApp(),
       recentNotifications: this.attention.recentNotifications(),
       downloads: recentDownloads(),
-    }), inboxOpen: this.inboxSurface.isOpen };
+    }), inboxOpen: this.inboxSurface.isOpen, aiOpen: this.aiSurface.isOpen };
   }
 
   /** Current on-screen rectangle of a pane, for positioning the find bar. */
   /** Where a pane's page is: its card, less its header when there is one. */
   private paneRect(paneId: string) {
     const { width, height } = this.win.getContentBounds();
-    const card = this.layout.bounds(this.chrome(), width, height).get(paneId);
+    const card = this.layout.bounds(this.chrome(), this.paneWidth(width), height).get(paneId);
     return card ? splitCard(card, this.paneHeadersOn()).page : null;
   }
 
@@ -1022,7 +1031,7 @@ export class AppWindow {
   /** What the title bar and the headers show — sent to each only when it changed. */
   private refreshPaneChrome(state: ShellState): void {
     const bars = paneBars({
-      drawn: this.inboxSurface.isOpen ? [] : this.layout.drawn(),
+      drawn: (this.inboxSurface.isOpen || this.aiLayout().covered) ? [] : this.layout.drawn(),
       paneCount: this.layout.panes.length,
       focusedPaneId: this.layout.focusedPaneId,
       maximisedPaneId: this.layout.maximisedPaneId,
@@ -1185,7 +1194,7 @@ export class AppWindow {
   ): void {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
-    if (!this.restoring) this.inboxSurface.close();
+    if (!this.restoring) { this.inboxSurface.close(); if (this.aiLayout().covered) { this.aiController.cancel(); this.aiSurface.close(); } }
 
     // Shortcuts are bound inside ensure(), once per view.
     this.services.ensure(svc);
@@ -1309,8 +1318,12 @@ export class AppWindow {
     }
     const { width, height } = this.win.getContentBounds();
     const chrome = this.chrome();
-    const bounds = this.layout.bounds(chrome, width, height);
-    if (this.inboxSurface.isOpen) {
+    const ai = this.aiLayout();
+    const paneWidth = width - ai.reserved;
+    const bounds = this.layout.bounds(chrome, paneWidth, height);
+    this.inboxSurface.setVisible(this.inboxSurface.isOpen && !ai.covered);
+    if (ai.panel) this.aiSurface.place(ai.panel);
+    if (this.inboxSurface.isOpen || ai.covered) {
       for (const runtime of this.services.all().values()) this.win.contentView.removeChildView(runtime.view);
       this.paneChrome.placeHeaders([]);
       this.paneChrome.placeTitlebar(chrome.topStrip > 0 ? { x: 0, y: 0, width, height: chrome.topStrip } : null);
@@ -1318,11 +1331,11 @@ export class AppWindow {
       this.rowSplitters.sync([]);
       this.setEmptyVisible(false, chrome, width, height);
       this.drawFocusRing(new Map(), chrome.gutter);
-      this.inboxSurface.place(contentArea(chrome, width, height));
+      this.inboxSurface.place(ai.content);
       this.applyThrottling();
       try { this.win.setWindowButtonPosition(windowButtonPosition(chrome, windowButtonMetrics())); } catch { /* Other platforms. */ }
       this.raiseChrome(width, height);
-      this.win.setTitle('Inbox — Hangar');
+      this.win.setTitle(ai.covered ? 'Ask AI — Hangar' : 'Inbox — Hangar');
       this.sync();
       return;
     }
@@ -1353,12 +1366,12 @@ export class AppWindow {
     this.placePanes(bounds);
     this.paneChrome.placeTitlebar(chrome.topStrip > 0 ? { x: 0, y: 0, width, height: chrome.topStrip } : null);
     this.drawFocusRing(bounds, chrome.gutter);
-    this.splitters.sync(this.layout.boundaries(chrome, width, height));
-    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, width, height));
+    this.splitters.sync(this.layout.boundaries(chrome, paneWidth, height));
+    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, paneWidth, height));
 
     // A pane whose service has no runtime renders nothing, so treat that as empty too.
     const hasVisibleContent = this.layout.panes.some((p) => this.services.has(p.serviceId));
-    this.setEmptyVisible(!hasVisibleContent, chrome, width, height);
+    this.setEmptyVisible(!hasVisibleContent, chrome, paneWidth, height);
 
     // Runtime reposition rather than recreating the window, which `titleBarStyle` would otherwise
     // require — see docs/decisions.md.
@@ -1415,14 +1428,14 @@ export class AppWindow {
    */
   private dragSplit(index: number, screenX: number): void {
     const content = this.win.getContentBounds();
-    this.layout.resizeAt(index, screenX - content.x, this.chrome(), content.width, content.height);
+    this.layout.resizeAt(index, screenX - content.x, this.chrome(), this.paneWidth(content.width), content.height);
     this.placeDraggedSplit();
   }
 
   /** A row splitter moved, the same way: the pointer is at `screenY`. */
   private dragRowSplit(index: number, screenY: number): void {
     const content = this.win.getContentBounds();
-    this.layout.resizeRowAt(index, screenY - content.y, this.chrome(), content.width, content.height);
+    this.layout.resizeRowAt(index, screenY - content.y, this.chrome(), this.paneWidth(content.width), content.height);
     this.placeDraggedSplit();
   }
 
@@ -1434,10 +1447,10 @@ export class AppWindow {
     const content = this.win.getContentBounds();
     const chrome = this.chrome();
     this.splitDragging = true;
-    const bounds = this.layout.bounds(chrome, content.width, content.height);
+    const bounds = this.layout.bounds(chrome, this.paneWidth(content.width), content.height);
     this.placePanes(bounds, { reorder: false });
-    this.splitters.sync(this.layout.boundaries(chrome, content.width, content.height));
-    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, content.width, content.height));
+    this.splitters.sync(this.layout.boundaries(chrome, this.paneWidth(content.width), content.height));
+    this.rowSplitters.sync(this.layout.rowBoundaries(chrome, this.paneWidth(content.width), content.height));
     this.drawFocusRing(bounds, chrome.gutter);
     if (this.layout.focusedPaneId) this.findBar.raise(this.paneRect(this.layout.focusedPaneId));
   }
@@ -1445,7 +1458,7 @@ export class AppWindow {
   /** ⌃⌘→ and ⌃⌘←: the focused pane a step wider or narrower. Saved at once — a key has no let-go. */
   private resizeFocusedPane(delta: -1 | 1): boolean {
     const content = this.win.getContentBounds();
-    if (!this.layout.nudgeFocused(delta, this.chrome(), content.width, content.height)) return false;
+    if (!this.layout.nudgeFocused(delta, this.chrome(), this.paneWidth(content.width), content.height)) return false;
     this.relayout();
     this.saveLayout();
     return true;
@@ -1515,15 +1528,43 @@ export class AppWindow {
     return route(command, this.context);
   }
 
+  private aiLayout() {
+    const { width, height } = this.win.getContentBounds();
+    return assistantLayout(contentArea(this.chrome(), width, height), this.aiSurface?.isOpen ?? false, loadConfig().preferences.appearance.aiPanelWidth);
+  }
+  private paneWidth(width: number): number { return width - this.aiLayout().reserved; }
+  ownsAi(wc: WebContents): boolean { return this.aiSurface.contents === wc; }
+  requestAi(action: unknown, payload: unknown) { return this.aiController.request(action, payload); }
+  private aiChanged(): void {
+    if (this.aiChangeTimer || this.win.isDestroyed()) return;
+    this.aiChangeTimer = setTimeout(() => {
+      this.aiChangeTimer = null;
+      const wc = this.aiSurface.contents;
+      if (wc) safeSend(wc, 'ai:changed');
+    }, 40);
+  }
+  private openAi(ref?: SourceRef): void {
+    this.overlay.close(); this.findBar.close();
+    if (ref && isRef(ref)) this.aiController.setContext(ref);
+    this.aiSurface.open(); this.relayout();
+  }
+  private closeAi(): boolean {
+    if (!this.aiSurface.isOpen) return false;
+    this.aiController.cancel();
+    this.aiSurface.close(); this.relayout(); this.focusActivePane(); return true;
+  }
   ownsInbox(wc: WebContents): boolean { return this.inboxSurface.contents === wc; }
   requestInbox(action: unknown, payload: unknown) { return inboxRequest(this.inboxHub, action, payload); }
   private inboxChanged(): void {
     const wc = this.inboxSurface.contents;
     if (wc) safeSend(wc, 'inbox:changed');
+    this.aiController?.sourceChanged();
+    this.aiChanged();
   }
   private openInbox(): void {
     this.overlay.close();
     this.findBar.close();
+    if (this.aiLayout().covered) { this.aiController.cancel(); this.aiSurface.close(); }
     this.inboxSurface.open();
     this.relayout();
   }
@@ -1570,6 +1611,8 @@ export class AppWindow {
       openOverlay: (mode) => this.openOverlay(mode),
       openInbox: () => this.openInbox(),
       closeInbox: () => this.closeInbox(),
+      openAi: (ref) => this.openAi(ref),
+      closeAi: () => this.closeAi(),
       openService: (id, options) => this.openService(id, options),
       flash: (id) => this.flash(id),
       saveLayout: () => this.saveLayout(),
@@ -1599,7 +1642,11 @@ export class AppWindow {
       forgetDefaultMailApp: () => (this.defaultMailApp = null),
       toggleRail: () => this.toggleRail(),
       beginRename: (id) => this.beginRename(id),
-      beginTileDrag: (id) => this.tileDrag.begin(id),
+      beginTileDrag: (id) => {
+        this.closeInbox();
+        if (this.aiLayout().covered) this.closeAi();
+        this.tileDrag.begin(id);
+      },
       beginPaneDrag: (id) => this.tileDrag.beginPane(id),
       moveTileDrag: (from, x, y) => this.tileDrag.move(from, x, y),
       dropTile: (from, x, y) => this.tileDrag.drop(from, x, y),
@@ -1650,13 +1697,14 @@ export class AppWindow {
         return self.dragLayer;
       },
       chrome: () => this.chrome(),
+      paneWidth: (width) => this.paneWidth(width),
       railRect: (width, height) => this.railRect(width, height),
       railContents: () => this.rail.webContents,
       openService: (id, options) => this.openService(id, options),
       flash: (id) => this.flash(id),
       headerRect: (paneId) => {
         const { width, height } = this.win.getContentBounds();
-        const card = this.layout.bounds(this.chrome(), width, height).get(paneId);
+        const card = this.layout.bounds(this.chrome(), this.paneWidth(width), height).get(paneId);
         return card ? splitCard(card, this.paneHeadersOn()).header : null;
       },
       panesMoved: () => {
@@ -1899,6 +1947,8 @@ export class AppWindow {
     this.endpoints.dispose();
     this.meetings.stop();
     this.conversations.stop();
+    if (this.aiChangeTimer) clearTimeout(this.aiChangeTimer);
+    this.aiController.dispose();
     this.inboxHub.dispose();
     if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
     this.backgroundTimer = null;
@@ -1938,6 +1988,7 @@ export class AppWindow {
     this.findBar.destroy();
     this.overlay.destroy();
     this.inboxSurface.destroy();
+    this.aiSurface.destroy();
     this.dragLayer.destroy();
     this.splitters.destroy();
     this.rowSplitters.destroy();
@@ -2066,7 +2117,7 @@ export class AppWindow {
    * Runs on every relayout, so the 30s sweep picks up a service that started playing off screen.
    */
   private applyThrottling(): void {
-    const drawn = this.windowOnScreen() && !this.inboxSurface.isOpen ? this.layout.drawnServiceIds() : new Set<string>();
+    const drawn = this.windowOnScreen() && !this.inboxSurface.isOpen && !this.aiLayout().covered ? this.layout.drawnServiceIds() : new Set<string>();
     for (const [serviceId, runtime] of this.services.all()) {
       const wc = runtime.view.webContents;
       if (wc.isDestroyed()) continue;
@@ -2123,6 +2174,7 @@ export class AppWindow {
   }
 
   private focusActivePane(): void {
+    if (this.aiLayout().covered) { this.aiSurface.contents?.focus(); return; }
     if (this.inboxSurface.isOpen) { this.inboxSurface.contents?.focus(); return; }
     const pane = this.layout.focused();
     if (!pane) return;

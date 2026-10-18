@@ -8,6 +8,8 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 | Key | Action |
 | --- | --- |
 | `⌘/` | Every shortcut on one sheet, read from the live keymap |
+| `⌘⇧I` | Unified inbox |
+| `⌘⇧L` | Search with AI |
 | `⌘K` | Command palette — services in every workspace, and workspaces |
 | `⌘N` | Add a connection |
 | `⌘,` | Settings |
@@ -25,7 +27,7 @@ Every chord above the rule is rebindable in Settings. The rows below it are not 
 | | |
 | `⌘1`…`⌘9` | Jump to the *n*th service in the current workspace |
 | `⌘⌥1`…`⌘⌥9` | Switch workspace |
-| `Escape` | Close the overlay |
+| `Escape` | Close the overlay, then the assistant if no overlay is open |
 | `⌥`-click a tile | Open alongside instead of replacing |
 | `⌥↑` / `⌥↓` on a tile | Move it one place up or down the rail (`⌥←` / `⌥→` on a top or bottom rail) |
 | `⌃Space` on a tile | Lift for keyboard drag; arrows move, `⌃Space` drops, `Esc` cancels. Also macOS's input-source switch — with two keyboard layouts, use `⌥` and an arrow instead |

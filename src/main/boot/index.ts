@@ -388,6 +388,10 @@ const fromRecoveryPage = (event: Electron.IpcMainEvent): boolean =>
   event.senderFrame?.url.startsWith('data:') === true;
 
 function registerIpc(): void {
+  ipcMain.handle('ai:request', (event, action: unknown, payload: unknown) => {
+    if (!fromApp(event, 'ai:request') || !shell?.ownsAi(event.sender) || event.senderFrame !== event.sender.mainFrame) return { ok: false, error: 'Assistant access denied.' };
+    return shell.requestAi(action, payload);
+  });
   ipcMain.handle('inbox:request', (event, action: unknown, payload: unknown) => {
     if (!fromApp(event, 'inbox:request') || !shell?.ownsInbox(event.sender) || event.senderFrame !== event.sender.mainFrame) {
       return { ok: false, error: 'Inbox access denied.' };

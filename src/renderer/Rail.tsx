@@ -515,6 +515,11 @@ export function Rail() {
         reason. The chevron is last: it is the control that changes the shape of everything above it.
       */}
       <div className="rail-footer">
+        <button className="rail-item rail-add" title={withChord(state, 'Search with AI', 'ai-search')} aria-label="Search with AI"
+          aria-pressed={state.aiOpen ?? false} onClick={() => send({ type: state.aiOpen ? 'close-ai' : 'open-ai' })}>
+          <Icon name="spark" size={18} />
+          {panel && <span className="rail-label" aria-hidden="true">Ask AI</span>}
+        </button>
         <button className="rail-item rail-add" title={withChord(state, 'Unified inbox', 'inbox')} aria-label="Unified inbox"
           aria-current={state.inboxOpen ? 'page' : undefined} onClick={() => send({ type: 'open-inbox' })}>
           <Icon name="inbox" size={18} />

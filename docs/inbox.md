@@ -29,4 +29,4 @@ The browser lets you choose the actual account. Hangar verifies its remote ident
 
 Contract tests cover workspace grants, cancellation, revocation, pagination, replaced snapshots, deduplication, rate limiting, PKCE/state validation and plain-text email. Renderer tests cover unknown unread state, limited previews and stale reads. Electron tests cover sender rejection, light/dark accessibility, native view detachment, throttling, resizing and the reader. Tests use synthetic data and do not prove real-account OAuth approval or provider retention/access. Complete a live test with registered test clients before public distribution.
 
-The next phase is described in the [combined AI search plan](ai-and-unified-inbox-plan.md). The connectors' `search`/`read` broker and source references are designed to serve that phase without exposing credentials to a model.
+The [AI search panel](ai-search.md) uses these same read connections. Choose **Ask AI about this thread** to include selected context, or open Ask AI from the rail for a broader question. The model receives scoped search/read tools and source references, never connector credentials.

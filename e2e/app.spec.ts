@@ -943,7 +943,7 @@ test('the footer buttons sit in the same centred column as the tiles', async () 
   });
 
   expect(centres.tiles.length).toBeGreaterThan(0);
-  expect(centres.buttons).toHaveLength(3); // Inbox, Add a connection, Settings.
+  expect(centres.buttons).toHaveLength(4); // Ask AI, Inbox, Add a connection, Settings.
 
   // Centred in their own column...
   for (const button of centres.buttons) {

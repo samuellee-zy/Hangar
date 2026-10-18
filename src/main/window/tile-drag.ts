@@ -19,6 +19,7 @@ export interface DragHost {
   readonly layout: Layout;
   readonly dragLayer: DragLayer;
   chrome(): Chrome;
+  paneWidth(width: number): number;
   railRect(width: number, height: number): Rect;
   railContents(): WebContents;
   openService(
@@ -73,8 +74,9 @@ export class TileDrag {
     const { win, layout } = this.host;
     const { width, height } = win.getContentBounds();
     const chrome = this.host.chrome();
-    const bounds = layout.bounds(chrome, width, height);
-    const content = contentArea(chrome, width, height);
+    const paneWidth = this.host.paneWidth(width);
+    const bounds = layout.bounds(chrome, paneWidth, height);
+    const content = contentArea(chrome, paneWidth, height);
 
     this.context = {
       content,

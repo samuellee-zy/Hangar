@@ -95,6 +95,7 @@ export function isBindable(chord: Chord | null): chord is Chord {
 
 export type ActionId =
   | 'inbox'
+  | 'ai-search'
   | 'shortcuts'
   | 'palette'
   | 'add-connection'
@@ -140,6 +141,7 @@ export interface KeyAction {
 
 /** Order is load-bearing twice over: it is the menu's order, and it breaks ties on a conflict. */
 export const KEY_ACTIONS: readonly KeyAction[] = [
+  { id: 'ai-search', label: 'Search with AI', command: { type: 'open-ai' }, menu: 'view', defaultChord: primaryChord('l', { shift: true }) },
   { id: 'inbox', label: 'Unified inbox', command: { type: 'open-inbox' }, menu: 'view', defaultChord: primaryChord('i', { shift: true }) },
   {
     id: 'settings',

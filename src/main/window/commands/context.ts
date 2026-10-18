@@ -30,6 +30,8 @@ export interface ShellContext {
   focusActivePane(): void;
   openOverlay(mode: OverlayMode): void;
   openInbox(): void;
+  openAi(ref?: { connectionId: string; threadId: string }): void;
+  closeAi(): boolean;
   closeInbox(): boolean;
   openService(serviceId: string, options?: { newPane?: boolean }): void;
   flash(serviceId: string): void;

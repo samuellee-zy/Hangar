@@ -71,6 +71,14 @@ describe('inbox source boundaries', () => {
     expect((await inboxRequest(hub, 'open', { connectionId: 'one', threadId: 'https://evil.test' })).ok).toBe(false);
     expect(implementation.read).not.toHaveBeenCalled();
   });
+  it('revocation discovered during AI search immediately removes content and search capability', async () => {
+    const { hub, implementation } = harness();
+    await hub.refresh({ allWorkspaces: false });
+    vi.mocked(implementation.search).mockRejectedValueOnce(new ConnectorError('Reconnect', true));
+    await expect(hub.search('one', 'feature', new Set(['one']), new AbortController().signal)).rejects.toThrow('Reconnect');
+    expect(hub.snapshot({ allWorkspaces: false })).toMatchObject({ items: [], sources: [{ canRead: false, canSearch: false, state: 'reconnect' }] });
+    await expect(hub.read(item().ref)).rejects.toThrow('Refresh');
+  });
   it('deduplicates by remote account identity and limits summaries without conflating accounts', () => {
     expect(mergeItems([item(), item('one', 'C1:123.456', 2), item('two')])).toHaveLength(2);
     expect(mergeItems([item(), item('two')], 1)).toHaveLength(1);
