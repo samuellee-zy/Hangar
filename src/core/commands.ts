@@ -41,6 +41,8 @@ const SCHEMA = {
   'mark-read': { serviceId: 'string' },
   'mark-all-read': {},
   'open-activity': {},
+  'open-inbox': {},
+  'close-inbox': {},
   'drag-split': { index: 'number', screenX: 'number' },
   'drag-row-split': { index: 'number', screenY: 'number' },
   'resize-pane': { delta: [-1, 1] },

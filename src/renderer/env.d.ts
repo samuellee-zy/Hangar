@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { InboxBridge } from '@shared/inbox';
 /**
  * The renderer's view of the preload bridge (`src/preload/sidebar.ts`).
  *
@@ -21,6 +22,7 @@ import type {
 declare global {
   interface Window {
     hangar: {
+      inbox: InboxBridge;
       getState: () => Promise<ShellState | null>;
       send: (command: Command) => void;
       onState: (fn: (state: ShellState) => void) => () => void;

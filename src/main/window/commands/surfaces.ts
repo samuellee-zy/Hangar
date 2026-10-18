@@ -30,6 +30,8 @@ export const surfaceCommands: CommandTable = {
   'open-palette': (_command, shell) => toggleOverlay(shell, 'palette'),
   'open-shortcuts': (_command, shell) => toggleOverlay(shell, 'shortcuts'),
   'open-activity': (_command, shell) => toggleOverlay(shell, 'activity'),
+  'open-inbox': (_command, shell) => shell.openInbox(),
+  'close-inbox': (_command, shell) => shell.closeInbox(),
   'open-connections': (_command, shell) => shell.openOverlay('connections'),
 
   'close-overlay': (_command, shell) => {

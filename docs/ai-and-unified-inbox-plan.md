@@ -1,6 +1,6 @@
 # AI search and unified inbox implementation plan
 
-Research checked 18 October 2026. **Proposal for scope review; the AI and inbox features are not implemented.** Git consolidation is tracked at the end of this document.
+Research checked 18 October 2026. **Approved for implementation in two phases: unified inbox first, then AI search.** Git consolidation is tracked at the end of this document.
 
 Hangar can support both a unified inbox and an AI sidepanel that searches connected apps. Build them on one connector layer: the inbox lists conversations, while the assistant searches and retrieves evidence through the same account permissions. Keep AI providers interchangeable. A web app being signed in inside Hangar does **not** automatically grant a supported API integration, complete message history, or access to the user's existing ChatGPT/Claude connectors.
 
@@ -53,7 +53,7 @@ If using that flow, its preview currently excludes hosted MCP/connectors and sev
 
 Anthropic distinguishes running its unmodified Claude Code binary, where users can authenticate themselves, from offering a third-party Claude.ai login or collecting/intermediating subscription credentials. The latter is not permitted under its documented rules. Preserve all built-in authentication choices and direct end-user billing in the local-runtime integration. [Claude Code integration and authentication conditions](https://code.claude.com/docs/en/legal-and-compliance).
 
-The CLI supports programmatic streaming and resumable sessions; the Agent SDK offers a programmable agent loop and custom/MCP tools. The Phase 0 spike must validate which interface fits Hangar's permitted authentication path and required tool restrictions. [Programmatic CLI](https://code.claude.com/docs/en/headless), [Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview).
+The CLI supports programmatic streaming and resumable sessions; the Agent SDK offers a programmable agent loop and custom/MCP tools. The Phase 2 runtime checks must validate which interface fits Hangar's permitted authentication path and required tool restrictions. [Programmatic CLI](https://code.claude.com/docs/en/headless), [Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview).
 
 ## Connected-app feasibility
 
@@ -189,18 +189,18 @@ Expose selected connector tools through a local, per-run **MCP facade** for CLI 
 
 ## Implementation sequence and acceptance gates
 
-Estimates below are planning ranges for one experienced Electron/TypeScript engineer, excluding provider review/approval waiting time. Re-estimate after Phase 0; these are not delivery promises.
+The user approved execution on 18 October 2026, with **two total phases**, in this order. Optional expansion remains outside this release.
 
-| Phase | Approximate effort | Deliverable | Exit condition |
-| --- | --- | --- | --- |
-| 0. Prove access and UX | 3–5 days | Codex login/tool spike; Claude path spike; real Slack/Gmail scoped reads; test mockup with 3–5 users | One real source-linked answer; no credential extraction; documented connector coverage and runtime tool restrictions |
-| 1. Shared foundation | 3–5 days | Registry, capabilities, source IDs, secret store, local grants, broker and typed IPC | Wrong account/scope denied; logout and cancellation reliable; no sensitive content in sync/logs |
-| 2. Unified inbox | 5–8 days | Slack/Gmail list, groups, filters, preview, source opening, incremental cache | Deduped fixture/live results; edits/deletions handled; reconnect/partial/stale states; keyboard and axe checks |
-| 3. AI search | 5–8 days | Docked panel, Codex adapter, search/read tools, citations, limits and follow-ups | Representative feature queries return supported claims; cancel stops work; injected source instructions cannot cause writes |
-| 4. Provider portability and release | 3–5 days | Second engine, CLI packaging/version strategy, performance and privacy QA | Same connector tests pass with both engines; packaged app works from Finder without a terminal environment |
-| 5. Optional expansion | Size after trials | Experimental app bridges, local snooze, source write actions, replies or historical index | Each feature gets a separate scope and measurable acceptance gate |
+| Phase | Scope | Exit condition |
+| --- | --- | --- |
+| **1. Unified inbox** | Shared connector identities, OS-protected credentials, Slack/Gmail browser OAuth and read APIs, grouped inbox, filters, thread reader, original-source navigation, limited page previews and native Electron lifecycle | Contract/security tests, read-only scopes, cancellation/revocation, stale/limited/error states, real Electron layout and accessibility, full regression suite |
+| **2. AI search** | Provider contract, isolated Codex runtime and login, compatible Claude runtime adapter, authorized connector tools, sidepanel, source selection, streaming, cancellation, bounded search, citations and follow-ups | Runtime capability probes, fake-provider contract tests, tool/account restrictions, valid source references, native panel lifecycle and regression checks |
 
-That is roughly **4–7 engineering weeks for the supported read-only release**, depending on provider/access outcomes. Phase 2 can ship before AI. Two possible early cuts: keep only Codex initially; deliver message reading/search for Slack/Gmail while other apps retain Open in app.
+Phase 1 uses bounded in-memory snapshots and refresh while the inbox is open. Closing Hangar clears message content; credentials remain OS-encrypted outside config sync. This deliberately avoids a persistent message index and deletion backlog. Gmail history-cursor sync and a larger historical cache can follow after live account trials. Slack search has no unread flag, so those rows explicitly report unknown read state and are excluded from Unread only.
+
+Public OAuth app registration, provider verification and a real-account trial are deployment dependencies, not simulated by fixture tests. The app accepts the user's registered public/desktop client configuration and uses the provider's browser consent flow. This repository does not contain production OAuth registration credentials.
+
+The original 4–7 engineering-week range was a planning estimate, not a delivery commitment. Implementation status and validation evidence are recorded in the phase commits and PRs.
 
 ### Tests and success measures
 

@@ -34,6 +34,10 @@ import {
   windowButtonPosition,
 } from '@core/workspace/layout';
 import { Overlay } from '@main/window/overlay';
+import { ContentSurface } from '@main/features/content-surface';
+import { ConnectorHub } from '@main/connectors/hub';
+import { ConnectorVault } from '@main/connectors/vault';
+import { inboxRequest } from '@main/connectors/ipc';
 import { DragLayer } from '@main/features/drag-layer';
 import { Splitters } from '@main/features/splitters';
 import { PaneChrome } from '@main/features/pane-chrome';
@@ -156,6 +160,8 @@ export class AppWindow {
   private layout = new Layout();
   private services: ServiceManager;
   private overlay: Overlay;
+  private inboxSurface: ContentSurface;
+  private inboxHub: ConnectorHub;
   private findBar: FindBar;
   /**
    * Attached only while a rail tile is in flight. See `features/drag-layer.ts` — the short version
@@ -190,7 +196,7 @@ export class AppWindow {
    * member is read at call time), so it is safe to build before the constructor has run.
    */
   private attention = new AttentionCenter({
-    drawnServiceIds: () => this.layout.drawnServiceIds(),
+    drawnServiceIds: () => this.inboxSurface?.isOpen ? new Set<string>() : this.layout.drawnServiceIds(),
     paneServiceIds: () => this.layout.panes.map((p) => p.serviceId),
     isLive: (serviceId) => this.services.has(serviceId),
     contentsFor: (serviceId) => this.contentsForService(serviceId),
@@ -280,6 +286,15 @@ export class AppWindow {
     );
     this.findBar = new FindBar(this.win, (wc) => this.adoptSurface(wc));
     this.overlay = new Overlay(this.win, (wc) => this.adoptSurface(wc));
+    this.inboxSurface = new ContentSurface(this.win, 'inbox', (wc) => this.adoptSurface(wc));
+    this.inboxHub = new ConnectorHub({
+      config: loadConfig,
+      previews: () => this.conversations.snapshot(),
+      sleeping: (id) => !this.services.has(id),
+      changed: () => this.inboxChanged(),
+      openPage: (id, conversation) => this.conversations.open(id, conversation),
+      openUrl: async (url) => { openExternalSafely(url, 'Inbox'); },
+    }, new ConnectorVault(app.getPath('userData')));
     this.dragLayer = new DragLayer(this.win);
     // Shortcuts: a press focuses the splitter's view, and a chord pressed then used to go nowhere.
     this.splitters = new Splitters(this.win, (wc) =>
@@ -661,7 +676,7 @@ export class AppWindow {
   }
 
   state(): ShellState {
-    return projectShellState({
+    return { ...projectShellState({
       config: loadConfig(),
       runtimes: this.services.all(),
       unread: this.unread.snapshot(),
@@ -687,7 +702,7 @@ export class AppWindow {
       isDefaultMailApp: this.isDefaultMailApp(),
       recentNotifications: this.attention.recentNotifications(),
       downloads: recentDownloads(),
-    });
+    }), inboxOpen: this.inboxSurface.isOpen };
   }
 
   /** Current on-screen rectangle of a pane, for positioning the find bar. */
@@ -982,6 +997,8 @@ export class AppWindow {
 
   private broadcast(): void {
     if (this.win.isDestroyed()) return;
+    this.inboxHub.reconcile();
+    this.inboxChanged();
     const state = this.state();
     // Scripts and stylesheets only to Settings, which edits them — see `withoutServiceCode`.
     const lean = withoutServiceCode(state);
@@ -1005,7 +1022,7 @@ export class AppWindow {
   /** What the title bar and the headers show — sent to each only when it changed. */
   private refreshPaneChrome(state: ShellState): void {
     const bars = paneBars({
-      drawn: this.layout.drawn(),
+      drawn: this.inboxSurface.isOpen ? [] : this.layout.drawn(),
       paneCount: this.layout.panes.length,
       focusedPaneId: this.layout.focusedPaneId,
       maximisedPaneId: this.layout.maximisedPaneId,
@@ -1168,6 +1185,7 @@ export class AppWindow {
   ): void {
     const svc = loadConfig().services.find((s) => s.id === serviceId);
     if (!svc) return;
+    if (!this.restoring) this.inboxSurface.close();
 
     // Shortcuts are bound inside ensure(), once per view.
     this.services.ensure(svc);
@@ -1292,6 +1310,22 @@ export class AppWindow {
     const { width, height } = this.win.getContentBounds();
     const chrome = this.chrome();
     const bounds = this.layout.bounds(chrome, width, height);
+    if (this.inboxSurface.isOpen) {
+      for (const runtime of this.services.all().values()) this.win.contentView.removeChildView(runtime.view);
+      this.paneChrome.placeHeaders([]);
+      this.paneChrome.placeTitlebar(chrome.topStrip > 0 ? { x: 0, y: 0, width, height: chrome.topStrip } : null);
+      this.splitters.sync([]);
+      this.rowSplitters.sync([]);
+      this.setEmptyVisible(false, chrome, width, height);
+      this.drawFocusRing(new Map(), chrome.gutter);
+      this.inboxSurface.place(contentArea(chrome, width, height));
+      this.applyThrottling();
+      try { this.win.setWindowButtonPosition(windowButtonPosition(chrome, windowButtonMetrics())); } catch { /* Other platforms. */ }
+      this.raiseChrome(width, height);
+      this.win.setTitle('Inbox — Hangar');
+      this.sync();
+      return;
+    }
     // Drawn, not merely in a pane: behind a maximised pane the others keep their places but must
     // come off the window, or they would sit under it — and hit-test — at their old rectangles.
     const visible = this.layout.drawnServiceIds();
@@ -1477,7 +1511,28 @@ export class AppWindow {
   dispatch(raw: Command): boolean {
     const command = this.resolve(raw);
     if (!command) return false;
+    if (this.inboxSurface.isOpen && ['focus-pane', 'cycle-pane', 'open-in-new-pane', 'focus-service', 'navigate', 'split'].includes(command.type)) this.closeInbox();
     return route(command, this.context);
+  }
+
+  ownsInbox(wc: WebContents): boolean { return this.inboxSurface.contents === wc; }
+  requestInbox(action: unknown, payload: unknown) { return inboxRequest(this.inboxHub, action, payload); }
+  private inboxChanged(): void {
+    const wc = this.inboxSurface.contents;
+    if (wc) safeSend(wc, 'inbox:changed');
+  }
+  private openInbox(): void {
+    this.overlay.close();
+    this.findBar.close();
+    this.inboxSurface.open();
+    this.relayout();
+  }
+  private closeInbox(): boolean {
+    if (!this.inboxSurface.isOpen) return false;
+    this.inboxSurface.close();
+    this.relayout();
+    this.focusActivePane();
+    return true;
   }
 
   /**
@@ -1513,6 +1568,8 @@ export class AppWindow {
       showWindow: () => this.showWindow(),
       focusActivePane: () => this.focusActivePane(),
       openOverlay: (mode) => this.openOverlay(mode),
+      openInbox: () => this.openInbox(),
+      closeInbox: () => this.closeInbox(),
       openService: (id, options) => this.openService(id, options),
       flash: (id) => this.flash(id),
       saveLayout: () => this.saveLayout(),
@@ -1842,6 +1899,7 @@ export class AppWindow {
     this.endpoints.dispose();
     this.meetings.stop();
     this.conversations.stop();
+    this.inboxHub.dispose();
     if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
     this.backgroundTimer = null;
     if (this.flashTimer) clearTimeout(this.flashTimer);
@@ -1879,6 +1937,7 @@ export class AppWindow {
     // one that the user has opened and closed is a detached renderer the window won't collect.
     this.findBar.destroy();
     this.overlay.destroy();
+    this.inboxSurface.destroy();
     this.dragLayer.destroy();
     this.splitters.destroy();
     this.rowSplitters.destroy();
@@ -2007,7 +2066,7 @@ export class AppWindow {
    * Runs on every relayout, so the 30s sweep picks up a service that started playing off screen.
    */
   private applyThrottling(): void {
-    const drawn = this.windowOnScreen() ? this.layout.drawnServiceIds() : new Set<string>();
+    const drawn = this.windowOnScreen() && !this.inboxSurface.isOpen ? this.layout.drawnServiceIds() : new Set<string>();
     for (const [serviceId, runtime] of this.services.all()) {
       const wc = runtime.view.webContents;
       if (wc.isDestroyed()) continue;
@@ -2064,6 +2123,7 @@ export class AppWindow {
   }
 
   private focusActivePane(): void {
+    if (this.inboxSurface.isOpen) { this.inboxSurface.contents?.focus(); return; }
     const pane = this.layout.focused();
     if (!pane) return;
     this.noteUsed(pane.serviceId);

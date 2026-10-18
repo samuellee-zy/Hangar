@@ -388,6 +388,12 @@ const fromRecoveryPage = (event: Electron.IpcMainEvent): boolean =>
   event.senderFrame?.url.startsWith('data:') === true;
 
 function registerIpc(): void {
+  ipcMain.handle('inbox:request', (event, action: unknown, payload: unknown) => {
+    if (!fromApp(event, 'inbox:request') || !shell?.ownsInbox(event.sender) || event.senderFrame !== event.sender.mainFrame) {
+      return { ok: false, error: 'Inbox access denied.' };
+    }
+    return shell.requestInbox(action, payload);
+  });
   ipcMain.handle('shell:get-state', (event) =>
     fromApp(event, 'shell:get-state') ? (shell?.stateFor(event.sender) ?? null) : null,
   );

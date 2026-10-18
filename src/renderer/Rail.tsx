@@ -515,6 +515,11 @@ export function Rail() {
         reason. The chevron is last: it is the control that changes the shape of everything above it.
       */}
       <div className="rail-footer">
+        <button className="rail-item rail-add" title={withChord(state, 'Unified inbox', 'inbox')} aria-label="Unified inbox"
+          aria-current={state.inboxOpen ? 'page' : undefined} onClick={() => send({ type: 'open-inbox' })}>
+          <Icon name="inbox" size={18} />
+          {panel && <span className="rail-label" aria-hidden="true">Inbox</span>}
+        </button>
         {/* Maximised: says so, and how many panes are waiting, with the way back. Nothing did —
             the other panes simply vanished, and the menu kept offering "Maximise pane". */}
         {maximised && (

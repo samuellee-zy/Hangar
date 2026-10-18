@@ -1,4 +1,21 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { InboxBridge } from '@shared/inbox';
+
+const inbox: InboxBridge = {
+  snapshot: (query) => ipcRenderer.invoke('inbox:request', 'snapshot', query),
+  refresh: (query) => ipcRenderer.invoke('inbox:request', 'refresh', query),
+  more: (id) => ipcRenderer.invoke('inbox:request', 'more', id),
+  read: (ref) => ipcRenderer.invoke('inbox:request', 'read', ref),
+  open: (ref) => ipcRenderer.invoke('inbox:request', 'open', ref),
+  connect: (input) => ipcRenderer.invoke('inbox:request', 'connect', input),
+  disconnect: (id) => ipcRenderer.invoke('inbox:request', 'disconnect', id),
+  cancelConnect: () => ipcRenderer.invoke('inbox:request', 'cancelConnect'),
+  onChanged: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on('inbox:changed', handler);
+    return () => ipcRenderer.off('inbox:changed', handler);
+  },
+};
 import type {
   Command,
   DropHighlight,
@@ -13,6 +30,7 @@ import type {
 // eventual visual redesign a renderer-only change.
 
 contextBridge.exposeInMainWorld('hangar', {
+  inbox,
   getState: (): Promise<ShellState | null> => ipcRenderer.invoke('shell:get-state'),
   send: (command: Command): void => ipcRenderer.send('shell:command', command),
   onState: (fn: (state: ShellState) => void): (() => void) => {
