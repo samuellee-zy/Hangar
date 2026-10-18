@@ -2,6 +2,15 @@
 
 Research checked 18 October 2026. **Approved for implementation in two phases: unified inbox first, then AI search.** Git consolidation is tracked at the end of this document.
 
+## Delivery status
+
+- **Git consolidation:** merged through [PR 30](https://github.com/samuellee-zy/Hangar/pull/30), preserving branch history.
+- **Phase 1 — unified inbox:** merged through [PR 31](https://github.com/samuellee-zy/Hangar/pull/31), with grouped read-only Slack/Gmail connectors, workspace/account scope, thread previews and limited other-app rows. [Setup and limitations](inbox.md).
+- **Phase 2 — AI search:** implemented with isolated Codex and Claude Code adapters, native panel, account selection, streaming, citations, cancellation and follow-ups. Both pinned runtime protocols passed local synthetic inference/tool probes. [Setup and architecture](ai-search.md).
+- **Release dependencies:** registered OAuth test clients, provider browser sign-in and a real-account trial; the [20-case retrieval-quality evaluation](ai-search-evaluation.md) remains a beta gate. No live OAuth access, model quality or production latency is claimed by fixture tests.
+
+The research and scope choices below remain the design record. The shipped first pass uses bounded in-memory snapshots rather than persistent history sync, fixed resource budgets rather than an editable multi-step search plan, and plain-text answers with validated citation buttons. Claude Code is included after its tool-isolation probe passed; other optional rows remain deferred.
+
 Hangar can support both a unified inbox and an AI sidepanel that searches connected apps. Build them on one connector layer: the inbox lists conversations, while the assistant searches and retrieves evidence through the same account permissions. Keep AI providers interchangeable. A web app being signed in inside Hangar does **not** automatically grant a supported API integration, complete message history, or access to the user's existing ChatGPT/Claude connectors.
 
 **Recommended first release:** grouped, read-only Slack and Gmail conversations; source-linked previews; a Codex-powered search sidepanel; optional local Claude Code support after its login/tool-permission spike. Existing page probes can supplement other apps with clearly labelled unread summaries. Full personal Messenger history and sending replies are separate scope decisions.

@@ -140,21 +140,31 @@ export class ConnectorHub {
   async search(id: string, query: string, allowed: ReadonlySet<string>, outer: AbortSignal): Promise<InboxItem[]> {
     if (!allowed.has(id)) throw new ConnectorError('This account is outside the search scope.');
     if (!query.trim() || query.length > 1000) throw new ConnectorError('Search terms must be between 1 and 1,000 characters.');
-    const signal = this.signal(id, outer), c = await this.token(id, signal);
-    const page = await this.adapters[c.kind].search(c, query, signal);
-    signal.throwIfAborted();
-    this.connection(id);
-    this.remember(page.items);
-    return page.items;
+    const signal = this.signal(id, outer);
+    try {
+      const c = await this.token(id, signal);
+      const page = await this.adapters[c.kind].search(c, query, signal);
+      signal.throwIfAborted(); this.connection(id); this.remember(page.items);
+      return page.items;
+    } catch (error) { this.recordFailure(id, error, signal); throw error; }
+  }
+  private recordFailure(id: string, error: unknown, signal: AbortSignal): void {
+    if (!signal.aborted && error instanceof ConnectorError) {
+      this.errors.set(id, error);
+      if (error.reconnect) { this.clearContent(id); this.controllers.get(id)?.abort(); this.controllers.delete(id); }
+      this.host.changed();
+    }
   }
   async read(ref: SourceRef, allowed?: ReadonlySet<string>, outer?: AbortSignal): Promise<InboxThread> {
     if (allowed && !allowed.has(ref.connectionId)) throw new ConnectorError('This account is outside the search scope.');
     if (!this.known.has(itemId(ref))) throw new ConnectorError('Refresh the conversation list before opening this thread.');
-    const signal = this.signal(ref.connectionId, outer), c = await this.token(ref.connectionId, signal);
-    const thread = await this.adapters[c.kind].read(c, ref, signal);
-    signal.throwIfAborted();
-    this.connection(c.id);
-    return thread;
+    const signal = this.signal(ref.connectionId, outer);
+    try {
+      const c = await this.token(ref.connectionId, signal);
+      const thread = await this.adapters[c.kind].read(c, ref, signal);
+      signal.throwIfAborted(); this.connection(c.id);
+      return thread;
+    } catch (error) { this.recordFailure(ref.connectionId, error, signal); throw error; }
   }
   async open(ref: SourceRef): Promise<void> {
     if (!this.known.has(itemId(ref))) throw new ConnectorError('Refresh the list to open this conversation.');

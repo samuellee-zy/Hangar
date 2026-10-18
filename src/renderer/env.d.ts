@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { AiBridge } from '@shared/ai';
 import type { InboxBridge } from '@shared/inbox';
 /**
  * The renderer's view of the preload bridge (`src/preload/sidebar.ts`).
@@ -23,6 +24,7 @@ declare global {
   interface Window {
     hangar: {
       inbox: InboxBridge;
+      ai: AiBridge;
       getState: () => Promise<ShellState | null>;
       send: (command: Command) => void;
       onState: (fn: (state: ShellState) => void) => () => void;

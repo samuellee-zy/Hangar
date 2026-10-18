@@ -2657,3 +2657,28 @@ empty pane, and this one wasn't empty.
   account domains, by one anchored pattern rather than some 190 entries. `gds.google.com` (Google's
   "keep your account secure" step) and Microsoft's `passwordreset.microsoftonline.com` joined the
   sign-in lists, from the same search of the log for every sign-in hop refused.
+
+
+## 121. Search runtimes must prove their tool surface, not merely promise to be read-only
+
+The AI panel shares the inbox's account-scoped read broker, not Hangar's control socket. A provider
+gets only `hangar_search` and `hangar_read`; model arguments cannot widen the account allowlist or
+mint a source URL. Retrieved text is untrusted data. Disconnect/revocation invalidates derived
+answers, including revocation first observed during an AI search rather than an inbox refresh.
+
+CLI defaults are coding defaults. Codex's read-only sandbox alone still leaves shell/read tools,
+so its isolated app-server profile disables them and unrelated built-ins, uses ephemeral threads,
+and checks effective policy and the session result. Claude Code's `--bare` looked attractive for
+isolation but disables OAuth/keychain authentication. The unmodified subscription-compatible route
+uses `--restricted`, an empty built-in tool list, disabled hooks, no persisted sessions and only
+Hangar's authenticated loopback MCP server. No subscription credentials are extracted or relayed.
+
+The pinned CLI versions are deliberate. `scripts/probe-ai-runtimes.mjs` supplies synthetic local
+inference responses and verifies the actual tool manifest, tool call, streamed answer and completed
+turn on both runtimes. A future version must pass this check before its pin moves. These probes
+prove protocol/capability behavior, not live billing, account eligibility or retrieval quality.
+
+The panel is a native content surface. It reserves content width at every layout call site,
+including splitters, find bars and drag targets. At narrow widths it detaches covered content,
+restoring it on close. Electron keyboard tests use `webContents.sendInputEvent`: Playwright's
+renderer key injection bypasses the main-process `before-input-event` handler.

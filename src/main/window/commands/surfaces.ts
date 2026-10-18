@@ -32,6 +32,8 @@ export const surfaceCommands: CommandTable = {
   'open-activity': (_command, shell) => toggleOverlay(shell, 'activity'),
   'open-inbox': (_command, shell) => shell.openInbox(),
   'close-inbox': (_command, shell) => shell.closeInbox(),
+  'open-ai': (c, shell) => shell.openAi(c.connectionId && c.threadId ? { connectionId: c.connectionId, threadId: c.threadId } : undefined),
+  'close-ai': (_command, shell) => shell.closeAi(),
   'open-connections': (_command, shell) => shell.openOverlay('connections'),
 
   'close-overlay': (_command, shell) => {
@@ -41,7 +43,7 @@ export const surfaceCommands: CommandTable = {
       shell.overlay.close();
       shell.focusActivePane();
     }
-    return wasOpen;
+    return wasOpen || shell.closeAi();
   },
 
   'open-settings': (command, shell) =>

@@ -43,6 +43,8 @@ const SCHEMA = {
   'open-activity': {},
   'open-inbox': {},
   'close-inbox': {},
+  'open-ai': { connectionId: 'string?', threadId: 'string?' },
+  'close-ai': {},
   'drag-split': { index: 'number', screenX: 'number' },
   'drag-row-split': { index: 'number', screenY: 'number' },
   'resize-pane': { delta: [-1, 1] },

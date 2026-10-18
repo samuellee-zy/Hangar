@@ -322,9 +322,10 @@ ones hardened with tests. The one worth naming is the first.
   selectors are not, and are deliberately not guessed ([decisions #90](decisions.md)). The
   procedure for finding one is written up in [unread-selectors.md](unread-selectors.md) — what is
   left is the sitting-with-DevTools part, which needs a real logged-in account per service.
-- **Service APIs** — blocked on a decision rather than on code: an OAuth client secret an
-  open-source binary cannot hold, or somewhere to keep a personal token that git sync will not
-  publish ([decisions #91](decisions.md)).
+- **Service APIs** — the initial Slack/Gmail read connectors now use public/desktop OAuth and
+  OS-protected storage outside config sync. See [Inbox](inbox.md) and [AI search](ai-search.md).
+  Public app registration, verification and live-account quality trials remain release work;
+  decision #91 records the earlier constraint.
 - **V8 snapshots** — measure first; startup may already be fine.
 - **Developer ID signing** — ruled out. Homebrew ended support for casks failing Gatekeeper on
   **1 Sept 2026**, so a cask is no longer a signing-free distribution route. (Local builds *are*

@@ -24,6 +24,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     showLabels: false,
     showTrayIcon: false,
     paneHeaders: false,
+    aiPanelWidth: 420,
   },
   behaviour: {
     globalShortcut: null,

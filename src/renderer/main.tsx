@@ -22,6 +22,7 @@ const Rail = named(() => import('./Rail'), 'Rail');
 const OverlayRoot = named(() => import('./OverlayRoot'), 'OverlayRoot');
 const Settings = named(() => import('./Settings'), 'Settings');
 const EmptyState = named(() => import('./EmptyState'), 'EmptyState');
+const Assistant = named(() => import('./ai/Assistant'), 'Assistant');
 const Inbox = named(() => import('./inbox/Inbox'), 'Inbox');
 
 const route = window.location.hash.replace('#', '') || 'rail';
@@ -36,7 +37,7 @@ createRoot(document.getElementById('root')!).render(
       {/* No fallback: a chunk loads from disk in a few milliseconds, and a spinner for that would
           only be a flash. */}
       <Suspense fallback={null}>
-      {route === 'inbox' ? <Inbox /> : route === 'overlay' ? (
+      {route === 'ai' ? <Assistant /> : route === 'inbox' ? <Inbox /> : route === 'overlay' ? (
         <OverlayRoot />
       ) : route === 'settings' ? (
         <Settings />

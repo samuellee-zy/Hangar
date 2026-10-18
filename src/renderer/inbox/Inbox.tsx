@@ -156,7 +156,7 @@ export function Inbox() {
             {thread?.messages.map((m) => <article className="inbox-message" key={m.id}><header><strong>{m.author || 'Unknown sender'}</strong><time>{date(m.at)}</time></header><p>{m.text}</p></article>)}
             {thread?.partial && <p className="inbox-note">This is a partial preview. Open the original thread for all messages, formatting and attachments.</p>}
           </div>
-          <footer className="inbox-reader-footer">Previewing here does not mark messages read.</footer>
+          <footer className="inbox-reader-footer">Previewing here does not mark messages read. {selectedSource?.canSearch && <button onClick={() => window.hangar.send({ type: 'open-ai', ...selected.ref })}>Ask AI about this thread</button>}</footer>
         </> : <div className="inbox-empty inbox-reader-empty"><Icon name="inbox" size={40} /><h2>A little less app switching.</h2><p>Choose a conversation to read it here.<br />Its account and original source stay attached.</p></div>}
       </section>
     </div>

@@ -1,5 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AiBridge } from '@shared/ai';
 import type { InboxBridge } from '@shared/inbox';
+
+const ai: AiBridge = {
+  snapshot: () => ipcRenderer.invoke('ai:request', 'snapshot'),
+  scope: (all) => ipcRenderer.invoke('ai:request', 'scope', all),
+  probe: (provider) => ipcRenderer.invoke('ai:request', 'probe', provider),
+  login: (provider, mode) => ipcRenderer.invoke('ai:request', 'login', { provider, mode }),
+  logout: (provider) => ipcRenderer.invoke('ai:request', 'logout', provider),
+  start: (request) => ipcRenderer.invoke('ai:request', 'start', request),
+  cancel: () => ipcRenderer.invoke('ai:request', 'cancel'),
+  clear: () => ipcRenderer.invoke('ai:request', 'clear'),
+  openCitation: (id) => ipcRenderer.invoke('ai:request', 'openCitation', id),
+  onChanged: (fn) => { const handler = () => fn(); ipcRenderer.on('ai:changed', handler); return () => ipcRenderer.off('ai:changed', handler); },
+};
 
 const inbox: InboxBridge = {
   snapshot: (query) => ipcRenderer.invoke('inbox:request', 'snapshot', query),
@@ -31,6 +45,7 @@ import type {
 
 contextBridge.exposeInMainWorld('hangar', {
   inbox,
+  ai,
   getState: (): Promise<ShellState | null> => ipcRenderer.invoke('shell:get-state'),
   send: (command: Command): void => ipcRenderer.send('shell:command', command),
   onState: (fn: (state: ShellState) => void): (() => void) => {
