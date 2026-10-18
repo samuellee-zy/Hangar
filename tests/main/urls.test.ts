@@ -5,6 +5,7 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import {
+  isSignInRequest,
   isBlankPage,
   createRateLimiter,
   externalOpenDecision,
@@ -151,3 +152,50 @@ describe('a blank page', () => {
   });
 });
 
+describe('a sign-in step, told from a link', () => {
+  it('SAML, BY ITS REQUEST — Slack sending the Decagon workspace to Google, Okta, Microsoft', () => {
+    for (const url of [
+      'https://accounts.google.com/o/saml2/idp?idpid=C0abc&SAMLRequest=fZJdb&RelayState=x',
+      'https://decagon.okta.com/app/slack/exk1/sso/saml?SAMLRequest=nVJN',
+      'https://login.microsoftonline.com/tenant-id/saml2?SAMLRequest=jZFB',
+    ]) {
+      assert.equal(isSignInRequest(url), true, url);
+    }
+  });
+
+  it("SAML's form post, by its endpoint — the URL carries nothing else", () => {
+    for (const url of [
+      'https://accounts.google.com/o/saml2/idp?idpid=C0abc',
+      'https://acme.okta.com/app/acme_slack_1/exk9/sso/saml',
+      'https://acme.onelogin.com/trust/saml2/http-post/sso/123',
+      'https://sts.acme.com/adfs/ls/',
+    ]) {
+      assert.equal(isSignInRequest(url), true, url);
+    }
+  });
+
+  it('OAuth and OpenID Connect, by their authorization request', () => {
+    for (const url of [
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=1.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Fslack.com&response_type=code',
+      'https://appleid.apple.com/auth/authorize?client_id=com.slack&redirect_uri=https%3A%2F%2Fslack.com',
+      'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=abc&response_type=code',
+    ]) {
+      assert.equal(isSignInRequest(url), true, url);
+    }
+  });
+
+  it('NOT AN ORDINARY LINK — those still open in the browser', () => {
+    for (const url of [
+      'https://docs.google.com/document/d/1abc/edit',
+      'https://www.loom.com/share/123?t=4',
+      // `client_id` alone turns up in plenty of links that aren't a sign-in.
+      'https://example.com/report?client_id=42',
+      'https://accounts.google.com/',
+      'https://example.com/blog/saml-explained',
+      'mailto:someone@example.com?client_id=1&redirect_uri=x',
+      'not a url',
+    ]) {
+      assert.equal(isSignInRequest(url), false, url);
+    }
+  });
+});

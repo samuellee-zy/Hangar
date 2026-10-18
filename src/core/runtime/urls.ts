@@ -66,6 +66,34 @@ export function externalOpenDecision(raw: string): ExternalDecision {
   return { open: true };
 }
 
+/**
+ * SAML endpoints that take the request in a form post rather than the URL: the address is the only
+ * sign of it. Google's `/o/saml2/idp`, Okta's `/sso/saml`, Microsoft's `/<tenant>/saml2`, OneLogin's
+ * `/trust/saml2/…`, ADFS's `/adfs/ls`.
+ */
+const SAML_ENDPOINT = /\/(?:saml2?|sso\/saml|adfs\/ls)(?:\/|$)/i;
+
+/**
+ * Whether a URL asks an identity provider to sign someone in, read from the protocols' own
+ * parameter names — which every provider uses — rather than a list of providers' hosts, which no
+ * list keeps up with: one company signs in to Slack through Google, the next through Okta.
+ *
+ * - SAML's redirect binding carries `SAMLRequest`; its post binding is known by the endpoint.
+ * - OAuth 2 and OpenID Connect's authorization request carries `client_id`, with `redirect_uri`
+ *   or `response_type` — together, since `client_id` alone turns up in ordinary links.
+ *
+ * Used to tell a sign-in step apart from a link: sent to the browser, a sign-in signs the browser
+ * in, not the service that asked (decision #120).
+ */
+export function isSignInRequest(raw: string): boolean {
+  if (!isWebUrl(raw)) return false;
+  const url = new URL(raw);
+  const query = url.searchParams;
+  if (query.has('SAMLRequest')) return true;
+  if (query.has('client_id') && (query.has('redirect_uri') || query.has('response_type'))) return true;
+  return SAML_ENDPOINT.test(url.pathname);
+}
+
 /** http or https with a host: the only URLs a service may be, or navigate its own views to. */
 export function isWebUrl(raw: string): boolean {
   try {

@@ -63,7 +63,7 @@ import {
   onDownloadsChanged,
   recentDownloads,
 } from '@main/platform/system';
-import { clearBlockedHost, hostBlockedFor, setLinkRouter, setPopupListener } from '@main/platform/session';
+import { clearBlockedHost, hostBlockedFor, setLinkRouter, setPopupListener, urlBlockedFor } from '@main/platform/session';
 import { ConversationBridge } from '@main/features/conversation-bridge';
 import { MeetingBridge } from '@main/features/meeting-bridge';
 import { routable, routeTarget } from '@core/services/routing';
@@ -811,8 +811,8 @@ export class AppWindow {
   }
 
   /**
-   * The blocked page's Allow button. Adds the host main last refused for this service, then
-   * reloads it so the interrupted sign-in step can be retried.
+   * The blocked page's Allow button. Adds the host main last refused for this service, then carries
+   * on to where it was going — the sign-in step that was stopped — or, failing that, reloads it.
    *
    * Additive via `extraAllowedHosts`, never by rewriting `allowedHosts` — see the field's comment:
    * a merged list written back would pin the instance to today's catalog forever.
@@ -830,10 +830,25 @@ export class AppWindow {
       svc.extraAllowedHosts = [...extra, host];
     });
     console.log(`[nav] ${serviceId}: allowed ${host}`);
+    const url = urlBlockedFor(serviceId);
     clearBlockedHost(serviceId);
-    // The guards re-read config per navigation, so no view rebuild is needed — the reload alone
-    // is enough for the newly allowed host to be accepted.
-    this.retryService(serviceId);
+    // The guards re-read config per navigation, so no view rebuild is needed. On to the step that
+    // was stopped, when it's on the host just allowed: from the front page it was the service's
+    // sign-in button again, and a second trip through the redirect it had already made.
+    const wc = this.contentsForService(serviceId);
+    const onAllowedHost = (() => {
+      try {
+        return url !== null && new URL(url).hostname === host;
+      } catch {
+        return false;
+      }
+    })();
+    if (wc && url && onAllowedHost) {
+      this.services.get(serviceId)!.failures = 0;
+      void wc.loadURL(url);
+    } else {
+      this.retryService(serviceId);
+    }
     this.sync();
   }
 

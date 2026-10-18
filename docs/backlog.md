@@ -630,7 +630,14 @@ After that round:
   the service it came from, which shows it in Finder when clicked; the Dock's progress bar and
   Downloads-stack bounce; a log line; and the service in the Activity sheet's list.
 
+- **Signing in through a provider the service doesn't list** ([decision #120](decisions.md)): Slack
+  lists Google, Apple and Microsoft, and any other company's sign-in asks in the pane, where Allow
+  carries on signing in, instead of going to the browser. Google's country account domains
+  (accounts.google.co.uk, …), the last hop of every Google sign-in, stay in the pane too.
+
 **Still open from these:**
+- **A sign-in popup to an unlisted provider still opens in the browser.** Only a pane can show the
+  page that asks. A service whose sign-in uses a popup needs that host in its Allowed hosts.
 - **The rest of the toolchain waits on two upstreams.** TypeScript 7: typescript-eslint supports
   TypeScript below 6.1. Vite 8, and `@vitejs/plugin-react` 6 with it, which needs Vite 8:
   electron-vite 5 supports Vite up to 7, and electron-vite 6, which takes 8, is in beta. Each is one
