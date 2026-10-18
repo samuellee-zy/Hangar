@@ -4,6 +4,7 @@
 .inbox button:hover { background:var(--surface-hover); }
 .inbox button:disabled { opacity:.55; }
 .inbox button:focus-visible,.inbox input:focus-visible,.inbox select:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+.inbox-messages:focus-visible { outline:2px solid var(--focus); outline-offset:-2px; }
 .inbox button[aria-pressed=true],.inbox button[aria-current=page] { background:var(--selected); border-color:var(--focus); }
 .inbox-top { padding:24px 28px 0; display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .inbox h1 { font-size:28px; font-weight:650; letter-spacing:-.7px; margin:4px 0; display:flex; align-items:center; gap:10px; }

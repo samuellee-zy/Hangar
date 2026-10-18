@@ -150,7 +150,7 @@ export function Inbox() {
         {selected ? <>
           <header className="inbox-reader-head"><button onClick={back} aria-label="Back to conversation list"><Icon name="chevron-left" />Back</button><span>{selectedSource?.app} · {selectedSource?.identity ?? selectedSource?.label}</span></header>
           <div className="inbox-reader-title"><span className="inbox-eyebrow">{INBOX_CATEGORIES[selected.category]}</span><h2>{selected.title}</h2><p>{selected.at ? date(selected.at) : 'Limited preview · message time unavailable'}</p><button onClick={async () => { const r = await window.hangar.inbox.open(selected.ref); if (!r.ok) setReadError(r.error); }}>Open in {selectedSource?.app ?? 'app'} <Icon name="pop-out" /></button></div>
-          <div className="inbox-messages" aria-live="polite">
+          <div className="inbox-messages" role="region" aria-label="Messages" tabIndex={0} aria-live="polite">
             {reading && <p>Loading conversation…</p>}{readError && <p className="inbox-error" role="alert">{readError}</p>}
             {!selectedSource?.canRead && <div className="inbox-empty"><h3>Continue in the original app</h3><p>This source provides unread names only. It does not provide message bodies or a complete inbox.</p></div>}
             {thread?.messages.map((m) => <article className="inbox-message" key={m.id}><header><strong>{m.author || 'Unknown sender'}</strong><time>{date(m.at)}</time></header><p>{m.text}</p></article>)}

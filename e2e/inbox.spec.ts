@@ -63,6 +63,9 @@ test('Inbox: source-labelled conversations and plain-text thread reader work at 
   await h.app.evaluate(() => (globalThis as never as Shell).__hangarShell.win.setSize(720, 650));
   await expect(page.getByText(/I will prepare the test accounts/)).toBeVisible();
   await page.screenshot({ path: '/tmp/hangar-inbox-compact.png' });
+  await page.getByRole('region', { name: 'Messages', exact: true }).focus();
+  await page.keyboard.press('End');
+  expect((await new AxeBuilder({ page }).setLegacyMode().analyze()).violations).toEqual([]);
   await page.getByRole('button', { name: 'Back to conversation list' }).click();
   await expect(page.getByRole('button', { name: /Launch review/ })).toBeVisible();
   await page.getByRole('button', { name: 'Unread only' }).click();
