@@ -146,6 +146,12 @@ const COMMS: CatalogEntry[] = [
       dom: [WHATSAPP_MESSAGES],
     },
     // "WhatsApp works with Google Chrome 100+", at Chrome 150, until the `Hangar/…` token is gone.
+    // Who's waiting: the chat list's rows, each with its name in a titled span and, when unread, a
+    // badge whose aria-label says so ("3 unread messages"). Muted chats carry a muted icon. #119.
+    conversations: [
+      { row: '#pane-side [role="row"]', name: 'span[title][dir="auto"]', nameAttr: 'title', badge: 'span[aria-label*="unread" i]', muted: '[data-icon="muted"]' },
+      { row: '#pane-side [role="listitem"]', name: 'span[title][dir="auto"]', nameAttr: 'title', badge: 'span[aria-label*="unread" i]', muted: '[data-icon="muted"]' },
+    ],
     plainUserAgent: true,
   },
   {
@@ -187,6 +193,12 @@ const COMMS: CatalogEntry[] = [
     // straight to it and comes back with the session.
     allowedHosts: ['messenger.com', 'www.messenger.com', 'facebook.com'],
     unread: { titlePattern: '^\\((\\d+)\\+?\\)' },
+    // Unverified against the live page: the chat list's rows (links to /t/<thread>), unread ones
+    // saying so in their label. The bridge logs when no rule matches a row. #119.
+    conversations: [
+      { row: '[role="navigation"] a[href*="/t/"]', name: 'span[dir="auto"]', unreadLabel: 'unread', unread: '[aria-label*="unread" i]', idAttr: 'href' },
+      { row: 'a[role="link"][href*="/t/"]', name: 'span[dir="auto"]', unreadLabel: 'unread', unread: '[aria-label*="unread" i]', idAttr: 'href' },
+    ],
   },
   {
     id: 'gchat', icon: 'google-chat', name: 'Google Chat', url: 'https://chat.google.com/',
@@ -619,6 +631,13 @@ export const catalog: CatalogEntry[] = [
     provider: 'microsoft',
     // The call bar's ids, which Teams has kept across redesigns; state from the mic's `data-state`
     // and the other buttons' labels.
+    // Unverified against the live page (new Teams): chat list items, unread ones saying so in
+    // their aria-label. The bridge logs when no rule matches a row. #119.
+    conversations: [
+      { row: '[data-tid="chat-list-item"]', name: '[data-tid="chat-list-item-title"]', unreadLabel: 'unread', unread: '[data-tid="unread-indicator"]' },
+      { row: '[role="treeitem"][data-item-type="chat"]', name: '[title]', nameAttr: 'title', unreadLabel: 'unread' },
+      { row: '[role="treeitem"][aria-label*="chat" i]', name: '[title]', nameAttr: 'title', unreadLabel: 'unread' },
+    ],
     meeting: {
       inCall: '#hangup-button',
       controls: {
@@ -648,6 +667,20 @@ export const catalog: CatalogEntry[] = [
     passthrough: ['mod+k', 'mod+f', 'mod+[', 'mod+]'],
     // A huddle runs in its own `about:blank` window, which the allowlist alone would refuse.
     blankPopups: true,
+    // Who's waiting: the sidebar's channels and DMs, each carrying its channel id. Unread ones have
+    // the --unread class; a badge is a mention count; DMs count as mentions. #119.
+    conversations: [
+      {
+        row: '[data-qa-channel-sidebar-channel-id]',
+        idAttr: 'data-qa-channel-sidebar-channel-id',
+        name: '.p-channel_sidebar__name',
+        badge: '.p-channel_sidebar__badge',
+        unread: '.p-channel_sidebar__channel--unread',
+        mention: '.p-channel_sidebar__badge, [data-qa-channel-sidebar-channel-type="im"], [data-qa-channel-sidebar-channel-type="mpim"]',
+        muted: '.p-channel_sidebar__channel--muted',
+        click: '.p-channel_sidebar__channel, a',
+      },
+    ],
     meeting: {
       inCall: '[data-qa="huddle_toolbar__leave_button"]',
       popups: true,

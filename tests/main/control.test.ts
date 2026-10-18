@@ -27,6 +27,7 @@ describe('what a client may send', () => {
       { type: 'cycle-pane', delta: 1 },
       { type: 'show-window' },
       { type: 'meeting-control', serviceId: 'svc-1', control: 'mute', want: true },
+      { type: 'open-conversation', serviceId: 'svc-1', conversationId: 'C123' },
     ];
     for (const command of accepted) {
       const message = readControlMessage(line(command));
@@ -74,6 +75,12 @@ describe('the allowlist itself', () => {
     assert.ok(CONTROL_COMMAND_TYPES.has('meeting-control'));
     assert.equal(LINK_COMMAND_TYPES.has('meeting-control'), false);
     assert.equal(CONTROL_SHOWS.has('meeting-control'), false);
+  });
+
+  it("OPENING A CONVERSATION IS THE SOCKET'S ALONE — never a link verb; it brings the window up", () => {
+    assert.ok(CONTROL_COMMAND_TYPES.has('open-conversation'));
+    assert.equal(LINK_COMMAND_TYPES.has('open-conversation'), false);
+    assert.ok(CONTROL_SHOWS.has('open-conversation'));
   });
 
   it('what brings the window forward is on the allowlist, and settings never do', () => {
@@ -146,6 +153,13 @@ describe('what a client is told', () => {
     const control = controlState({ ...state, allServices: [view({ meeting })] } as unknown as ShellState);
     assert.deepEqual(control.services[0]?.meeting, meeting);
     assert.equal('meeting' in (controlState(state).services[0] ?? {}), false);
+  });
+
+  it("a chat service's waiting conversations go along when it has some", () => {
+    const conversations = [{ id: 'C1', name: 'deal-asos', unread: 2, mention: false, order: 0 }];
+    const control = controlState({ ...state, allServices: [view({ conversations })] } as unknown as ShellState);
+    assert.deepEqual(control.services[0]?.conversations, conversations);
+    assert.equal('conversations' in (controlState(state).services[0] ?? {}), false);
   });
 
   it('NO SERVICE CODE, NO RAIL TREE — only the fields it names', () => {

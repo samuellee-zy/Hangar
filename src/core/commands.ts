@@ -89,6 +89,7 @@ const SCHEMA = {
   print: {},
   'reload-service': { serviceId: 'string', ignoreCache: 'boolean?' },
   'meeting-control': { serviceId: 'string', control: ['mute', 'video', 'share', 'hand', 'leave'], want: 'boolean|null' },
+  'open-conversation': { serviceId: 'string', conversationId: 'string' },
   'sleep-service': { serviceId: 'string' },
   'show-service-menu': { serviceId: 'string' },
   'show-rail-menu': {},
