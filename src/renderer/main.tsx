@@ -22,6 +22,7 @@ const Rail = named(() => import('./Rail'), 'Rail');
 const OverlayRoot = named(() => import('./OverlayRoot'), 'OverlayRoot');
 const Settings = named(() => import('./Settings'), 'Settings');
 const EmptyState = named(() => import('./EmptyState'), 'EmptyState');
+const Inbox = named(() => import('./inbox/Inbox'), 'Inbox');
 
 const route = window.location.hash.replace('#', '') || 'rail';
 document.body.dataset['route'] = route;
@@ -35,7 +36,7 @@ createRoot(document.getElementById('root')!).render(
       {/* No fallback: a chunk loads from disk in a few milliseconds, and a spinner for that would
           only be a flash. */}
       <Suspense fallback={null}>
-      {route === 'overlay' ? (
+      {route === 'inbox' ? <Inbox /> : route === 'overlay' ? (
         <OverlayRoot />
       ) : route === 'settings' ? (
         <Settings />

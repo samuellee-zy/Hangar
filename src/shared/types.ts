@@ -633,6 +633,7 @@ export interface DownloadEntry {
 
 /** Everything the rail renders. The renderer holds no state of its own — it draws this. */
 export interface ShellState {
+  inboxOpen?: boolean;
   /** Services in the active workspace, flattened in visual order — drives ⌘1..9 and the palette. */
   services: ServiceView[];
   /** The active workspace's rail tree: top-level services and folders, in order. */
@@ -787,6 +788,8 @@ export type Command =
   | { type: 'mark-all-read' }
   /** The sheet of recent notifications and downloads. */
   | { type: 'open-activity' }
+  | { type: 'open-inbox' }
+  | { type: 'close-inbox' }
   /**
    * From splitter `index`, mid-drag: the pointer's `screenX`. Screen rather than client
    * coordinates, because the splitter's own view moves with the boundary it is dragging.

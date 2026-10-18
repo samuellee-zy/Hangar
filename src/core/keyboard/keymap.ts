@@ -94,6 +94,7 @@ export function isBindable(chord: Chord | null): chord is Chord {
 }
 
 export type ActionId =
+  | 'inbox'
   | 'shortcuts'
   | 'palette'
   | 'add-connection'
@@ -139,6 +140,7 @@ export interface KeyAction {
 
 /** Order is load-bearing twice over: it is the menu's order, and it breaks ties on a conflict. */
 export const KEY_ACTIONS: readonly KeyAction[] = [
+  { id: 'inbox', label: 'Unified inbox', command: { type: 'open-inbox' }, menu: 'view', defaultChord: primaryChord('i', { shift: true }) },
   {
     id: 'settings',
     label: 'Settings…',

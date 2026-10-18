@@ -29,6 +29,8 @@ export interface ShellContext {
   showWindow(): void;
   focusActivePane(): void;
   openOverlay(mode: OverlayMode): void;
+  openInbox(): void;
+  closeInbox(): boolean;
   openService(serviceId: string, options?: { newPane?: boolean }): void;
   flash(serviceId: string): void;
   saveLayout(): void;

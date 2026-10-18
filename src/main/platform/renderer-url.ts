@@ -7,6 +7,8 @@ import { openExternalSafely } from '@main/platform/external';
 // electron-vite sets ELECTRON_RENDERER_URL in dev; in production we load the built file.
 
 type Route =
+  | 'inbox'
+  | 'ai'
   | 'rail'
   | 'overlay'
   | 'settings'

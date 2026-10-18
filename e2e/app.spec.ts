@@ -189,7 +189,7 @@ test('the overlay stops eating clicks once closed', async () => {
   h = await launch();
   const rail = await h.rail();
 
-  await rail.locator('.rail-add').first().click();
+  await rail.getByRole('button', { name: 'Add a connection', exact: true }).click();
   await expect.poll(() => h.app.windows().some((w) => w.url().includes('#overlay'))).toBeTruthy();
 
   await rail.keyboard.press('Escape');
@@ -943,7 +943,7 @@ test('the footer buttons sit in the same centred column as the tiles', async () 
   });
 
   expect(centres.tiles.length).toBeGreaterThan(0);
-  expect(centres.buttons).toHaveLength(2);
+  expect(centres.buttons).toHaveLength(3); // Inbox, Add a connection, Settings.
 
   // Centred in their own column...
   for (const button of centres.buttons) {
