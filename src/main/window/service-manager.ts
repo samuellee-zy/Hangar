@@ -106,7 +106,8 @@ export class ServiceManager {
         sandbox: true,
         // Services are third-party web apps; keep them out of our process.
         nodeIntegration: false,
-        // Off so a backgrounded pane in a split view keeps rendering and delivering.
+        // Off so a backgrounded pane in a split view keeps rendering and delivering. The window
+        // turns it back on for every page that isn't on screen — see `applyThrottling`.
         backgroundThrottling: false,
         // Required for dictionarySuggestions to be populated in the context-menu event. Setting
         // spellchecker languages alone (session.ts) does nothing without it.

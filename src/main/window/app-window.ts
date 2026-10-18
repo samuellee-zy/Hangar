@@ -319,8 +319,16 @@ export class AppWindow {
     this.win.on('leave-full-screen', () => this.relayout());
     this.win.on('move', () => this.saveWindowBounds());
     this.win.on('focus', () => (this.defaultMailApp = null));
-    this.win.on('show', () => this.attention.acknowledgePanes());
-    this.win.on('restore', () => this.attention.acknowledgePanes());
+    this.win.on('show', () => {
+      this.attention.acknowledgePanes();
+      this.applyThrottling();
+    });
+    this.win.on('restore', () => {
+      this.attention.acknowledgePanes();
+      this.applyThrottling();
+    });
+    this.win.on('hide', () => this.applyThrottling());
+    this.win.on('minimize', () => this.applyThrottling());
     // The debounce means a window that's never moved would otherwise never record its bounds,
     // and a quit inside the debounce window would drop the last change.
     this.win.on('close', (event: Electron.Event) => {
@@ -1291,6 +1299,7 @@ export class AppWindow {
     for (const [serviceId, runtime] of this.services.all()) {
       if (!visible.has(serviceId)) this.win.contentView.removeChildView(runtime.view);
     }
+    this.applyThrottling();
 
     // Looking at a pane is what marks it read — but only if anyone *can* look. Relayout runs on the
     // hibernation sweep every 30s whatever the window is doing, so with the window closed to the
@@ -1987,6 +1996,24 @@ export class AppWindow {
   /** Whether the window is somewhere a person could be looking at it. */
   private windowOnScreen(): boolean {
     return !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized();
+  }
+
+  /**
+   * Only what you can see runs at full speed. Every other page is throttled: Chromium slows its
+   * timers and it reads `document.hidden`, which most web apps take as the cue to stop animating
+   * and polling. With throttling off everywhere, YouTube, Spotify and the rest ran flat out
+   * behind a pane or with the window in the tray. A pane in a hidden or minimised window counts
+   * as unseen; a call or sound stays unthrottled wherever it is, since throttling could stutter it.
+   * Runs on every relayout, so the 30s sweep picks up a service that started playing off screen.
+   */
+  private applyThrottling(): void {
+    const drawn = this.windowOnScreen() ? this.layout.drawnServiceIds() : new Set<string>();
+    for (const [serviceId, runtime] of this.services.all()) {
+      const wc = runtime.view.webContents;
+      if (wc.isDestroyed()) continue;
+      const throttle = !drawn.has(serviceId) && this.busyReason(serviceId) === null;
+      if (wc.getBackgroundThrottling() !== throttle) wc.setBackgroundThrottling(throttle);
+    }
   }
 
   private clearUnread(serviceId: string): void {
