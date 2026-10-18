@@ -1,7 +1,7 @@
 import { commandProblem } from '@core/commands';
 import { expiredQuiet } from '@core/notify/policy';
 import { catalogById } from '@shared/catalog';
-import type { Command, Config, MeetingState, ShellState } from '@shared/types';
+import type { Command, Config, Conversation, MeetingState, ShellState } from '@shared/types';
 
 /**
  * The control socket's side of things that needs no Electron: what a client may ask for, what it
@@ -38,6 +38,8 @@ export const CONTROL_COMMAND_TYPES: ReadonlySet<Command['type']> = new Set([
   'show-window',
   // Presses a control in a meeting running in a service's page. Only here, never a link verb (#115).
   'meeting-control',
+  // Opens a conversation from a chat service's list. Only here, never a link verb (#119).
+  'open-conversation',
 ]);
 
 /**
@@ -54,6 +56,7 @@ export const CONTROL_SHOWS: ReadonlySet<Command['type']> = new Set([
   'open-palette',
   'open-activity',
   'show-window',
+  'open-conversation',
 ]);
 
 export interface ControlService {
@@ -76,6 +79,8 @@ export interface ControlService {
   sleeping: boolean;
   /** A call in the service's page (Teams, a Slack huddle, Meet), when there is one. */
   meeting?: MeetingState;
+  /** Conversations with something unread, in the app's own order, when its list can be read. */
+  conversations?: Conversation[];
 }
 
 /** What a client is sent: on connecting, and whenever any of it changes. */
@@ -106,6 +111,7 @@ export function controlState(state: ShellState): ControlState {
       mutedUntil: svc.mutedUntil ?? null,
       sleeping: svc.sleeping,
       ...(svc.meeting ? { meeting: svc.meeting } : {}),
+      ...(svc.conversations?.length ? { conversations: svc.conversations } : {}),
     })
   );
   const focused = state.panes.find((pane) => pane.id === state.focusedPaneId);

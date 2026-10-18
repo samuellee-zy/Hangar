@@ -72,6 +72,16 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
       <a id="report" href="/files/report.pdf" download>report.pdf</a>
       <a id="slow" href="/files/slow.bin" download>slow.bin</a>`,
   },
+  // A service's sign-in page, as Slack's is for a workspace with single sign-on: one button starts
+  // it, and the server redirects to the identity provider. The other redirects somewhere that
+  // isn't a sign-in at all.
+  '/sso': {
+    body: `<!doctype html><title>Sign in to Acme</title>
+      <a id="sso" href="/sso/start">Sign in with Google IDP</a>
+      <a id="out" href="/out">A redirect elsewhere</a>`,
+  },
+  // The identity provider, at `idp.test` — which the tests point at this server.
+  '/o/saml2/idp': { body: `<!doctype html><title>Identity provider</title><h1 id="idp">Choose an account</h1>` },
   '/embed': {
     body: `<!doctype html><title>Embed</title><script>
       const blank = document.createElement('iframe');
@@ -122,6 +132,17 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       const signedIn = (req.headers.cookie ?? '').includes(`${SESSION_COOKIE}=ok`);
       res.writeHead(signedIn ? 200 : 401, { 'content-type': 'application/json' });
       res.end(signedIn ? JSON.stringify({ counts: { unread: 5 } }) : '{"error":"sign in"}');
+      return;
+    }
+
+    // Redirects, to a host the service doesn't list: a sign-in step at the identity provider, and
+    // an ordinary page.
+    if (path === '/sso/start' || path === '/out') {
+      const port = (req.headers.host ?? '').split(':')[1] ?? '';
+      const location =
+        path === '/sso/start' ? `http://idp.test:${port}/o/saml2/idp?SAMLRequest=fZJdb&RelayState=r1` : `http://idp.test:${port}/elsewhere`;
+      res.writeHead(302, { location });
+      res.end();
       return;
     }
 

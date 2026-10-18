@@ -381,11 +381,13 @@ only for partitions that gained a session cookie; config writes are debounced an
 and exit; the live-notification set is capped; React and dnd-kit are build inputs, not shipped
 dependencies.
 
-Still open, deliberately:
+Background throttling is on for every service view that isn't on screen (`applyThrottling`):
+with it off everywhere, 13 services ran flat out behind panes and in the tray, about 20% CPU
+idle. A call or sound stays unthrottled. The unread probe reports straight from its
+MutationObserver while hidden, so only a badge that changes without touching the DOM waits on
+the throttled 30s poll.
 
-- **Background throttling stays off** on service views. Throttling an off-screen view slows its
-  timers, and the unread probe in the service preload runs on one — the count would lag by up to a
-  minute. Worth measuring the battery cost before trading freshness for it.
+Still open, deliberately:
 - **Visible panes still don't hibernate while the window is hidden.** Doing it would make every
   show a reload of whatever was on screen.
 - The overlay, find bar and drag views are kept after first use on purpose: they are reused, and
@@ -630,7 +632,14 @@ After that round:
   the service it came from, which shows it in Finder when clicked; the Dock's progress bar and
   Downloads-stack bounce; a log line; and the service in the Activity sheet's list.
 
+- **Signing in through a provider the service doesn't list** ([decision #120](decisions.md)): Slack
+  lists Google, Apple and Microsoft, and any other company's sign-in asks in the pane, where Allow
+  carries on signing in, instead of going to the browser. Google's country account domains
+  (accounts.google.co.uk, …), the last hop of every Google sign-in, stay in the pane too.
+
 **Still open from these:**
+- **A sign-in popup to an unlisted provider still opens in the browser.** Only a pane can show the
+  page that asks. A service whose sign-in uses a popup needs that host in its Allowed hosts.
 - **The rest of the toolchain waits on two upstreams.** TypeScript 7: typescript-eslint supports
   TypeScript below 6.1. Vite 8, and `@vitejs/plugin-react` 6 with it, which needs Vite 8:
   electron-vite 5 supports Vite up to 7, and electron-vite 6, which takes 8, is in beta. Each is one

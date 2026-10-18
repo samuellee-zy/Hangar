@@ -202,6 +202,7 @@ that has never opened Gmail.
 | [automation.md](docs/automation.md) | `hangar://` links, command-line flags and the control socket, for Shortcuts, Raycast, Focus and a Stream Deck |
 | [manual-checks.md](docs/manual-checks.md) | What only a real page can prove, to check after installing |
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
+| [AI and unified inbox plan](docs/ai-and-unified-inbox-plan.md) | Proposed provider login, connected-app search, unified inbox design, scope choices and implementation sequence |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
 | [unread-selectors.md](docs/unread-selectors.md) | Finding the element a service draws its unread count in |
@@ -223,16 +224,15 @@ relaunch — which works on an unsigned build, via a LaunchAgent rather than the
 
 **Not built:**
 
-- **Service APIs.** The tier above session-borrowed endpoints needs a token, and that is a decision
-  rather than a function: OAuth clients need a secret an open-source binary cannot hold, and the
-  personal-token services need somewhere to keep one that git sync will not publish
-  ([decisions #91](docs/decisions.md)).
+- **Service APIs, AI search and a unified inbox.** The [implementation plan](docs/ai-and-unified-inbox-plan.md)
+  covers Slack/Gmail public-client OAuth, local credential storage, provider adapters and staged
+  rollout. Signing in to a web pane alone does not provide full API access or message history.
 - **Unread selectors for eight of the catalog's services.** The mechanism ships; the selectors are
   deliberately not guessed ([decisions #90](docs/decisions.md)).
 
 ## Contributing
 
-`main` is protected: it requires a pull request, one code-owner approval, and a green CI run
+`main` is protected: it requires a pull request and a green CI run
 (`npm run check` plus the E2E suite on macOS). Fork, branch, open a PR.
 
 Before changing behaviour, read [decisions.md](docs/decisions.md). It is a long list of things that

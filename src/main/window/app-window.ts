@@ -63,7 +63,8 @@ import {
   onDownloadsChanged,
   recentDownloads,
 } from '@main/platform/system';
-import { clearBlockedHost, hostBlockedFor, setLinkRouter, setPopupListener } from '@main/platform/session';
+import { clearBlockedHost, hostBlockedFor, setLinkRouter, setPopupListener, urlBlockedFor } from '@main/platform/session';
+import { ConversationBridge } from '@main/features/conversation-bridge';
 import { MeetingBridge } from '@main/features/meeting-bridge';
 import { routable, routeTarget } from '@core/services/routing';
 import { canCompose, composeUrlFor } from '@shared/mailto';
@@ -232,6 +233,8 @@ export class AppWindow {
   private endpoints: EndpointPoller;
   /** Meeting controls in services' pages, for the control socket. See meeting-bridge.ts. */
   private meetings: MeetingBridge;
+  /** Who's waiting in each chat service's list, for the control socket. See conversation-bridge.ts. */
+  private conversations: ConversationBridge;
   /** Every window each service's page opened, while open: a huddle, a player. For `busyReason`. */
   private popups = new Map<string, Set<WebContents>>();
   /** The next background service to load, a moment after the last. See `startBackgroundServices`. */
@@ -316,8 +319,16 @@ export class AppWindow {
     this.win.on('leave-full-screen', () => this.relayout());
     this.win.on('move', () => this.saveWindowBounds());
     this.win.on('focus', () => (this.defaultMailApp = null));
-    this.win.on('show', () => this.attention.acknowledgePanes());
-    this.win.on('restore', () => this.attention.acknowledgePanes());
+    this.win.on('show', () => {
+      this.attention.acknowledgePanes();
+      this.applyThrottling();
+    });
+    this.win.on('restore', () => {
+      this.attention.acknowledgePanes();
+      this.applyThrottling();
+    });
+    this.win.on('hide', () => this.applyThrottling());
+    this.win.on('minimize', () => this.applyThrottling());
     // The debounce means a window that's never moved would otherwise never record its bounds,
     // and a quit inside the debounce window would drop the last change.
     this.win.on('close', (event: Electron.Event) => {
@@ -354,6 +365,14 @@ export class AppWindow {
       services: () => loadConfig().services,
       contents: (serviceId) => this.contentsForService(serviceId),
       changed: () => this.sync(),
+    });
+
+    this.conversations = new ConversationBridge({
+      services: () => loadConfig().services,
+      contents: (serviceId) => this.contentsForService(serviceId),
+      focus: (serviceId) => void this.dispatch({ type: 'focus-service', serviceId }),
+      changed: () => this.sync(),
+      log: (message) => console.log(`[conversations] ${message}`),
     });
 
     this.configSync = new ConfigSync({
@@ -403,6 +422,7 @@ export class AppWindow {
       this.meetings.notePopup(serviceId, contents);
     });
     this.meetings.start();
+    this.conversations.start();
     onDownloadsChanged(() => {
       this.showDownloadProgress();
       this.sync();
@@ -657,6 +677,7 @@ export class AppWindow {
       unreadEvidence: this.attention.evidenceSnapshot(),
       iconVersions: iconVersions(),
       meetings: this.meetings.snapshot(),
+      conversations: this.conversations.snapshot(),
       // Only while it means something: with one pane, maximised and not are the same picture.
       maximisedPaneId: this.layout.panes.length > 1 ? this.layout.maximisedPaneId : null,
       layoutShape: this.layout.shape,
@@ -798,8 +819,8 @@ export class AppWindow {
   }
 
   /**
-   * The blocked page's Allow button. Adds the host main last refused for this service, then
-   * reloads it so the interrupted sign-in step can be retried.
+   * The blocked page's Allow button. Adds the host main last refused for this service, then carries
+   * on to where it was going — the sign-in step that was stopped — or, failing that, reloads it.
    *
    * Additive via `extraAllowedHosts`, never by rewriting `allowedHosts` — see the field's comment:
    * a merged list written back would pin the instance to today's catalog forever.
@@ -817,10 +838,25 @@ export class AppWindow {
       svc.extraAllowedHosts = [...extra, host];
     });
     console.log(`[nav] ${serviceId}: allowed ${host}`);
+    const url = urlBlockedFor(serviceId);
     clearBlockedHost(serviceId);
-    // The guards re-read config per navigation, so no view rebuild is needed — the reload alone
-    // is enough for the newly allowed host to be accepted.
-    this.retryService(serviceId);
+    // The guards re-read config per navigation, so no view rebuild is needed. On to the step that
+    // was stopped, when it's on the host just allowed: from the front page it was the service's
+    // sign-in button again, and a second trip through the redirect it had already made.
+    const wc = this.contentsForService(serviceId);
+    const onAllowedHost = (() => {
+      try {
+        return url !== null && new URL(url).hostname === host;
+      } catch {
+        return false;
+      }
+    })();
+    if (wc && url && onAllowedHost) {
+      this.services.get(serviceId)!.failures = 0;
+      void wc.loadURL(url);
+    } else {
+      this.retryService(serviceId);
+    }
     this.sync();
   }
 
@@ -1263,6 +1299,7 @@ export class AppWindow {
     for (const [serviceId, runtime] of this.services.all()) {
       if (!visible.has(serviceId)) this.win.contentView.removeChildView(runtime.view);
     }
+    this.applyThrottling();
 
     // Looking at a pane is what marks it read — but only if anyone *can* look. Relayout runs on the
     // hibernation sweep every 30s whatever the window is doing, so with the window closed to the
@@ -1483,6 +1520,7 @@ export class AppWindow {
       paneRect: (id) => this.paneRect(id),
       contentsForService: (id) => this.contentsForService(id),
       meetingControl: (id, control, want) => this.meetings.control(id, control, want),
+      openConversation: (id, conversationId) => this.conversations.open(id, conversationId),
       busyReason: (id) => this.busyReason(id),
       confirm: (prompt) => this.confirm(prompt),
       activeWorkspace: (id) => this.activeWorkspace(id),
@@ -1803,6 +1841,7 @@ export class AppWindow {
     // whose views are gone.
     this.endpoints.dispose();
     this.meetings.stop();
+    this.conversations.stop();
     if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
     this.backgroundTimer = null;
     if (this.flashTimer) clearTimeout(this.flashTimer);
@@ -1957,6 +1996,24 @@ export class AppWindow {
   /** Whether the window is somewhere a person could be looking at it. */
   private windowOnScreen(): boolean {
     return !this.win.isDestroyed() && this.win.isVisible() && !this.win.isMinimized();
+  }
+
+  /**
+   * Only what you can see runs at full speed. Every other page is throttled: Chromium slows its
+   * timers and it reads `document.hidden`, which most web apps take as the cue to stop animating
+   * and polling. With throttling off everywhere, YouTube, Spotify and the rest ran flat out
+   * behind a pane or with the window in the tray. A pane in a hidden or minimised window counts
+   * as unseen; a call or sound stays unthrottled wherever it is, since throttling could stutter it.
+   * Runs on every relayout, so the 30s sweep picks up a service that started playing off screen.
+   */
+  private applyThrottling(): void {
+    const drawn = this.windowOnScreen() ? this.layout.drawnServiceIds() : new Set<string>();
+    for (const [serviceId, runtime] of this.services.all()) {
+      const wc = runtime.view.webContents;
+      if (wc.isDestroyed()) continue;
+      const throttle = !drawn.has(serviceId) && this.busyReason(serviceId) === null;
+      if (wc.getBackgroundThrottling() !== throttle) wc.setBackgroundThrottling(throttle);
+    }
   }
 
   private clearUnread(serviceId: string): void {

@@ -2598,3 +2598,62 @@ for a bubble, and did neither. It read as a click that did nothing.
 - **Logged by name only:** `[download] Slack: report.pdf — completed`. The log is what gets pasted
   into a bug report, and a path says whose Mac it's from. There was no line at all before, so
   "did it download?" had no answer short of looking in the folder.
+
+## 119. Who's waiting: chat lists read from main, by catalog rule, for the socket only
+
+A Stream Deck's Chats screen should show the people and channels waiting on you — "Jon (2)",
+"#deal-asos" — not just Slack's total. The names and badges are DOM in each chat app's list, so
+reading them is a rule list per catalog entry (`conversations`), like unread (#90) and meetings
+(#115): one evaluator in `core/services/conversations.ts`, tested against markup shaped like each
+service's.
+
+- **Probed from main, in an isolated world (1109).** As the meeting bridge does, and for the same
+  reasons: the page's scripts can neither see the probe nor answer for it. Every five seconds, for
+  entries with rules and a running page — a sleeping service has no list to read, and says nothing.
+- **Names and counts, never messages.** The probe returns a row's name, an id, the badge's text
+  and three flags. What comes back is shape-checked and clamped: 80 rows read, 30 reported, names
+  to 120 characters.
+- **The app's order, not ours.** Each list is already most-recent-first; `order` keeps that, and a
+  client interleaves services itself. Muted conversations are left out, like a muted service's count.
+- **A list of rules, first match wins.** A redesign is met by adding a rule above the old one. A
+  rule set that matches no row is logged once, which is where a redesign shows first.
+- **Opening one is a click on its row**, after showing the service: pointer and mouse events and
+  then `click()`, as a user gesture, because chat lists listen for different ones.
+- **The socket only, never a link.** `open-conversation` is on the control allowlist and not among
+  the link verbs, and the lists are only in the socket's state. A page that can open `hangar://`
+  must not be able to read your chat list or open your chats.
+- **Slack and WhatsApp from their markup; Teams and Messenger are guesses.** Slack's sidebar has
+  carried its channel id and `--unread` class for years, and WhatsApp's list is what the unread
+  count already reads. The Teams and Messenger rules haven't met a live page yet.
+
+## 120. A sign-in step isn't a link: it asks in the pane, and Allow carries on
+
+The Decagon Slack workspace signs in with Google ("Sign in with Google IDP"). Slack's entry listed
+only `slack.com`, so the redirect to accounts.google.com was refused like any link off the
+allowlist: handed to the browser, which signed *itself* in, while the pane stayed on Slack's
+sign-in page with nothing to say why. The blocked page with its Allow button only appears in an
+empty pane, and this one wasn't empty.
+
+- **Slack lists Google, Apple and Microsoft sign-in.** Its own sign-in page offers Google and
+  Apple, and a workspace's single sign-on is often Google's or Microsoft's.
+- **Any other identity provider asks, in the pane.** No list keeps up with every company's Okta,
+  OneLogin or ADFS, so a sign-in step is told from a link by the protocols' own parameter names
+  (`isSignInRequest`): SAML's `SAMLRequest`, or its endpoint for the form-post binding; OAuth's and
+  OpenID's `client_id` with `redirect_uri` or `response_type`. Such a step to an unlisted host shows
+  "Sign in to Slack through okta.com?" instead of going to the browser, and is never routed to
+  another service, though Gmail lists accounts.google.com.
+- **Allow carries on from the step that was stopped.** It used to reload the service's front page,
+  which meant the sign-in button and the redirect again; the address is kept beside the host, and
+  loaded if it's on the host just allowed.
+- **In a pane only.** The page's buttons answer to the service's own view (`serviceIdForContents`),
+  so in a popup or a pop-out they'd do nothing; there it opens in the browser, as before.
+- **An ordinary link is unchanged:** a redirect that isn't a sign-in still opens in the browser and
+  leaves the page alone.
+- **The way back counts too.** The last step of a Google sign-in sets its cookie on the country's
+  own account domain — accounts.google.co.uk for a British account — and every service that signs
+  in through Google refused it: Gmail, Calendar, Slack, YouTube Music, Perplexity, Claude (on
+  `.com.au`). The hop went to Chrome; the sign-in had already worked, so the pane showed the
+  service only once it was reloaded. A list with accounts.google.com now covers Google's country
+  account domains, by one anchored pattern rather than some 190 entries. `gds.google.com` (Google's
+  "keep your account secure" step) and Microsoft's `passwordreset.microsoftonline.com` joined the
+  sign-in lists, from the same search of the log for every sign-in hop refused.

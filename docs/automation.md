@@ -108,6 +108,10 @@ whenever any of it changes:
 - `meeting` appears on a service in a call — Teams, a Slack huddle, Meet — as
   `{"inCall":true,"controls":{"mute":true,"video":false,…}}`: `true` means muted, camera on, sharing,
   hand raised. A control that's there but unreadable is `null`; one that isn't there is absent.
+- `conversations` appears on a chat service with something unread — Slack, WhatsApp, and (rules
+  unconfirmed) Teams and Messenger — as `[{"id":"C123","name":"deal-asos","unread":2,"mention":false,"order":0}]`:
+  the app's own list order (`0` at the top), muted ones left out, at most 30. `mention` is a
+  mention or a direct message. `id` is what `open-conversation` takes.
 - `icon` names the logo in the bundle, `Hangar.app/Contents/Resources/assets/icons/<icon>.svg`. A
   service without one may have a captured favicon at `icons/<id>.*` in the same folder as the socket.
 
@@ -130,6 +134,7 @@ A client sends commands, one per line:
 | `reload-service`, `sleep-service` | `serviceId` |
 | `open-palette`, `open-activity`, `show-window` | — |
 | `meeting-control` | `serviceId`, `control` (`mute`, `video`, `share`, `hand`, `leave`), `want` (`true`/`false`, or `null` to just press) |
+| `open-conversation` | `serviceId`, `conversationId` (an `id` from `conversations`) |
 
 Anything else gets `{"type":"error","error":…}` back, and the reason is in the log.
 
@@ -146,7 +151,7 @@ while the last one is still running is dropped: a double-tapped key toggles once
   it missed. With over 1 MB waiting for it, it's dropped.
 
 Commands that ask to see something bring the window forward, building one if there is none:
-the focus and workspace ones, the palette, activity and `show-window`. Do Not Disturb, mutes and
+the focus and workspace ones, the palette, activity, `open-conversation` and `show-window`. Do Not Disturb, mutes and
 marking read never do, exactly as with links.
 
 To try it:
@@ -167,10 +172,11 @@ the socket can do more than a link. Beyond moving around what's on screen, throu
 `meeting-control` it can:
 - unmute you, or turn your camera on;
 - end a call;
-- start a screen share, as far as the screen picker, which needs you to choose.
+- start a screen share, as far as the screen picker, which needs you to choose;
+- see who's waiting on you in your chats (names and counts, not messages), and open one.
 
-That's why it's rate-limited, and why `meeting-control` is on the socket and is not a link: a page
-can open `hangar://`, and must not be able to do any of the above.
+That's why it's rate-limited, and why `meeting-control` and `open-conversation` are on the socket
+and are not links: a page can open `hangar://`, and must not be able to do any of the above.
 
 Removing a service, signing out, importing a config, preferences and custom scripts are not on
 its list. Decisions #114 and #115 have the reasoning.
