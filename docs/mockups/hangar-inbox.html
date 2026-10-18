@@ -1,0 +1,153 @@
+<div id="hangar-inbox-review" class="viz-carousel" aria-label="Hangar inbox design alternatives">
+  <section data-variant="Grouped inbox" aria-label="Grouped inbox design">
+    <div class="hg-stage" data-layout="grouped"></div>
+  </section>
+  <section data-variant="App columns" aria-label="App columns design" hidden>
+    <div class="hg-stage" data-layout="columns"></div>
+  </section>
+</div>
+<style>
+#hangar-inbox-review { color-scheme: light dark; }
+#hangar-inbox-review .hg-stage {
+  --hg-bg: light-dark(#f5f5f7,#202124); --hg-panel: light-dark(#fff,#292a2d);
+  --hg-text: light-dark(#27282d,#ededf0); --hg-sub: light-dark(#686b75,#b6b9c3);
+  --hg-line: light-dark(#dddfe5,#41434b); --hg-selected: light-dark(#e9edfa,#353f5d);
+  --hg-accent: light-dark(#3659a0,#a7beff); --hg-button: light-dark(#303f61,#cad8fc);
+  --hg-button-text: light-dark(#fff,#202b45);
+  font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size: 14px; line-height: 1.5; color: var(--hg-text); background:var(--hg-bg);
+  border:1px solid var(--hg-line); border-radius:12px; overflow:hidden; min-height:680px;
+}
+#hangar-inbox-review * { box-sizing:border-box; }
+#hangar-inbox-review .hg-titlebar {display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--hg-line);min-height:50px;}
+#hangar-inbox-review .hg-traffic {display:flex;gap:6px;}
+#hangar-inbox-review .hg-traffic span {width:10px;height:10px;border-radius:50%;background:var(--hg-line);}
+#hangar-inbox-review .hg-small {font-size:12px;color:var(--hg-sub);}
+#hangar-inbox-review .hg-titlebar .hg-small {margin-left:auto;margin-right:80px;}
+#hangar-inbox-review .hg-body {display:grid;grid-template-columns:62px minmax(0,1fr);min-height:628px;}
+#hangar-inbox-review .hg-rail {padding:14px 8px;border-right:1px solid var(--hg-line);display:flex;flex-direction:column;align-items:center;gap:12px;}
+#hangar-inbox-review button,#hangar-inbox-review input,#hangar-inbox-review select {font:inherit;color:inherit;}
+#hangar-inbox-review button:focus-visible,#hangar-inbox-review input:focus-visible,#hangar-inbox-review select:focus-visible {outline:2px solid var(--hg-accent);outline-offset:2px;}
+#hangar-inbox-review .hg-app {width:38px;min-height:38px;border:0;border-radius:9px;background:var(--hg-panel);display:grid;place-items:center;color:var(--hg-sub);font-weight:500;}
+#hangar-inbox-review .hg-app[aria-pressed="true"] {background:var(--hg-button);color:var(--hg-button-text);}
+#hangar-inbox-review .hg-main {min-width:0;}
+#hangar-inbox-review .hg-toolbar {display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:18px 20px 10px;}
+#hangar-inbox-review h2 {font-size:19px;font-weight:500;margin:0 auto 0 0;}
+#hangar-inbox-review h3 {font-size:15px;font-weight:500;margin:0;}
+#hangar-inbox-review .hg-button,#hangar-inbox-review select {background:var(--hg-panel);border:1px solid var(--hg-line);border-radius:7px;padding:6px 10px;min-height:32px;}
+#hangar-inbox-review .hg-button[aria-pressed="true"] {background:var(--hg-selected);border-color:var(--hg-accent);}
+#hangar-inbox-review .hg-primary {background:var(--hg-button);color:var(--hg-button-text);border-color:transparent;}
+#hangar-inbox-review .hg-search {padding:0 20px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+#hangar-inbox-review input {min-width:100px;flex:1;background:var(--hg-panel);border:1px solid var(--hg-line);padding:9px 12px;border-radius:7px;}
+#hangar-inbox-review .hg-coverage {padding:0 20px 14px;font-size:12px;color:var(--hg-sub);}
+#hangar-inbox-review .hg-content {display:grid;grid-template-columns:minmax(240px,42%) minmax(0,1fr);border-top:1px solid var(--hg-line);min-height:470px;}
+#hangar-inbox-review .hg-list {padding:12px;border-right:1px solid var(--hg-line);min-width:0;}
+#hangar-inbox-review .hg-section-title {display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--hg-sub);padding:10px 8px 5px;font-weight:500;}
+#hangar-inbox-review .hg-row {width:100%;display:block;text-align:left;background:transparent;border:0;border-radius:7px;padding:10px;margin:2px 0;}
+#hangar-inbox-review .hg-row:hover {background:var(--hg-panel);}
+#hangar-inbox-review .hg-row[aria-pressed="true"] {background:var(--hg-selected);}
+#hangar-inbox-review .hg-row-top {display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-weight:500;}
+#hangar-inbox-review .hg-row-preview {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;margin-top:3px;}
+#hangar-inbox-review .hg-row-meta {display:flex;gap:8px;align-items:center;margin-top:4px;font-size:11px;color:var(--hg-sub);}
+#hangar-inbox-review .hg-dot {width:6px;height:6px;border-radius:50%;background:var(--hg-accent);display:inline-block;flex:none;}
+#hangar-inbox-review .hg-detail {padding:20px;background:var(--hg-panel);min-width:0;}
+#hangar-inbox-review .hg-detail-head {display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:20px;}
+#hangar-inbox-review .hg-context {display:inline-block;padding:4px 8px;border-radius:5px;background:var(--hg-bg);font-size:12px;margin:8px 0 18px;}
+#hangar-inbox-review .hg-message {padding:14px 0;border-top:1px solid var(--hg-line);}
+#hangar-inbox-review p {margin:7px 0 12px;}
+#hangar-inbox-review .hg-actions {display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 12px;}
+#hangar-inbox-review .hg-note {font-size:12px;color:var(--hg-sub);margin-top:14px;}
+#hangar-inbox-review .hg-ai-question {background:var(--hg-bg);padding:12px;border-radius:8px;margin-bottom:15px;}
+#hangar-inbox-review .hg-ai-status {display:flex;align-items:center;gap:6px;font-size:12px;color:var(--hg-sub);margin:12px 0;}
+#hangar-inbox-review .hg-citation {font-size:12px;background:var(--hg-selected);color:var(--hg-accent);border:0;border-radius:5px;padding:3px 7px;margin:2px;}
+#hangar-inbox-review .hg-form {display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
+#hangar-inbox-review .hg-empty {padding:25px 10px;color:var(--hg-sub);}
+#hangar-inbox-review .hg-stage[data-layout="columns"] .hg-content {display:block;}
+#hangar-inbox-review .hg-stage[data-layout="columns"] .hg-list {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-right:0;gap:10px;}
+#hangar-inbox-review .hg-stage[data-layout="columns"] .hg-detail {border-top:1px solid var(--hg-line);}
+#hangar-inbox-review .hg-stage[data-layout="columns"] {min-height:680px;}
+#hangar-inbox-review .hg-compact .hg-row {padding:6px 10px;}
+#hangar-inbox-review .hg-compact .hg-row-preview {display:none;}
+@media(max-width:700px) {
+ #hangar-inbox-review .hg-content {grid-template-columns:1fr;}
+ #hangar-inbox-review .hg-list {border-right:0;}
+ #hangar-inbox-review .hg-detail {border-top:1px solid var(--hg-line);}
+ #hangar-inbox-review .hg-body {grid-template-columns:48px minmax(0,1fr);}
+ #hangar-inbox-review .hg-rail {padding:12px 4px;}
+ #hangar-inbox-review .hg-toolbar,#hangar-inbox-review .hg-detail {padding:14px;}
+ #hangar-inbox-review .hg-search {padding:0 14px 12px;}
+ #hangar-inbox-review .hg-stage[data-layout="columns"] .hg-list {grid-template-columns:1fr;}
+ #hangar-inbox-review .hg-titlebar .hg-small {margin-right:0;}
+}
+@media(pointer:coarse) {#hangar-inbox-review button,#hangar-inbox-review select {min-height:44px;} #hangar-inbox-review input {font-size:16px;}}
+</style>
+<script>
+(() => {
+ const root = document.getElementById('hangar-inbox-review');
+ const sample = [
+  {id:'dm', category:'Direct messages', app:'Slack', account:'Work', who:'Asha Patel', title:'Feature rollout', preview:'Can we confirm the rollout owner?', time:'4m', unread:true, body:'Can we confirm the owner for the feature rollout? The pilot is ready, but we still need the accessibility review before opening it to everyone.'},
+  {id:'mention', category:'Mentions', app:'Slack', account:'Work', who:'#feature-rollout', title:'Launch gate', preview:'@you The review is the last open item.', time:'12m', unread:true, body:'The accessibility review is the last open item. The pilot is approved. Please keep the wider rollout date provisional until the review is signed off.'},
+  {id:'email', category:'Email', app:'Gmail', account:'Work', who:'Maya Chen', title:'Feature pilot feedback', preview:'The pilot group is ready for the next step.', time:'27m', unread:true, body:'The pilot group is ready for the next step. Feedback on the feature is positive. Asha owns the rollout checklist; Maya will coordinate the customer update once the accessibility review is complete.'},
+  {id:'notes', category:'Email', app:'Gmail', account:'Work', who:'Product team', title:'Research notes', preview:'Three customers asked for a saved view.', time:'1h', unread:false, body:'Three customers asked for a saved view so they can return to the same search. We have added this to the follow-up backlog, outside the initial feature rollout.'},
+  {id:'channel', category:'Channel activity', app:'Slack', account:'Work', who:'#product', title:'Weekly update', preview:'The new onboarding checklist is ready.', time:'2h', unread:true, body:'The new onboarding checklist is ready for review. Please add comments in the original thread.'},
+  {id:'personal', category:'Direct messages', app:'Messenger', account:'Personal', who:'Mina', title:'Unread conversation', preview:'Message preview unavailable', time:'', unread:true, limited:true, body:'Hangar can see an unread conversation in the loaded app. Message history is not available through this connection.'}
+ ];
+ const escape = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ root.querySelectorAll('.hg-stage').forEach((stage) => {
+  const state = {app:'All', scope:'Work', unread:false, query:'', selected:'dm', ai:false, answered:false, compact:false};
+  stage.innerHTML = `
+   <header class="hg-titlebar"><span class="hg-traffic" aria-hidden="true"><span></span><span></span><span></span></span><span>Hangar</span><span class="hg-small">Design preview · sample data</span></header>
+   <div class="hg-body"><nav class="hg-rail" aria-label="Connected apps">
+    <button class="hg-app" data-app="All" aria-label="All apps" aria-pressed="true"><i data-lucide="inbox" aria-hidden="true"></i></button>
+    <button class="hg-app" data-app="Slack" aria-label="Slack" aria-pressed="false">Sl</button>
+    <button class="hg-app" data-app="Gmail" aria-label="Gmail" aria-pressed="false">G</button>
+    <button class="hg-app" data-app="Messenger" aria-label="Messenger" aria-pressed="false">Me</button>
+   </nav><main class="hg-main">
+    <div class="hg-toolbar"><h2>Inbox</h2><select aria-label="Account scope"><option>Work</option><option>All accounts</option></select><button class="hg-button hg-ask">Ask AI</button></div>
+    <div class="hg-search"><input type="search" aria-label="Filter conversations" placeholder="Find a person, topic or conversation"><button class="hg-button hg-unread" aria-pressed="false">Unread</button></div>
+    <div class="hg-coverage">Slack + Gmail connected · Messenger has limited previews</div>
+    <div class="hg-content"><div class="hg-list" aria-label="Conversations"></div><aside class="hg-detail" aria-label="Selected conversation"></aside></div>
+   </main></div>`;
+  const list = stage.querySelector('.hg-list');
+  const detail = stage.querySelector('.hg-detail');
+  function filtered() {return sample.filter(m => (state.scope==='All accounts'||m.account==='Work')&&(state.app==='All'||m.app===state.app)&&(!state.unread||m.unread)&&(`${m.who} ${m.title} ${m.preview}`.toLowerCase().includes(state.query.toLowerCase())));}
+  function drawList() {
+   stage.classList.toggle('hg-compact',state.compact);
+   const items=filtered();
+   const groups=stage.dataset.layout==='columns'?['Slack','Gmail','Messenger']:['Direct messages','Mentions','Email','Channel activity'];
+   list.innerHTML=groups.map(group=>{
+    const rows=items.filter(m=>(stage.dataset.layout==='columns'?m.app:m.category)===group);
+    if(!rows.length&&stage.dataset.layout!=='columns')return '';
+    return `<section><div class="hg-section-title"><span>${group}</span><span>${rows.length}</span></div>${rows.length?rows.map(m=>`<button class="hg-row" data-message="${m.id}" aria-pressed="${m.id===state.selected}"><span class="hg-row-top"><span>${escape(m.who)}</span><span class="hg-small">${m.time}</span></span><div class="hg-row-preview">${escape(m.preview)}</div><div class="hg-row-meta">${m.unread?'<span class="hg-dot" aria-label="Unread"></span>':''}${m.app} · ${m.account}${m.limited?' · Limited preview':''}</div></button>`).join(''):'<div class="hg-empty">No matching conversations</div>'}</section>`;
+   }).join('');
+   if(!items.length&&stage.dataset.layout!=='columns')list.innerHTML='<div class="hg-empty">No matching conversations in this account scope.</div>';
+   if(!items.some(m=>m.id===state.selected)){state.selected=items[0]?.id||null;drawDetail();}
+  }
+  function drawDetail() {
+   const m=sample.find(m=>m.id===state.selected);
+   if(state.ai){
+    detail.innerHTML=`<div class="hg-detail-head"><h3>Ask across your apps</h3><button class="hg-button hg-back">Back to inbox</button></div><div class="hg-small">Codex · Work accounts · read only</div><span class="hg-context">${m&&!m.limited?'Context: '+escape(m.title):'Context: feature rollout'}</span><div class="hg-ai-question">Give me all the information about this feature.</div><div class="hg-ai-status"><i data-lucide="search" aria-hidden="true"></i>Sources: Slack + Gmail</div>${state.answered?`<div role="status" class="hg-small">Sample search complete · 3 source threads</div><h3>Feature rollout</h3><p>The pilot is approved. Asha owns the rollout checklist, and Maya will coordinate the customer update.</p><button class="hg-citation" data-source="email">Gmail · Pilot feedback</button><p>The wider rollout is waiting on an accessibility review. There is no confirmed launch date in these sources.</p><button class="hg-citation" data-source="mention">Slack · Launch gate</button><button class="hg-citation" data-source="dm">Slack · Asha</button><div class="hg-note">Coverage: Slack and Gmail in Work. Personal accounts and Messenger history were excluded.</div>`:`<p>Search the connected work accounts and bring back the decisions, owners and open questions with their sources.</p><button class="hg-button hg-primary hg-run">Preview search result</button>`}<div class="hg-note">This is an interactive design sample. No accounts or AI service are contacted.</div>`;
+   } else if(!m){detail.innerHTML='<div class="hg-empty">Select a conversation to read it here.</div>';}
+   else {
+    detail.innerHTML=`<div class="hg-detail-head"><h3>${escape(m.title)}</h3><span class="hg-small">${m.time}</span></div><span class="hg-context">${m.app} · ${m.account}${m.limited?' · Limited preview':''}</span><div class="hg-message"><strong>${escape(m.who)}</strong><p>${escape(m.body)}</p></div>${!m.limited?'<div class="hg-message"><span class="hg-small">Conversation context</span><p>Open the original thread for the complete discussion and replies.</p></div>':''}<div class="hg-actions"><button class="hg-button hg-primary hg-open">Open in ${m.app}</button>${!m.limited?'<button class="hg-button hg-context-ask">Ask about this</button>':''}</div><div class="hg-note hg-feedback" role="status">Previewing here leaves the source unread.</div>`;
+   }
+   if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+  }
+  stage.querySelector('select').addEventListener('change',e=>{state.scope=e.target.value;state.ai=false;drawList();drawDetail();});
+  stage.querySelector('input').addEventListener('input',e=>{state.query=e.target.value;drawList();});
+  stage.addEventListener('click',e=>{
+   const b=e.target.closest('button');if(!b)return;
+   if(b.dataset.app){state.app=b.dataset.app;state.ai=false;stage.querySelectorAll('[data-app]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));drawList();drawDetail();}
+   if(b.classList.contains('hg-unread')){state.unread=!state.unread;b.setAttribute('aria-pressed',String(state.unread));drawList();}
+   if(b.dataset.message){state.selected=b.dataset.message;state.ai=false;drawList();drawDetail();}
+   if(b.classList.contains('hg-ask')||b.classList.contains('hg-context-ask')){state.ai=true;state.answered=false;drawDetail();}
+   if(b.classList.contains('hg-run')){state.answered=true;drawDetail();}
+   if(b.classList.contains('hg-back')){state.ai=false;drawDetail();}
+   if(b.dataset.source){state.selected=b.dataset.source;state.scope='Work';state.app='All';state.query='';state.unread=false;state.ai=false;stage.querySelector('select').value='Work';stage.querySelector('input').value='';stage.querySelector('.hg-unread').setAttribute('aria-pressed','false');stage.querySelectorAll('[data-app]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.app==='All')));drawList();drawDetail();}
+   if(b.classList.contains('hg-open'))detail.querySelector('.hg-feedback').textContent='In Hangar this opens the original app. This sample stays here.';
+  });
+  drawList();drawDetail();
+  if(globalThis.Tweak){const tweak=new Tweak({container:stage,onChange:drawList});tweak.addToggle(state,'compact',{label:'Compact conversation rows'});}
+ });
+})();
+</script>
