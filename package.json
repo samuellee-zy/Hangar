@@ -63,7 +63,7 @@
   },
   "dependencies": {
     "@eneris/push-receiver": "^4.4.0",
-    "@ghostery/adblocker-electron": "^2.20.1"
+    "@ghostery/adblocker-electron": "^2.20.3"
   },
   "author": {
     "name": "Samuel Lee"
