@@ -4,8 +4,9 @@ import { object, string } from '@core/inbox/policy';
 import { ConnectorError, type Connection } from './contracts';
 import type { InboxConnect } from '@shared/inbox';
 import { ConnectorHttp } from './http';
+import { nativeOAuthCallbacks, SLACK_REDIRECT_URI } from './oauth-callback';
 
-const SLACK_SCOPE = 'search:read,channels:history,groups:history,im:history,mpim:history';
+export const SLACK_SCOPE = 'search:read,channels:history,groups:history,im:history,mpim:history,im:read,users:read';
 export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 
 export function pkce() {
@@ -13,9 +14,9 @@ export function pkce() {
   return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url'), state: randomBytes(32).toString('base64url') };
 }
 
-/** A single-use loopback callback. Wrong state/path requests do not consume the pending login. */
+/** State-checked native Slack callback; Google Desktop uses its loopback callback. */
 export async function authorize(
-  kind: Connection['kind'], input: InboxConnect, signal: AbortSignal,
+  kind: Connection['kind'], input: InboxConnect & { clientId: string }, signal: AbortSignal,
   open: (url: string) => Promise<void>, http: ConnectorHttp,
 ): Promise<Connection> {
   const { verifier, challenge, state } = pkce();
@@ -25,7 +26,7 @@ export async function authorize(
   const code = new Promise<string>((resolve, fail) => { accept = resolve; reject = fail; });
   // Attach immediately: cancellation/browser errors can arrive before we await this promise.
   void code.catch(() => {});
-  const server = createServer((request, response) => {
+  const server = kind === 'gmail' ? createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     response.setHeader('Content-Type', 'text/plain; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
@@ -42,19 +43,25 @@ export async function authorize(
       response.end('Sign-in received. You can return to Hangar.');
       accept(value);
     }
-  });
+  }) : null;
+  const removeNativeCallback = kind === 'slack' ? nativeOAuthCallbacks.listen(state, (value) => {
+    if (value) accept(value);
+    else reject(new ConnectorError('Sign-in was cancelled.'));
+  }) : () => {};
   const cancel = () => reject(new ConnectorError('Sign-in was cancelled.'));
   const timer = setTimeout(() => reject(new ConnectorError('Sign-in timed out. Please try again.')), 180_000);
   signal.addEventListener('abort', cancel, { once: true });
   try {
-    // Slack requires a registered redirect. Google Desktop clients support a random loopback port.
-    await new Promise<void>((resolve, fail) => {
-      server.once('error', fail);
-      server.listen(kind === 'slack' ? 53682 : 0, '127.0.0.1', resolve);
-    });
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new ConnectorError('Unable to start the sign-in callback.');
-    const redirect = `http://${kind === 'slack' ? 'localhost' : '127.0.0.1'}:${address.port}/oauth/callback`;
+    let redirect = SLACK_REDIRECT_URI;
+    if (server) {
+      await new Promise<void>((resolve, fail) => {
+        server.once('error', fail);
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new ConnectorError('Unable to start the sign-in callback.');
+      redirect = `http://127.0.0.1:${address.port}/oauth/callback`;
+    }
     const params = new URLSearchParams({ client_id: input.clientId, response_type: 'code', redirect_uri: redirect, state,
       code_challenge: challenge, code_challenge_method: 'S256' });
     if (kind === 'slack') params.set('user_scope', SLACK_SCOPE);
@@ -74,7 +81,8 @@ export async function authorize(
     if (!accessToken) throw new ConnectorError('The provider did not grant a user connection.');
     const connection: Connection = { id: randomUUID(), kind, serviceId: input.serviceId, identity: '', remoteId: '', userId: '',
       clientId: input.clientId, ...(kind === 'gmail' && input.clientSecret ? { clientSecret: input.clientSecret } : {}),
-      accessToken, refreshToken: string(tokens.refresh_token, 8192), expiresAt: expiry(tokens.expires_in) };
+      accessToken, refreshToken: string(tokens.refresh_token, 8192), expiresAt: expiry(tokens.expires_in),
+      scopes: string(tokens.scope, 4000).split(/[ ,]+/).filter(Boolean) };
     const headers = { Authorization: `Bearer ${accessToken}` };
     if (kind === 'gmail') {
       const profile = await http.json('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers, signal }, connection.id);
@@ -93,8 +101,9 @@ export async function authorize(
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', cancel);
-    server.closeAllConnections();
-    server.close();
+    removeNativeCallback();
+    server?.closeAllConnections();
+    server?.close();
   }
 }
 const tokenUrl = (kind: Connection['kind']) => kind === 'slack' ? 'https://slack.com/api/oauth.v2.access' : 'https://oauth2.googleapis.com/token';

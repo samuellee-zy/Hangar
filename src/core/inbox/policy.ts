@@ -18,12 +18,12 @@ export function isRef(v: unknown): v is SourceRef {
   return typeof r.connectionId === 'string' && r.connectionId.length > 0 && r.connectionId.length < 200
     && typeof r.threadId === 'string' && r.threadId.length > 0 && r.threadId.length < 500;
 }
-export function isQuery(v: unknown): v is { allWorkspaces: boolean } {
-  return typeof object(v).allWorkspaces === 'boolean';
+export function isQuery(v: unknown): v is { allWorkspaces: boolean; messagingOnly?: boolean } {
+  return typeof object(v).allWorkspaces === 'boolean' && (object(v).messagingOnly === undefined || typeof object(v).messagingOnly === 'boolean');
 }
 export function validConnect(v: unknown): boolean {
   const r = object(v);
   return typeof r.serviceId === 'string' && r.serviceId.length < 200
-    && typeof r.clientId === 'string' && /^[a-zA-Z0-9._-]{3,250}$/.test(r.clientId)
+    && (r.clientId === undefined || (typeof r.clientId === 'string' && /^[a-zA-Z0-9._-]{3,250}$/.test(r.clientId)))
     && (r.clientSecret === undefined || (typeof r.clientSecret === 'string' && r.clientSecret.length < 500));
 }

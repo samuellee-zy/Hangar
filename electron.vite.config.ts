@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
+import registrations from './config/connectors/registrations.json';
 
 /**
  * Path aliases make the module boundary visible at every import site: `@core/...` is pure domain
@@ -22,6 +23,8 @@ const alias = {
 export default defineConfig({
   main: {
     resolve: { alias },
+    // Registered once by Hangar's publisher. This is public identity, never an OAuth secret.
+    define: { __HANGAR_SLACK_CLIENT_ID__: JSON.stringify(process.env['HANGAR_SLACK_CLIENT_ID'] ?? registrations.slack.clientId) },
     build: { lib: { entry: resolve('src/main/boot/index.ts') } },
   },
   preload: {

@@ -60,7 +60,8 @@ export class ConversationBridge {
   constructor(private readonly deps: Deps) {}
 
   start(): void {
-    this.timer ??= setInterval(() => void this.tick(), EVERY_MS);
+    if (this.timer) return;
+    this.timer = setInterval(() => void this.tick(), EVERY_MS);
     void this.tick();
   }
 
@@ -83,7 +84,7 @@ export class ConversationBridge {
     // A user gesture, as a click is: some lists only open a chat for one.
     const opened = await withTimeout(wc.executeJavaScriptInIsolatedWorld(WORLD, [{ code: openConversationScript(rules, conversationId) }], true), PROBE_TIMEOUT_MS);
     // Opening one reads it: look again soon rather than in five seconds.
-    setTimeout(() => void this.tick(), 800);
+    setTimeout(() => { if (this.timer) void this.tick(); }, 800);
     return opened === true;
   }
 
@@ -93,12 +94,13 @@ export class ConversationBridge {
   }
 
   private async tick(): Promise<void> {
-    if (this.busy) return;
+    if (this.busy || !this.timer) return;
     this.busy = true;
     try {
       let changed = false;
       const seen = new Set<string>();
       for (const svc of this.deps.services()) {
+        if (!this.timer) return;
         const rules = catalogById(svc.catalogId)?.conversations;
         if (!rules?.length) continue;
         seen.add(svc.id);
@@ -111,7 +113,7 @@ export class ConversationBridge {
           changed = true;
         }
       }
-      if (changed) this.deps.changed();
+      if (changed && this.timer) this.deps.changed();
     } finally {
       this.busy = false;
     }

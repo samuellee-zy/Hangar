@@ -56,6 +56,10 @@ export function Behaviour({
                : 'Minutes idle before a background service is unloaded. 0 = never. Never one in a call or playing sound'}
              path="behaviour.hibernateAfterMinutes" value={behaviour.hibernateAfterMinutes}
              min={0} max={240} step={5} disabled={behaviour.keepAllRunning} />
+        <Num name="Cached background services"
+             note="Extra inactive apps kept ready for switching. 0 = unlimited. Keep running, open panes and busy apps are protected"
+             path="behaviour.maxCachedServices" value={behaviour.maxCachedServices}
+             min={0} max={100} step={1} disabled={behaviour.keepAllRunning || behaviour.hibernateAfterMinutes <= 0} />
         <Toggle name="Launch at login"
                 note="Starts Hangar when you log in. Takes effect from your next login"
                 path="behaviour.launchAtLogin" value={behaviour.launchAtLogin} />

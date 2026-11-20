@@ -15,7 +15,7 @@ import {
   orphanPageHtml,
   shouldRecoverFromCrash,
 } from '@core/runtime/recovery';
-import { attachNavigationGuards, partitionFor, sessionFor } from '@main/platform/session';
+import { attachNavigationGuards, isAllowedHost, partitionFor, sessionFor } from '@main/platform/session';
 import { attachShortcuts, type CommandSink } from '@main/window/shortcuts';
 import type { KeyContext } from '@core/keyboard/keymap';
 import type { NavState } from '@core/workspace/pane-bars';
@@ -42,6 +42,8 @@ export interface ServiceRuntime {
   networkWait?: ReturnType<typeof setInterval>;
   /** Epoch ms of the last time this service was on screen. Drives hibernation. */
   lastActiveAt: number;
+  /** Set by long suspend; only refreshed when eligible or next opened. */
+  stale?: boolean;
 }
 
 const preloadPath = () => path.join(__dirname, '../preload/service.cjs');
@@ -61,6 +63,8 @@ export const startPageFor = (svc: ServiceInstance): string =>
 
 export class ServiceManager {
   private runtimes = new Map<string, ServiceRuntime>();
+  private resumeUrls = new Map<string, string>();
+  private paneServices = new Set<string>();
 
   constructor(
     private onChange: () => void,
@@ -106,9 +110,9 @@ export class ServiceManager {
         sandbox: true,
         // Services are third-party web apps; keep them out of our process.
         nodeIntegration: false,
-        // Off so a backgrounded pane in a split view keeps rendering and delivering. The window
-        // turns it back on for every page that isn't on screen — see `applyThrottling`.
-        backgroundThrottling: false,
+        // Visible native views run normally; hidden pages can slow their timers from creation.
+        // Only calls/audio opt out temporarily — see `applyThrottling`.
+        backgroundThrottling: true,
         // Required for dictionarySuggestions to be populated in the context-menu event. Setting
         // spellchecker languages alone (session.ts) does nothing without it.
         spellcheck: true,
@@ -122,6 +126,7 @@ export class ServiceManager {
     // view white — a full-pane white flash on every wake, including in dark mode. The tile colour,
     // not the window's: in the window's own colour a loading pane was indistinguishable from the
     // gutter around it, a hole rather than a card on its way.
+    view.setVisible(false);
     view.setBackgroundColor(paneBackground());
     // This service's own user agent, on its own page. It was set on the session — shared by every
     // service on the same account, and only ever by the first of them to configure it — so giving
@@ -139,6 +144,13 @@ export class ServiceManager {
       lastActiveAt: Date.now(),
     };
     this.runtimes.set(svc.id, runtime);
+    view.webContents.once('destroyed', () => {
+      if (this.runtimes.get(svc.id) === runtime) this.runtimes.delete(svc.id);
+      if (runtime.networkWait) clearInterval(runtime.networkWait);
+      this.onChange();
+    });
+    view.webContents.on('media-started-playing', () => this.onChange());
+    view.webContents.on('media-paused', () => this.onChange());
 
     attachNavigationGuards(view.webContents, svc, partition, { pane: true });
     // Bound here, once per view, rather than on the focus path — see attachShortcuts.
@@ -203,7 +215,7 @@ export class ServiceManager {
       if (action.waitForNetwork) this.reloadWhenOnline(svc, runtime, url || resolveUrl(svc));
       if (action.retryAfterMs !== null) {
         setTimeout(() => {
-          if (!view.webContents.isDestroyed()) view.webContents.reload();
+          if (view.webContents && !view.webContents.isDestroyed()) view.webContents.reload();
         }, action.retryAfterMs);
         return;
       }
@@ -310,7 +322,9 @@ export class ServiceManager {
       }
     });
 
-    void view.webContents.loadURL(startPageFor(svc));
+    const resume = this.resumeUrls.get(svc.id);
+    // Navigation failures are handled by did-fail-load, including a queued load being stopped.
+    void view.webContents.loadURL(resume && isAllowedHost(svc, resume) ? resume : startPageFor(svc)).catch(() => {});
 
     return runtime;
   }
@@ -325,7 +339,7 @@ export class ServiceManager {
     if (runtime.networkWait) return;
     runtime.networkWait = setInterval(() => {
       const wc = runtime.view.webContents;
-      if (wc.isDestroyed()) {
+      if (!wc || wc.isDestroyed()) {
         clearInterval(runtime.networkWait);
         runtime.networkWait = undefined;
         return;
@@ -344,6 +358,83 @@ export class ServiceManager {
   markActive(serviceId: string): void {
     const runtime = this.runtimes.get(serviceId);
     if (runtime) runtime.lastActiveAt = Date.now();
+  }
+
+  /** The timestamp belongs to leaving the layout, not to whichever resize happened last. */
+  updatePanes(ids: Set<string>): void {
+    for (const id of this.paneServices) if (!ids.has(id)) this.markActive(id);
+    this.paneServices = new Set(ids);
+  }
+
+  dispose(): void {
+    for (const id of [...this.runtimes.keys()]) this.destroy(id);
+    this.resumeUrls.clear(); this.paneServices.clear();
+  }
+
+  async safeToDiscard(serviceId: string): Promise<boolean> {
+    const runtime = this.get(serviceId);
+    const wc = runtime?.view.webContents;
+    if (!wc || wc.isDestroyed() || runtime.loading || wc.isCurrentlyAudible()) return false;
+    // A navigation stopped before its first document committed has no page state to discard.
+    if (!wc.getURL() || wc.getURL() === 'about:blank') return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result: unknown = await Promise.race([
+        wc.executeJavaScriptInIsolatedWorld(999, [{ code: 'globalThis.__hangarReadActivity?.()' }]),
+        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), 1_000); }),
+      ]);
+      return this.get(serviceId) === runtime && !!result && typeof result === 'object'
+        && 'dirty' in result && result.dirty === false && 'capture' in result && result.capture === false;
+    } catch { return false; }
+    finally { clearTimeout(timer); }
+  }
+
+  /** Don't forget the runtime or detach it until Chromium has accepted beforeunload. */
+  async hibernate(serviceId: string, stillEligible: () => boolean): Promise<boolean> {
+    const runtime = this.get(serviceId);
+    if (!runtime || !await this.safeToDiscard(serviceId) || !stillEligible()) return false;
+    const wc = runtime.view.webContents;
+    if (!wc || wc.isDestroyed()) return false;
+    const url = wc.getURL();
+    const closed = await new Promise<boolean>((resolve) => {
+      const finish = (closed: boolean) => {
+        clearTimeout(timer); wc.removeListener('destroyed', destroyed); wc.removeListener('will-prevent-unload', veto);
+        resolve(closed);
+      };
+      const destroyed = () => finish(true), veto = () => finish(false);
+      const timer = setTimeout(() => finish(false), 1_000);
+      wc.once('destroyed', destroyed); wc.once('will-prevent-unload', veto);
+      wc.close({ waitForBeforeUnload: true });
+    });
+    if (closed) this.resumeUrls.set(serviceId, url);
+    return closed;
+  }
+
+  /** A queued navigation releases its slot only after completion, failure or an explicit stop. */
+  waitForLoad(serviceId: string, signal: AbortSignal, reload = false): Promise<void> {
+    const runtime = this.get(serviceId);
+    const wc = runtime?.view.webContents;
+    if (!wc || wc.isDestroyed()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = () => {
+        wc.removeListener('did-stop-loading', finish); wc.removeListener('destroyed', finish);
+        wc.removeListener('will-prevent-unload', finish);
+        signal.removeEventListener('abort', abort); resolve();
+      };
+      const abort = () => { if (!wc.isDestroyed()) { wc.stop(); runtime.stale = true; } finish(); };
+      wc.once('did-stop-loading', finish); wc.once('destroyed', finish); wc.once('will-prevent-unload', finish);
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) { abort(); return; }
+      if (reload) {
+        runtime.stale = false;
+        if (!wc.getURL() || wc.getURL() === 'about:blank') {
+          const service = loadConfig().services.find((svc) => svc.id === serviceId);
+          if (service) void wc.loadURL(startPageFor(service)).catch(() => {});
+          else finish();
+        } else wc.reload();
+      }
+      else if (!wc.isLoading()) finish();
+    });
   }
 
   /** Time off screen shouldn't include time the machine was asleep. See `creditSuspendedTime`. */
@@ -377,6 +468,7 @@ export class ServiceManager {
   }
 
   destroy(serviceId: string): void {
+    this.resumeUrls.delete(serviceId);
     const runtime = this.runtimes.get(serviceId);
     if (!runtime) return;
     this.runtimes.delete(serviceId);

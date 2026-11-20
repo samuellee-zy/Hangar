@@ -18,7 +18,8 @@ export class ConnectorVault {
     const value: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(this.file())));
     if (!Array.isArray(value) || !value.every((c) => c && typeof c.id === 'string' && typeof c.serviceId === 'string'
       && ['slack', 'gmail'].includes(c.kind) && typeof c.accessToken === 'string' && typeof c.refreshToken === 'string'
-      && typeof c.clientId === 'string' && typeof c.identity === 'string' && typeof c.expiresAt === 'number')) {
+      && typeof c.clientId === 'string' && typeof c.identity === 'string' && typeof c.remoteId === 'string' && typeof c.userId === 'string'
+      && typeof c.expiresAt === 'number' && (c.scopes === undefined || (Array.isArray(c.scopes) && c.scopes.every((scope: unknown) => typeof scope === 'string'))))) {
       throw new Error('Connected account credentials could not be read.');
     }
     return value as Connection[];

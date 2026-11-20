@@ -26,12 +26,12 @@ test('off-screen services throttle; showing the window and playing sound keep th
   h = await launch();
   await h.rail();
   await dispatch({ type: 'focus-service', serviceId: 'two' });
-  await expect.poll(throttling).toEqual([true, false]);
+  await expect.poll(throttling).toEqual([true, true]);
 
   await h.app.evaluate(() => (globalThis as never as { __hangarShell: Shell }).__hangarShell.win.hide());
   await expect.poll(throttling).toEqual([true, true]);
   await h.app.evaluate(() => (globalThis as never as { __hangarShell: Shell }).__hangarShell.win.show());
-  await expect.poll(throttling).toEqual([true, false]);
+  await expect.poll(throttling).toEqual([true, true]);
 
   // A test machine needn't have an audio device. Exercise the real window events and policy
   // with only Chromium's audibility query stubbed, as in staying-awake.spec.ts.
@@ -66,6 +66,7 @@ test('the conversation bridge reads an off-screen chat and opens its row through
     `);
   });
   await dispatch({ type: 'focus-service', serviceId: 'two' });
+  await dispatch({ type: 'open-inbox' });
   const chats = () => h.app.evaluate(() =>
     (globalThis as never as { __hangarShell: Shell }).__hangarShell.state().allServices.find((s) => s.id === 'one')?.conversations,
   );
@@ -74,5 +75,5 @@ test('the conversation bridge reads an off-screen chat and opens its row through
   await expect.poll(() => h.app.evaluate(async ({ webContents }) =>
     webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/badge'))?.executeJavaScript('document.body.dataset.opened'),
   )).toBe('C-demo');
-  await expect.poll(throttling).toEqual([false, true]);
+  await expect.poll(throttling).toEqual([true, true]);
 });

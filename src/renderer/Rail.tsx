@@ -520,10 +520,10 @@ export function Rail() {
           <Icon name="spark" size={18} />
           {panel && <span className="rail-label" aria-hidden="true">Ask AI</span>}
         </button>
-        <button className="rail-item rail-add" title={withChord(state, 'Unified inbox', 'inbox')} aria-label="Unified inbox"
+        <button className="rail-item rail-add" title={withChord(state, 'Unified chats', 'inbox')} aria-label="Unified chats"
           aria-current={state.inboxOpen ? 'page' : undefined} onClick={() => send({ type: 'open-inbox' })}>
-          <Icon name="inbox" size={18} />
-          {panel && <span className="rail-label" aria-hidden="true">Inbox</span>}
+          <Icon name="chat" size={18} />
+          {panel && <span className="rail-label" aria-hidden="true">Chats</span>}
         </button>
         {/* Maximised: says so, and how many panes are waiting, with the way back. Nothing did —
             the other panes simply vanished, and the menu kept offering "Maximise pane". */}

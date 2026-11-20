@@ -29,6 +29,7 @@ export class EndpointPoller {
   private lastPolledAt = new Map<string, number>();
   private inFlight = new Set<string>();
   private disposed = false;
+  private sweeping = false;
 
   constructor(
     /** Services with no live view right now, and therefore nothing better to read. */
@@ -55,29 +56,33 @@ export class EndpointPoller {
   }
 
   async sweep(now = Date.now()): Promise<void> {
-    if (this.disposed) return;
-    for (const svc of this.sleepingServices()) {
-      const rule = eligibleRule(svc);
-      if (!rule) continue;
-      if (!endpointDue(rule, this.lastPolledAt.get(svc.id), now, pollJitterMs(svc.id, rule)))
-        continue;
-      // A slow endpoint must not be asked again on the next sweep, or a service that takes two
-      // minutes to answer accumulates one outstanding request per sweep forever.
-      if (this.inFlight.has(svc.id)) continue;
+    if (this.disposed || this.sweeping) return;
+    this.sweeping = true;
+    try {
+      for (const svc of this.sleepingServices()) {
+        if (this.disposed) break;
+        const rule = eligibleRule(svc);
+        if (!rule) continue;
+        if (!endpointDue(rule, this.lastPolledAt.get(svc.id), now, pollJitterMs(svc.id, rule)))
+          continue;
+        // A slow endpoint must not be asked again on the next sweep, or a service that takes two
+        // minutes to answer accumulates one outstanding request per sweep forever.
+        if (this.inFlight.has(svc.id)) continue;
 
-      this.lastPolledAt.set(svc.id, now);
-      this.inFlight.add(svc.id);
-      try {
-        const count = unreadFromEndpoint(rule, await this.request(svc, rule));
-        // null is "no information" — signed out, rate-limited, or a response shape that changed.
-        // Reporting zero for any of those silently clears a real count.
-        if (count !== null && !this.disposed) this.report(svc.id, count);
-      } catch (err) {
-        console.error(`[endpoint] ${svc.name}:`, err instanceof Error ? err.message : err);
-      } finally {
-        this.inFlight.delete(svc.id);
+        this.lastPolledAt.set(svc.id, now);
+        this.inFlight.add(svc.id);
+        try {
+          const count = unreadFromEndpoint(rule, await this.request(svc, rule));
+          // null is "no information" — signed out, rate-limited, or a response shape that changed.
+          // Reporting zero for any of those silently clears a real count.
+          if (count !== null && !this.disposed) this.report(svc.id, count);
+        } catch (err) {
+          console.error(`[endpoint] ${svc.name}:`, err instanceof Error ? err.message : err);
+        } finally {
+          this.inFlight.delete(svc.id);
+        }
       }
-    }
+    } finally { this.sweeping = false; }
   }
 }
 

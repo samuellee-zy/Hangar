@@ -1,4 +1,4 @@
-import { isQuery, isRef, validConnect } from '@core/inbox/policy';
+import { isQuery, isRef, object, validConnect } from '@core/inbox/policy';
 import type { InboxConnect, InboxReply } from '@shared/inbox';
 import { ConnectorError } from './contracts';
 import type { ConnectorHub } from './hub';
@@ -10,6 +10,11 @@ export async function inboxRequest(hub: ConnectorHub, action: unknown, payload: 
     if (action === 'snapshot' && isQuery(payload)) value = hub.snapshot(payload);
     else if (action === 'refresh' && isQuery(payload)) await hub.refresh(payload);
     else if (action === 'read' && isRef(payload)) value = await hub.read(payload);
+    else if (action === 'readPage' && isRef(object(payload).ref) && typeof object(payload).cursor === 'string'
+      && String(object(payload).cursor).length > 0 && String(object(payload).cursor).length <= 1000) {
+      const p = object(payload);
+      value = await hub.read(p.ref as import('@shared/inbox').SourceRef, undefined, undefined, p.cursor as string);
+    }
     else if (action === 'open' && isRef(payload)) await hub.open(payload);
     else if (action === 'connect' && validConnect(payload)) await hub.connect(payload as InboxConnect);
     else if (action === 'cancelConnect') hub.cancelConnect();

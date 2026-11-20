@@ -61,6 +61,9 @@ export class MeetingBridge {
   private readonly where = new Map<string, Map<MeetingControl, WebContents>>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private busy = false;
+  private enabled = false;
+  private readonly confirmed = new Map<string, number>();
+  private readonly uncertain = new Set<string>();
   /**
    * Services with a press still running in the page. Held until the page has actually run it, not
    * until `withTimeout` gives up waiting: a click queued in a busy page still fires later, so two
@@ -70,13 +73,30 @@ export class MeetingBridge {
 
   constructor(private readonly deps: Deps) {}
 
-  start(): void {
-    this.timer ??= setInterval(() => void this.tick(), IN_CALL_MS);
+  start(): void { this.enabled = true; this.refresh(); }
+
+  /** Called when a page/popup is created or removed; no idle timer without eligible pages. */
+  refresh(): void {
+    if (!this.enabled || this.busy || this.timer) return;
+    const live = this.deps.services().some((svc) => {
+      const rules = catalogById(svc.catalogId)?.meeting;
+      return rules && this.windowsFor(svc.id, rules).length > 0;
+    });
+    if (!live) return;
+    this.timer = setTimeout(() => { this.timer = null; void this.tick(); },
+      [...this.states.values()].some((s) => s.inCall) ? IN_CALL_MS : IDLE_MS);
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.enabled = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  isUncertain(serviceId: string): boolean {
+    const rules = this.rulesFor(serviceId);
+    if (!rules || this.windowsFor(serviceId, rules).length === 0) return false;
+    return this.uncertain.has(serviceId) || Date.now() - (this.confirmed.get(serviceId) ?? 0) > 10_000;
   }
 
   /** The current meetings, for `ShellState`: only services with a state worth reporting. */
@@ -94,6 +114,9 @@ export class MeetingBridge {
     this.signatures.delete(serviceId);
     this.where.delete(serviceId);
     this.lastProbe.delete(serviceId);
+    this.confirmed.delete(serviceId);
+    this.uncertain.delete(serviceId);
+    this.refresh();
   }
 
   /** A window a service's page opened. Tracked until it closes. */
@@ -109,6 +132,7 @@ export class MeetingBridge {
       this.lastProbe.delete(serviceId);
     });
     this.lastProbe.delete(serviceId);
+    this.refresh();
   }
 
   /**
@@ -173,7 +197,7 @@ export class MeetingBridge {
   }
 
   private async tick(): Promise<void> {
-    if (this.busy) return;
+    if (this.busy || !this.enabled) return;
     this.busy = true;
     try {
       const now = Date.now();
@@ -199,6 +223,7 @@ export class MeetingBridge {
       if (changed) this.deps.changed();
     } finally {
       this.busy = false;
+      this.refresh();
     }
   }
 
@@ -207,14 +232,18 @@ export class MeetingBridge {
     const windows = this.windowsFor(serviceId, rules);
     const script = probeScript(rules);
     const results: MeetingState[] = [];
+    let failed = false;
     const where = new Map<MeetingControl, WebContents>();
     for (const wc of windows) {
       const probe = asMeetingProbe(await withTimeout(wc.executeJavaScriptInIsolatedWorld(WORLD, [{ code: script }]), PROBE_TIMEOUT_MS));
-      if (!probe) continue;
+      if (!probe) { failed = true; continue; }
       const state = readMeeting(rules, probe);
       results.push(state);
       for (const control of Object.keys(probe.found) as MeetingControl[]) if (!where.has(control)) where.set(control, wc);
     }
+    if (failed) { this.uncertain.add(serviceId); return false; }
+    this.uncertain.delete(serviceId);
+    this.confirmed.set(serviceId, Date.now());
     this.where.set(serviceId, where);
     const merged = results.length ? mergeMeetings(results) : { inCall: false, controls: {} };
     const signature = JSON.stringify(merged);

@@ -1,3 +1,4 @@
+import { resourceMetrics } from '@main/platform/resources';
 import { app, dialog, ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { installLogGuards } from '@main/platform/logging';
 import { persistAll, startMaintenance } from '@main/boot/maintenance';
@@ -18,6 +19,7 @@ import { createRateLimiter, redactUrl } from '@core/runtime/urls';
 import { muteUntil, setDnd, settleMute, unmute } from '@core/notify/policy';
 import { LINK_SCHEME, isLink, linksFromArgv, resolveLink } from '@core/runtime/deeplink';
 import { CONTROL_SHOWS, controlState, controlStateFromConfig } from '@core/runtime/control';
+import { nativeOAuthCallbacks } from '@main/connectors/oauth-callback';
 import { quitPrompt, type BusyService } from '@core/runtime/busy';
 import { publishControlState, startControlServer } from '@main/features/control-server';
 import type { Command } from '@shared/types';
@@ -169,6 +171,11 @@ function runLinks(links: readonly string[]): void {
     if (!allowLink('link')) {
       console.warn('[link] ignored: too many in a short time');
       return;
+    }
+    const oauth = nativeOAuthCallbacks.accept(link);
+    if (oauth) {
+      if (oauth === 'accepted') ensureShell();
+      continue;
     }
     const result = resolveLink(link, loadConfig(), Date.now());
     if (!result.ok) {
@@ -413,16 +420,20 @@ function registerIpc(): void {
   ipcMain.handle('drag:get-highlight', (event) =>
     fromApp(event, 'drag:get-highlight') ? (shell?.dragHighlight() ?? null) : null,
   );
-  // Memory and process counts, for a readout nothing draws yet (backlog §14.2, task manager).
+  // Small, in-memory panel values survive releasing a closed renderer.
+  ipcMain.handle('panel:get-state', (event) => fromApp(event, 'panel:get-state') ? shell?.panelState(event.sender) ?? {} : {});
+  ipcMain.on('panel:save-state', (event, key: unknown, value: unknown) => {
+    if (!fromApp(event, 'panel:save-state') || typeof key !== 'string' || !/^[a-zA-Z]{1,32}$/.test(key)) return;
+    const state = shell?.panelState(event.sender);
+    if (!state || !(key in state) && Object.keys(state).length >= 20) return;
+    try { if (JSON.stringify(value).length <= 16_384) Object.defineProperty(state, key, { value, writable: true, enumerable: true, configurable: true }); } catch { /* Not serialisable. */ }
+  });
   ipcMain.handle('app:metrics', (event) => {
     if (!fromApp(event, 'app:metrics')) return null;
-    const metrics = app.getAppMetrics();
-    return {
-      processes: metrics.length,
-      residentMb: Math.round(
-        metrics.reduce((sum, m) => sum + (m.memory?.workingSetSize ?? 0), 0) / 1024
-      ),
-    };
+    return resourceMetrics((wc) => {
+      const id = shell?.serviceIdForContents(wc);
+      return loadConfig().services.find((s) => s.id === id)?.name ?? null;
+    });
   });
   ipcMain.on('shell:command', (event, command: unknown) => {
     if (!fromApp(event, 'shell:command')) return;

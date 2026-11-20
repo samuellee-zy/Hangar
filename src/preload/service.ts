@@ -1,6 +1,47 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DomUnreadProbe, DomUnreadRule } from '../shared/types';
 
+// Keep edit checks in the isolated world. Only booleans leave the page; no draft text is read by main.
+const edited = new Map<Element, string>();
+let unknownEdits = false;
+let captureActive = false;
+const fieldValue = (element: Element, initial = false): string => {
+  if (element instanceof HTMLInputElement) return element.type === 'checkbox' || element.type === 'radio'
+    ? String(initial ? element.defaultChecked : element.checked) : initial ? element.defaultValue : element.value;
+  if (element instanceof HTMLTextAreaElement) return initial ? element.defaultValue : element.value;
+  if (element instanceof HTMLSelectElement) return JSON.stringify([...element.options].filter((o) => initial ? o.defaultSelected : o.selected).map((o) => o.value));
+  return element.textContent ?? '';
+};
+const fieldDirty = (element: Element, initial: string): boolean => {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return fieldValue(element) !== initial;
+  // Rich composers often clear without an input event after sending. Empty is safe again;
+  // embedded media/attachments still count as a draft.
+  return !!element.textContent?.trim() || !!element.querySelector('img,video,audio,iframe,canvas,[data-attachment]');
+};
+const rememberEdit = (event: Event) => {
+  const target = event.composedPath()[0];
+  if (!(target instanceof Element) || edited.has(target)) return;
+  for (const [element, initial] of edited) if (!element.isConnected) {
+    // A virtualised form disappearing is not evidence that its draft was saved.
+    unknownEdits ||= fieldDirty(element, initial); edited.delete(element);
+  }
+  if (edited.size < 100) edited.set(target, fieldValue(target, event.type !== 'beforeinput'));
+  else unknownEdits = true;
+};
+// Capture the old value before frameworks synchronise defaultValue to a controlled input.
+document.addEventListener('beforeinput', rememberEdit, true);
+document.addEventListener('input', rememberEdit, true);
+const readActivity = () => {
+  let dirty = unknownEdits;
+  for (const [element, initial] of edited) {
+    const changed = fieldDirty(element, initial);
+    dirty ||= changed;
+    if (!element.isConnected) { unknownEdits ||= changed; edited.delete(element); }
+  }
+  return { dirty, capture: captureActive };
+};
+Object.defineProperty(globalThis, '__hangarReadActivity', { value: readActivity });
+
 /**
  * Injected into every service view.
  *
@@ -19,6 +60,7 @@ import type { DomUnreadProbe, DomUnreadRule } from '../shared/types';
  */
 
 contextBridge.exposeInMainWorld('__hangar', {
+  capture: (active: boolean) => { captureActive = active === true; },
   /**
    * Electron would route the page's own Notification to macOS on its own, but that loses *which
    * service* fired it — and with it attribution, unread counting, Do Not Disturb, and focusing the
@@ -71,6 +113,7 @@ try {
   contextBridge.executeInMainWorld({
     func: () => {
       type Bridge = {
+        capture: (active: boolean) => void;
         notify: (p: { title: string; body: string; silent: boolean }) => void;
         reportBlank: () => void;
         subscribePush: (
@@ -90,6 +133,30 @@ try {
       const unreadRules = () => maybe.unreadRules();
       const reportUnread = (probes: DomUnreadProbe[]) => maybe.reportUnread(probes);
       const onUnreadRules = (cb: (rules: DomUnreadRule[]) => void) => maybe.onUnreadRules(cb);
+
+      // Track microphone/camera/screen capture even before a meeting's DOM controls appear.
+      const tracks = new Set<MediaStreamTrack>();
+      let pendingCapture = 0;
+      const reportCapture = () => maybe.capture(pendingCapture > 0 || [...tracks].some((t) => t.readyState === 'live'));
+      const media = navigator.mediaDevices;
+      if (media) for (const name of ['getUserMedia', 'getDisplayMedia'] as const) {
+        const original = media[name]?.bind(media);
+        if (!original) continue;
+        media[name] = async (options?: MediaStreamConstraints & DisplayMediaStreamOptions) => {
+          pendingCapture++; reportCapture();
+          try {
+            const stream = await original(options);
+            for (const track of stream.getTracks()) {
+              tracks.add(track);
+              const ended = () => { tracks.delete(track); reportCapture(); };
+              track.addEventListener('ended', ended, { once: true });
+              const stop = track.stop.bind(track);
+              track.stop = () => { stop(); ended(); };
+            }
+            return stream;
+          } finally { pendingCapture--; reportCapture(); }
+        };
+      }
 
       // --- notifications ---------------------------------------------------------------------
 
@@ -342,13 +409,18 @@ try {
         };
 
         const observer = new MutationObserver(schedule);
+        const attributes = new Set<string>(['class', 'id']);
+        for (const rule of rules) {
+          if (rule.attr) attributes.add(rule.attr);
+          for (const match of `${rule.selector} ${rule.anchor ?? ''}`.matchAll(/\[([\w-]+)/g)) attributes.add(match[1]!);
+        }
         observer.observe(document, {
           subtree: true,
           childList: true,
           characterData: true,
-          // Whole-document attribute mutations are the expensive subscription, so only take it when
-          // a rule actually reads an attribute.
-          attributes: rules.some((rule) => rule.read === 'attr'),
+          // Watch selector/value attributes instead of subscribing to every attribute mutation.
+          attributes: true,
+          attributeFilter: [...attributes],
         });
 
         // A badge inside a shadow root or drawn to a canvas mutates nothing the observer can see,

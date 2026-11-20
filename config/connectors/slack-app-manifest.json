@@ -1,0 +1,26 @@
+{
+  "display_information": {
+    "name": "Hangar",
+    "description": "Read your direct conversations and search connected Slack content in Hangar."
+  },
+  "oauth_config": {
+    "redirect_urls": ["hangar://oauth/slack"],
+    "scopes": {
+      "user": [
+        "search:read",
+        "channels:history",
+        "groups:history",
+        "im:history",
+        "mpim:history",
+        "im:read",
+        "users:read"
+      ]
+    },
+    "pkce_enabled": true
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": true
+  }
+}

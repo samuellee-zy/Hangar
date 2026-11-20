@@ -30,6 +30,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     globalShortcut: null,
     // 0 = never. Deliberately off: the memory saving is real, but so is the cost of a cold load.
     hibernateAfterMinutes: 0,
+    maxCachedServices: 0,
     launchAtLogin: false,
     relaunchOnCrash: false,
     closeToTray: false,
@@ -97,6 +98,7 @@ function merge<T>(defaults: T, stored: unknown): T {
 
 export const withDefaults = (stored: unknown): Preferences => {
   const merged = merge(DEFAULT_PREFERENCES, stored);
+  if (!Number.isInteger(merged.behaviour.maxCachedServices) || merged.behaviour.maxCachedServices < 0 || merged.behaviour.maxCachedServices > 100) merged.behaviour.maxCachedServices = 0;
   const keyboard = isPlainObject(stored) ? stored['keyboard'] : undefined;
   const bindings = isPlainObject(keyboard) ? keyboard['bindings'] : undefined;
   if (isPlainObject(bindings)) merged.keyboard.bindings = yieldToStored(merged.keyboard.bindings, bindings);
@@ -125,6 +127,7 @@ function yieldToStored(merged: Record<string, string>, stored: Json): Record<str
  * value's type doesn't match the default, so a bad command is a no-op rather than a corrupt config.
  */
 export function setPreference(prefs: Preferences, path: string, value: unknown): boolean {
+  if (path === 'behaviour.maxCachedServices' && (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 100)) return false;
   const segments = path.split('.');
   const leaf = segments.pop();
   if (!leaf) return false;

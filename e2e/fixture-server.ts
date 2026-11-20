@@ -123,6 +123,7 @@ const PAGES: Record<string, { status?: number; body: string; setCookie?: string 
 
 
 export async function startFixtureServer(): Promise<FixtureServer> {
+  let headerlessAttempts = 0;
   const server = http.createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
 
@@ -169,6 +170,19 @@ export async function startFixtureServer(): Promise<FixtureServer> {
           res.end();
         }
       }, 70);
+      return;
+    }
+
+    // A real navigation that never completes, for the background load queue's stop deadline.
+    if (path === '/stall-before-headers') {
+      if (++headerlessAttempts === 1) return;
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<!doctype html><title>Fixture recovered</title><p>Ready');
+      return;
+    }
+    if (path === '/stalled') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.write('<!doctype html><title>Still loading</title><p>Waiting');
       return;
     }
 

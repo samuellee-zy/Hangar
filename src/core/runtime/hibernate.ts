@@ -41,14 +41,22 @@ export const keepsRunning = (
 export function servicesToHibernate(
   candidates: HibernationCandidate[],
   timeoutMinutes: number,
-  now: number
+  now: number,
+  maxCachedServices = 0,
 ): string[] {
   if (timeoutMinutes <= 0) return [];
   const cutoff = now - timeoutMinutes * 60_000;
-
-  return candidates
-    .filter((c) => !c.visible && !c.sleeping && !c.busy && c.hibernate && c.lastActiveAt <= cutoff)
-    .map((c) => c.serviceId);
+  const eligible = candidates
+    .filter((c) => !c.visible && !c.sleeping && !c.busy && c.hibernate)
+    .sort((a, b) => a.lastActiveAt - b.lastActiveAt || a.serviceId.localeCompare(b.serviceId));
+  const due = new Set(eligible.filter((c) => c.lastActiveAt <= cutoff).map((c) => c.serviceId));
+  const cap = Number.isInteger(maxCachedServices) && maxCachedServices > 0 ? maxCachedServices : Infinity;
+  for (const c of eligible) {
+    if (eligible.length - due.size <= cap) break;
+    // Keep a just-used page warm for at least a minute, even during rapid switching.
+    if (now - c.lastActiveAt >= 60_000) due.add(c.serviceId);
+  }
+  return [...due];
 }
 
 /**

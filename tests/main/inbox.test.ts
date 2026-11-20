@@ -8,6 +8,7 @@ import { ConnectorError, type Connection, type ReadConnector } from '@main/conne
 import { inboxRequest } from '@main/connectors/ipc';
 import { authorize, pkce } from '@main/connectors/oauth';
 import { createHash } from 'node:crypto';
+import { shippedRegistrations } from '@main/connectors/registration';
 import type { Config } from '@shared/types';
 import type { InboxItem } from '@shared/inbox';
 
@@ -31,6 +32,12 @@ function harness(adapter?: Partial<ReadConnector>) {
 }
 
 describe('inbox source boundaries', () => {
+  it('separates publisher registration from user credentials and explains an unconfigured build', async () => {
+    const { hub } = harness();
+    expect(shippedRegistrations()).toEqual({});
+    expect(validConnect({ serviceId: 'one' })).toBe(true);
+    await expect(hub.connect({ serviceId: 'one' })).rejects.toThrow('not configured in this build');
+  });
   it('defaults to this workspace; cross-workspace reads require an explicit search scope', async () => {
     const { hub, implementation } = harness();
     await hub.refresh({ allWorkspaces: false });
@@ -88,6 +95,46 @@ describe('inbox source boundaries', () => {
 });
 
 describe('source protocol fixtures', () => {
+  it('Slack enumerates only verified one-to-one DMs with separate roster cursors and no invented activity', async () => {
+    const request = vi.fn(async (url: string | URL | Request) => String(url).includes('users.info')
+      ? json({ ok: true, user: { profile: { display_name: 'Maya' } } })
+      : json({ ok: true, channels: [{ id: 'D123', is_im: true, user: 'U2' }, { id: 'C123', is_im: false },
+        { id: 'G123', is_mpim: true }, { id: 'D999', user: 'U3' }], response_metadata: { next_cursor: 'next-dms' } }));
+    const slack = new SlackConnector(new ConnectorHttp(request));
+    const c = { ...connection(), scopes: ['im:read', 'im:history', 'users:read'] };
+    const page = await slack.list(c, new AbortController().signal, 'previous-dms');
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({ title: 'Maya', conversationKind: 'direct', ref: { threadId: 'dm:D123' }, at: null, unread: null });
+    expect(page.cursor).toBe('next-dms');
+    const url = new URL(String(request.mock.calls[0][0]));
+    expect(url.searchParams.get('types')).toBe('im');
+    expect(url.searchParams.get('cursor')).toBe('previous-dms');
+    expect(slack.sourceUrl(c, page.items[0].ref)).toBe('https://app.slack.com/client/T1/D123');
+  });
+  it('Slack reads chronological incoming/outgoing DM text and pages history without write calls', async () => {
+    const request = vi.fn(async (_url: string | URL | Request) => json({ ok: true, messages: [
+      { ts: '3.000', user: 'U1', text: 'My reply', files: [{ id: 'f' }] },
+      { ts: '2.000', user: 'U2', text: 'Hello &amp; welcome' }, { ts: '2.000', user: 'U2', text: 'Hello &amp; welcome' },
+    ], response_metadata: { next_cursor: 'older' }, has_more: true }));
+    const slack = new SlackConnector(new ConnectorHttp(request));
+    const thread = await slack.read({ ...connection(), scopes: ['im:read', 'im:history'] }, { connectionId: 'one', threadId: 'dm:D123' }, new AbortController().signal, 'prior');
+    expect(thread.messages.map((m) => m.text)).toEqual(['Hello & welcome', 'My reply']);
+    expect(thread.messages.map((m) => m.direction)).toEqual(['incoming', 'outgoing']);
+    expect(thread.messages[1].attachmentCount).toBe(1);
+    expect(thread.olderCursor).toBe('older');
+    const url = new URL(String(vi.mocked(request).mock.calls[0][0]));
+    expect(url.pathname).toBe('/api/conversations.history');
+    expect(url.searchParams.get('cursor')).toBe('prior');
+    expect(url.searchParams.get('limit')).toBe('15');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+  it('legacy Slack grants do not advertise DMs and do not fall back to channel search for a roster', async () => {
+    const request = vi.fn();
+    const slack = new SlackConnector(new ConnectorHttp(request));
+    expect(slack.canChat(connection())).toBe(false);
+    expect(await slack.list(connection(), new AbortController().signal)).toMatchObject({ items: [], cursor: null });
+    expect(request).not.toHaveBeenCalled();
+  });
   it('Slack categories put a mentioned DM in exactly one group; unknown read state stays unknown', async () => {
     const request = vi.fn(async () => json({ ok: true, messages: { matches: [{ channel: { id: 'D123', name: 'Maya', is_im: true }, ts: '123.456', text: '<@U1> feature decision', user: 'U2' }], paging: { pages: 2 } } }));
     const slack = new SlackConnector(new ConnectorHttp(request));
