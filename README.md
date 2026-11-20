@@ -202,9 +202,11 @@ that has never opened Gmail.
 | [automation.md](docs/automation.md) | `hangar://` links, command-line flags and the control socket, for Shortcuts, Raycast, Focus and a Stream Deck |
 | [manual-checks.md](docs/manual-checks.md) | What only a real page can prove, to check after installing |
 | [backlog.md](docs/backlog.md) | **What isn't done**, and why — blockers, gaps, deferred work |
-| [Unified inbox](docs/inbox.md) | Read-only Slack/Gmail setup, grouped conversations, freshness and coverage |
+| [Unified chats](docs/inbox.md) | Slack DM reader, account setup, history pagination and coverage limits |
 | [AI search](docs/ai-search.md) | Codex/Claude Code sign-in, source scope, citations and runtime compatibility |
 | [AI and unified inbox plan](docs/ai-and-unified-inbox-plan.md) | Approved two-phase implementation, research, scope choices and delivery status |
+| [Unified DM chat plan](docs/unified-dm-chat-plan.md) | Messaging and portable connector architecture, pilot status and remaining delivery gates |
+| [Resource use](docs/resource-use.md) | Background cache, safe sleep and wake, process measurements and benchmark results |
 | [packaging.md](docs/packaging.md) | Building the DMG, signing, the asar trap |
 | [push.md](docs/push.md) | Web Push setup and design |
 | [unread-selectors.md](docs/unread-selectors.md) | Finding the element a service draws its unread count in |
@@ -224,15 +226,23 @@ handling, tray, git-backed config sync, config export/import, and launch-at-logi
 relaunch — which works on an unsigned build, via a LaunchAgent rather than the API macOS refuses
 ([decisions #93](docs/decisions.md)).
 
-**Also built:** a [unified read-only inbox](docs/inbox.md) with Slack/Gmail OAuth connectors and an
-[AI search panel](docs/ai-search.md) with isolated Codex/Claude Code runtimes, selected sources and
-citations. API registrations and a live account trial are still required; signing in to a web pane
-alone does not grant message-history API access.
+**Also built:** a [read-only Slack DM pilot](docs/inbox.md) with a chat timeline and paginated
+history, a portable capability-based connector broker, and an [AI search panel](docs/ai-search.md)
+with Slack/Gmail readers, isolated Codex/Claude Code runtimes, selected sources and citations.
+Slack's public client registration is bundled; Gmail uses developer setup. Signing in to a web pane
+alone does not grant message-history API access. The pilot has been exercised with live Slack
+accounts; the complete messaging scope remains unfinished.
+
+[Resource controls](docs/resource-use.md) bound cached background services, stagger loads and wake
+refreshes, retain pages with detected activity or drafts, and release closed interface renderers.
+Settings can show process resource measurements. Existing preferences are retained.
 
 **Not built:**
 
-- Replies, full personal Messenger history, persistent message indexing and proactive AI. The
-  [two-phase plan](docs/ai-and-unified-inbox-plan.md) keeps those outside the initial release.
+- Group chats, starting conversations, inline sending, WhatsApp/Messenger message adapters and
+  encrypted durable history remain [Phase 1 delivery gates](docs/unified-dm-chat-plan.md#execution-status-and-remaining-gates).
+  The current Slack pilot is read-only. Persistent message indexing and proactive AI also remain
+  unfinished.
 - **Unread selectors for eight of the catalog's services.** The mechanism ships; the selectors are
   deliberately not guessed ([decisions #90](docs/decisions.md)).
 

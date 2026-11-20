@@ -1,3 +1,4 @@
+import { IdleRelease } from './idle-release';
 import path from 'node:path';
 import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
@@ -36,6 +37,9 @@ export class Splitters {
    */
   private pool: WebContentsView[] = [];
   private attached = 0;
+  private readonly idle = new IdleRelease(() => {
+    for (const view of this.pool.splice(this.attached)) if (!view.webContents.isDestroyed()) view.webContents.close();
+  });
 
   constructor(
     private readonly win: BaseWindow,
@@ -47,13 +51,16 @@ export class Splitters {
   sync(boundaries: readonly Boundary[]): void {
     while (this.attached > boundaries.length) {
       this.attached--;
+      this.pool[this.attached]!.setVisible(false);
       this.win.contentView.removeChildView(this.pool[this.attached]!);
     }
     while (this.attached < boundaries.length) {
       const view = this.pool[this.attached] ?? this.create(this.attached);
+      view.setVisible(true);
       this.win.contentView.addChildView(view);
       this.attached++;
     }
+    if (this.pool.length > this.attached) this.idle.arm(); else this.idle.cancel();
     boundaries.forEach(({ rect }, i) => {
       let hit: Rect;
       if (this.axis === 'column') {
@@ -107,6 +114,7 @@ export class Splitters {
    */
   destroy(): void {
     if (!this.win.isDestroyed()) this.sync([]);
+    this.idle.cancel();
     this.attached = 0;
     for (const view of this.pool) if (!view.webContents.isDestroyed()) view.webContents.close();
     this.pool = [];

@@ -1,3 +1,4 @@
+import { usePanelState } from '../PanelState';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AiSnapshot, EngineId } from '@shared/ai';
 import type { InboxReply } from '@shared/inbox';
@@ -8,13 +9,13 @@ import './assistant.css';
 export function Assistant() {
   const shell = useShellState();
   const [snapshot, setSnapshot] = useState<AiSnapshot | null>(null);
-  const [provider, setProvider] = useState<EngineId>('codex');
-  const [selected, setSelected] = useState<string[]>([]);
-  const [query, setQuery] = useState('');
-  const [includeContext, setIncludeContext] = useState(true);
+  const [provider, setProvider] = usePanelState<EngineId>('provider', 'codex');
+  const [selected, setSelected] = usePanelState<string[]>('selected', []);
+  const [query, setQuery] = usePanelState('query', '');
+  const [includeContext, setIncludeContext] = usePanelState('includeContext', true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [loginMode, setLoginMode] = useState<'subscription' | 'console' | 'sso'>('subscription');
+  const [loginMode, setLoginMode] = usePanelState<'subscription' | 'console' | 'sso'>('loginMode', 'subscription');
   const scope = useRef<string | null>(null), sequence = useRef(0);
   const pull = useCallback(async () => {
     const seq = ++sequence.current;
@@ -26,7 +27,7 @@ export function Assistant() {
     if (scope.current !== key) { scope.current = key; setSelected(ids.slice(0, 8)); }
     else setSelected((old) => old.filter((id) => ids.includes(id)));
     setSnapshot(next);
-  }, []);
+  }, [setSelected]);
   const invalidate = useCallback(() => { sequence.current++; }, []);
   useEffect(() => {
     if (!shell?.aiOpen) return;

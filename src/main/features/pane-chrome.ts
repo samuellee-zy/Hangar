@@ -1,3 +1,4 @@
+import { IdleRelease } from './idle-release';
 import path from 'node:path';
 import { WebContentsView, type BaseWindow, type WebContents } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
@@ -28,6 +29,14 @@ export class PaneChrome {
   /** The last bar for each pane, so a pooled header moved to another pane shows it at once. */
   private lastBars = new Map<string, PaneBar>();
   private sent = new Map<WebContents, string>();
+  private readonly idle = new IdleRelease(() => {
+    const unused = this.headers.splice(this.attachedHeaders);
+    if (this.titlebar && !this.titlebarAttached) { unused.push(this.titlebar); this.titlebar = null; }
+    for (const view of unused) {
+      this.states.delete(view.webContents); this.sent.delete(view.webContents);
+      if (!view.webContents.isDestroyed()) view.webContents.close();
+    }
+  });
 
   constructor(
     private readonly win: BaseWindow,
@@ -39,10 +48,13 @@ export class PaneChrome {
   placeTitlebar(rect: Rect | null): void {
     if (!rect) {
       if (this.titlebar && this.titlebarAttached) this.win.contentView.removeChildView(this.titlebar);
+      this.titlebar?.setVisible(false);
       this.titlebarAttached = false;
+      if (this.titlebar) this.idle.arm();
       return;
     }
     this.titlebar ??= this.create('titlebar');
+    this.titlebar.setVisible(true);
     if (!this.titlebarAttached) {
       this.win.contentView.addChildView(this.titlebar);
       this.titlebarAttached = true;
@@ -60,11 +72,13 @@ export class PaneChrome {
   placeHeaders(headers: ReadonlyArray<{ paneId: string; rect: Rect }>, { reorder = true } = {}): void {
     while (this.attachedHeaders > headers.length) {
       this.attachedHeaders--;
+      this.headers[this.attachedHeaders]!.setVisible(false);
       this.win.contentView.removeChildView(this.headers[this.attachedHeaders]!);
     }
     headers.forEach(({ paneId, rect }, i) => {
       const view = this.headers[i] ?? (this.headers[i] = this.create(`header-${i}`));
       if (i >= this.attachedHeaders || reorder) this.win.contentView.addChildView(view);
+      view.setVisible(true);
       view.setBounds(rect);
       // Pooled by position, so after a swap or a close the view at this place is another pane's.
       // Until the next broadcast — a frame later — it went on showing the old one, and a click on
@@ -76,6 +90,7 @@ export class PaneChrome {
     });
     this.attachedHeaders = headers.length;
     this.headerPanes.length = headers.length;
+    if (this.headers.length > this.attachedHeaders) this.idle.arm();
   }
 
   /** What every bar shows: the title bar speaks for `focused`, each header for its own pane. */
@@ -131,6 +146,7 @@ export class PaneChrome {
       this.placeTitlebar(null);
       this.placeHeaders([]);
     }
+    this.idle.cancel();
     for (const view of [this.titlebar, ...this.headers]) {
       if (view && !view.webContents.isDestroyed()) view.webContents.close();
     }

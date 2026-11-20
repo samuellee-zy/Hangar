@@ -8,6 +8,8 @@ import { ConnectorHttp } from './http';
 import { SlackConnector } from './slack';
 import { GmailConnector } from './gmail';
 import { authorize, refreshToken } from './oauth';
+import { ReaderModules } from './modules';
+import { shippedRegistrations, type ProviderRegistrations } from './registration';
 
 interface Vault { load(): Connection[]; save(connections: Connection[]): void }
 interface Host {
@@ -32,8 +34,12 @@ export class ConnectorHub {
   private login: AbortController | null = null;
   private disposed = false;
   private readonly adapters: Record<Connection['kind'], ReadConnector>;
-  constructor(private readonly host: Host, private readonly vault: Vault, private readonly http = new ConnectorHttp(), adapters?: Record<Connection['kind'], ReadConnector>) {
+  private readonly modules: ReaderModules;
+  constructor(private readonly host: Host, private readonly vault: Vault, private readonly http = new ConnectorHttp(), adapters?: Record<Connection['kind'], ReadConnector>, private readonly registrations: ProviderRegistrations = shippedRegistrations()) {
     this.adapters = adapters ?? { slack: new SlackConnector(http), gmail: new GmailConnector(http) };
+    this.modules = new ReaderModules(this.adapters, (id) => {
+      try { return this.connection(id); } catch { return undefined; }
+    });
   }
   private load(): Connection[] { return this.connections ??= this.vault.load(); }
   private allowedServices(query: InboxQuery): Set<string> {
@@ -56,7 +62,8 @@ export class ConnectorHub {
         sources.push({ id: connection.id, serviceId: service.id, kind: connection.kind, app: entry?.name ?? service.name, label,
           identity: connection.identity, state: this.refreshing.has(connection.id) ? 'refreshing' : error ? error.reconnect ? 'reconnect' : 'error' : 'ready',
           detail: error?.message ?? cache?.detail ?? 'Ready to load recent conversations.', updatedAt: cache?.at ?? null,
-          canSearch: !error?.reconnect, canRead: !error?.reconnect, hasMore: Boolean(cache?.cursor) });
+          canSearch: !error?.reconnect && (this.adapters[connection.kind].canSearch?.(connection) ?? true), canRead: !error?.reconnect, hasMore: Boolean(cache?.cursor),
+          canChat: !error?.reconnect && (this.adapters[connection.kind].canChat?.(connection) ?? false), connectConfigured: Boolean(this.registrations[connection.kind]) });
         items.push(...(cache?.items ?? []));
       } else {
         const id = `page:${service.id}`, sleeping = this.host.sleeping(service.id);
@@ -65,7 +72,8 @@ export class ConnectorHub {
           state: sleeping ? 'sleeping' : canConnect ? 'connect' : 'limited', updatedAt: null,
           detail: canConnect ? 'Connect read access for threads and search. Page previews contain only rendered unread names.'
             : 'Limited page preview: only currently rendered unread names. No message bodies or historical search.',
-          canRead: false, canSearch: false, hasMore: false });
+          canRead: false, canSearch: false, hasMore: false,
+          connectConfigured: canConnect && Boolean(this.registrations[service.catalogId as Connection['kind']]) });
         if (!sleeping) for (const preview of this.host.previews().get(service.id) ?? []) {
           const ref = { connectionId: id, threadId: preview.id };
           items.push({ id: itemId(ref), ref, title: preview.name, author: '', preview: 'Limited preview · open the app to read this conversation', at: null,
@@ -105,7 +113,8 @@ export class ConnectorHub {
   }
   async refresh(query: InboxQuery): Promise<void> {
     const allowed = this.allowedServices(query);
-    await Promise.allSettled(this.load().filter((c) => allowed.has(c.serviceId)).map((c) => this.page(c.id, false)));
+    await Promise.allSettled(this.load().filter((c) => allowed.has(c.serviceId)
+      && (!query.messagingOnly || this.adapters[c.kind].canChat !== undefined)).map((c) => this.page(c.id, false)));
   }
   more(id: string): Promise<void> { return this.page(id, true); }
   private async page(id: string, more: boolean): Promise<void> {
@@ -118,7 +127,7 @@ export class ConnectorHub {
     const signal = this.signal(id);
     try {
       const c = await this.token(id, signal);
-      const page = await this.adapters[c.kind].list(c, signal, more ? previous?.cursor ?? undefined : undefined);
+      const page = await this.modules.list(c, signal, more ? previous?.cursor ?? undefined : undefined);
       signal.throwIfAborted();
       this.connection(id);
       const items = mergeItems([...(more ? previous?.items ?? [] : []), ...page.items], 200);
@@ -128,8 +137,7 @@ export class ConnectorHub {
     } catch (e) {
       if (!signal.aborted) {
         const error = e instanceof ConnectorError ? e : new ConnectorError('Unable to reach this source. Please try again.');
-        this.errors.set(id, error);
-        if (error.reconnect) this.clearContent(id);
+        this.recordFailure(id, error, signal);
       }
     } finally {
       this.refreshing.delete(id);
@@ -143,7 +151,7 @@ export class ConnectorHub {
     const signal = this.signal(id, outer);
     try {
       const c = await this.token(id, signal);
-      const page = await this.adapters[c.kind].search(c, query, signal);
+      const page = await this.modules.search(c, query, signal, allowed);
       signal.throwIfAborted(); this.connection(id); this.remember(page.items);
       return page.items;
     } catch (error) { this.recordFailure(id, error, signal); throw error; }
@@ -155,13 +163,13 @@ export class ConnectorHub {
       this.host.changed();
     }
   }
-  async read(ref: SourceRef, allowed?: ReadonlySet<string>, outer?: AbortSignal): Promise<InboxThread> {
+  async read(ref: SourceRef, allowed?: ReadonlySet<string>, outer?: AbortSignal, cursor?: string): Promise<InboxThread> {
     if (allowed && !allowed.has(ref.connectionId)) throw new ConnectorError('This account is outside the search scope.');
     if (!this.known.has(itemId(ref))) throw new ConnectorError('Refresh the conversation list before opening this thread.');
     const signal = this.signal(ref.connectionId, outer);
     try {
       const c = await this.token(ref.connectionId, signal);
-      const thread = await this.adapters[c.kind].read(c, ref, signal);
+      const thread = await this.modules.read(c, ref, signal, allowed ?? new Set([c.id]), cursor);
       signal.throwIfAborted(); this.connection(c.id);
       return thread;
     } catch (error) { this.recordFailure(ref.connectionId, error, signal); throw error; }
@@ -181,12 +189,14 @@ export class ConnectorHub {
     if (this.login) throw new ConnectorError('Finish or cancel the current sign-in first.');
     const service = this.host.config().services.find((s) => s.id === input.serviceId);
     if (!service || (service.catalogId !== 'slack' && service.catalogId !== 'gmail')) throw new ConnectorError('This app does not have a read connector.');
+    const clientId = input.clientId ?? this.registrations[service.catalogId]?.clientId;
+    if (!clientId) throw new ConnectorError(`${service.name} message access is not configured in this build of Hangar. You can continue using its app pane.`);
     // Check storage before opening a browser. A corrupt/locked vault is never overwritten.
     this.vault.save(this.load());
     const controller = new AbortController();
     this.login = controller;
     try {
-      const next = await authorize(service.catalogId, input, controller.signal, this.host.openUrl, this.http);
+      const next = await authorize(service.catalogId, { ...input, clientId }, controller.signal, this.host.openUrl, this.http);
       controller.signal.throwIfAborted();
       if (!this.host.config().services.some((s) => s.id === input.serviceId)) throw new ConnectorError('This app was removed during sign-in.');
       if (this.load().some((c) => c.serviceId !== input.serviceId && c.kind === next.kind && c.remoteId === next.remoteId && c.userId === next.userId)) {
@@ -203,6 +213,8 @@ export class ConnectorHub {
   }
   cancelConnect(): void { this.login?.abort(); }
   private clearContent(id: string): void {
+    this.modules.invalidate(id);
+    for (const adapter of Object.values(this.adapters)) adapter.clear?.(id);
     this.caches.delete(id);
     for (const [key, item] of this.known) if (item.ref.connectionId === id) this.known.delete(key);
   }
@@ -234,6 +246,7 @@ export class ConnectorHub {
   dispose(): void {
     this.disposed = true;
     this.cancelConnect();
+    for (const c of this.connections ?? []) this.clearContent(c.id);
     for (const controller of this.controllers.values()) controller.abort();
     this.caches.clear(); this.known.clear(); this.connections = null;
   }

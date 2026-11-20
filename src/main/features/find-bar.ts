@@ -1,3 +1,4 @@
+import { IdleRelease } from '@main/features/idle-release';
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
@@ -23,6 +24,7 @@ const MARGIN = 12;
 export class FindBar {
   private view: WebContentsView | null = null;
   private attached = false;
+  private readonly idle = new IdleRelease(() => this.destroy());
   /** The contents currently being searched, so we can stop cleanly when closing. */
   private target: Electron.WebContents | null = null;
   /**
@@ -58,7 +60,9 @@ export class FindBar {
 
   /** `paneBounds` is the focused pane, so the bar follows a split rather than the window. */
   open(target: Electron.WebContents, paneBounds: Rect, serviceId?: string): void {
+    this.idle.cancel();
     const view = this.ensure();
+    view.setVisible(true);
     this.target = target;
     this.targetService = serviceId ?? null;
     if (!this.attached) {
@@ -110,7 +114,9 @@ export class FindBar {
       // `AppWindow.dispose()` runs on `closed`, so the window is already destroyed by the time it
       // calls this. Throwing here skipped the rest of teardown.
     }
+    this.view.setVisible(false);
     this.attached = false;
+    this.idle.arm();
   }
 
   /**
@@ -120,6 +126,7 @@ export class FindBar {
    */
   destroy(): void {
     this.close();
+    this.idle.cancel();
     if (!this.view) return;
     if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
     this.view = null;

@@ -466,6 +466,8 @@ export interface Preferences {
     /** Accelerator string, or null for none. The single legitimate global shortcut. */
     globalShortcut: string | null;
     hibernateAfterMinutes: number;
+    /** Extra inactive services to cache; 0 = unlimited. Requires hibernation enabled. */
+    maxCachedServices: number;
     launchAtLogin: boolean;
     /**
      * Let launchd restart Hangar if it stops unexpectedly. Meaningless without `launchAtLogin`,

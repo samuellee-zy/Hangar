@@ -34,6 +34,8 @@ import {
   windowButtonPosition,
 } from '@core/workspace/layout';
 import { Overlay } from '@main/window/overlay';
+import { LoadQueue } from '@main/features/load-queue';
+import { attemptsSoFar, decideFailure } from '@core/runtime/recovery';
 import { ContentSurface } from '@main/features/content-surface';
 import { ConnectorHub } from '@main/connectors/hub';
 import { ConnectorVault } from '@main/connectors/vault';
@@ -56,7 +58,7 @@ import { route, type ShellContext } from '@main/window/commands';
 import { closePopOuts, popOutContents } from '@main/features/popout';
 import { deleteCachedIcon, iconVersions } from '@main/features/icons';
 import { installWebContextMenu } from '@main/features/context-menu';
-import { LONG_SUSPEND_MS, keepsRunning, servicesToHibernate, servicesToRefresh } from '@core/runtime/hibernate';
+import { LONG_SUSPEND_MS, keepsRunning, servicesToHibernate } from '@core/runtime/hibernate';
 import type { BusyReason, BusyService, Prompt } from '@core/runtime/busy';
 import { downloadProgress } from '@core/runtime/downloads';
 import { expiredQuiet, unmute } from '@core/notify/policy';
@@ -77,7 +79,7 @@ import { MeetingBridge } from '@main/features/meeting-bridge';
 import { routable, routeTarget } from '@core/services/routing';
 import { canCompose, composeUrlFor } from '@shared/mailto';
 import { destroyTray, refreshTray } from '@main/features/tray';
-import { publishControlState } from '@main/features/control-server';
+import { publishControlState, hasControlClients, onControlClientsChanged } from '@main/features/control-server';
 import { isQuitting } from '@main/platform/quit-state';
 import { findOrphanPartitions } from '@core/runtime/permissions';
 import { isValidHost } from '@core/services/patch';
@@ -151,7 +153,7 @@ const isSettingsView = (wc: WebContents): boolean => !wc.isDestroyed() && wc.get
 /** How often config sync asks the remote for changes made on another machine. */
 const SYNC_POLL_MS = 5 * 60_000;
 /** Between one background service starting to load and the next. */
-const BACKGROUND_STAGGER_MS = 500;
+const BACKGROUND_STAGGER_MS = 1_000;
 
 /**
  * Composes the shell: window, rail, panes, overlay. Every mutation funnels through `dispatch`,
@@ -251,7 +253,9 @@ export class AppWindow {
   /** Every window each service's page opened, while open: a huddle, a player. For `busyReason`. */
   private popups = new Map<string, Set<WebContents>>();
   /** The next background service to load, a moment after the last. See `startBackgroundServices`. */
-  private backgroundTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly loadQueue = new LoadQueue(BACKGROUND_STAGGER_MS);
+  private hibernating = false;
+  private readonly loadRetries = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     this.win = new BaseWindow({
@@ -270,7 +274,7 @@ export class AppWindow {
     nativeTheme.on('updated', this.repaintBackground);
 
     this.services = new ServiceManager(
-      () => this.sync(),
+      () => { if (!this.win.isDestroyed()) { this.applyThrottling(); this.meetings?.refresh(); this.sync(); } },
       (c) => this.dispatch(c),
       (serviceId) => this.keyContextFor(serviceId),
       (wc) => {
@@ -346,13 +350,15 @@ export class AppWindow {
     this.win.on('show', () => {
       this.attention.acknowledgePanes();
       this.applyThrottling();
+      this.updateConversationDemand();
     });
     this.win.on('restore', () => {
       this.attention.acknowledgePanes();
       this.applyThrottling();
+      this.updateConversationDemand();
     });
-    this.win.on('hide', () => this.applyThrottling());
-    this.win.on('minimize', () => this.applyThrottling());
+    this.win.on('hide', () => { this.applyThrottling(); this.updateConversationDemand(); });
+    this.win.on('minimize', () => { this.applyThrottling(); this.updateConversationDemand(); });
     // The debounce means a window that's never moved would otherwise never record its bounds,
     // and a quit inside the debounce window would drop the last change.
     this.win.on('close', (event: Electron.Event) => {
@@ -388,14 +394,14 @@ export class AppWindow {
     this.meetings = new MeetingBridge({
       services: () => loadConfig().services,
       contents: (serviceId) => this.contentsForService(serviceId),
-      changed: () => this.sync(),
+      changed: () => { this.applyThrottling(); this.sync(); },
     });
 
     this.conversations = new ConversationBridge({
       services: () => loadConfig().services,
       contents: (serviceId) => this.contentsForService(serviceId),
       focus: (serviceId) => void this.dispatch({ type: 'focus-service', serviceId }),
-      changed: () => this.sync(),
+      changed: () => { this.inboxChanged(); this.sync(); },
       log: (message) => console.log(`[conversations] ${message}`),
     });
 
@@ -446,7 +452,8 @@ export class AppWindow {
       this.meetings.notePopup(serviceId, contents);
     });
     this.meetings.start();
-    this.conversations.start();
+    onControlClientsChanged(() => this.updateConversationDemand());
+    this.updateConversationDemand();
     onDownloadsChanged(() => {
       this.showDownloadProgress();
       this.sync();
@@ -535,26 +542,54 @@ export class AppWindow {
    * another workspace is still one to hear about. No pane: a view with no bounds renders nothing and
    * still runs, notifies and reports its unread count.
    *
-   * One every half second, after the panes, not all at once. With "Keep every service running" on
+   * One at a time after the panes, with a second between completed loads. With "Keep every service running" on
    * that's every service you have, and twenty pages starting together at launch were twenty
    * renderers competing with the panes you're looking at. Asked again — a setting turned on while a
-   * round is under way — it starts a fresh round over whatever still isn't loaded.
+   * round is under way — it queues only what still isn't loaded.
    */
   private startBackgroundServices(): void {
-    if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
-    const next = () => {
-      this.backgroundTimer = null;
-      const config = loadConfig();
-      // Read afresh each time: in half a second a service can be removed, opened in a pane, or the
-      // setting turned back off.
-      const svc = config.services.find(
-        (s) => keepsRunning(s, config.preferences.behaviour) && !this.services.has(s.id),
-      );
-      if (!svc) return;
-      this.services.ensure(svc);
-      this.backgroundTimer = setTimeout(next, BACKGROUND_STAGGER_MS);
-    };
-    this.backgroundTimer = setTimeout(next, BACKGROUND_STAGGER_MS);
+    const config = loadConfig();
+    for (const svc of config.services) {
+      if (!keepsRunning(svc, config.preferences.behaviour) || this.services.has(svc.id) || popOutContents().some(([id]) => id === svc.id)) continue;
+      this.loadQueue.add({ id: svc.id, timedOut: () => this.retryQueuedLoad(svc.id), run: async (signal) => {
+        const current = loadConfig().services.find((s) => s.id === svc.id);
+        if (!current || !keepsRunning(current, loadConfig().preferences.behaviour) || this.services.has(svc.id) || popOutContents().some(([id]) => id === svc.id)) return;
+        this.services.ensure(current);
+        await this.services.waitForLoad(svc.id, signal);
+      } });
+    }
+  }
+
+  private updateConversationDemand(): void {
+    const wanted = this.inboxSurface.isOpen && this.windowOnScreen() || hasControlClients();
+    if (wanted) this.conversations.start(); else this.conversations.stop();
+  }
+
+  /** Includes unknown meeting probes: a timeout must not be read as "not in a call". */
+  private protectedFromAutomation(id: string): boolean {
+    const svc = loadConfig().services.find((s) => s.id === id);
+    return this.busyReason(id) !== null || this.meetings.isUncertain(id)
+      || popOutContents().some(([serviceId]) => serviceId === id) || [...(this.popups.get(id) ?? [])].some((wc) => !wc.isDestroyed())
+      || recentDownloads().some((d) => d.service === svc?.name && d.state === 'progressing');
+  }
+
+  private queueRefresh(serviceId: string): void {
+    this.loadQueue.add({ id: serviceId, timedOut: () => this.retryQueuedLoad(serviceId), run: async (signal) => {
+      if (signal.aborted || this.protectedFromAutomation(serviceId) || !await this.services.safeToDiscard(serviceId)
+        || signal.aborted || this.protectedFromAutomation(serviceId)) return;
+      await this.services.waitForLoad(serviceId, signal, true);
+    } });
+  }
+
+  private retryQueuedLoad(id: string): void {
+    const runtime = this.services.get(id);
+    if (!runtime || this.win.isDestroyed()) return;
+    const attempts = attemptsSoFar(runtime, Date.now());
+    const action = decideFailure({ errorCode: -118, isMainFrame: true, attempts });
+    runtime.failures = attempts + 1; runtime.lastFailureAt = Date.now();
+    if (action.retryAfterMs === null) return;
+    const old = this.loadRetries.get(id); if (old) clearTimeout(old);
+    this.loadRetries.set(id, setTimeout(() => { this.loadRetries.delete(id); this.queueRefresh(id); }, action.retryAfterMs));
   }
 
   /**
@@ -995,6 +1030,7 @@ export class AppWindow {
    */
   private syncScheduled: ReturnType<typeof setTimeout> | null = null;
   private lastSent = new WeakMap<WebContents, string>();
+  private lastInboxScope = '';
 
   sync(): void {
     if (this.syncScheduled) return;
@@ -1007,7 +1043,8 @@ export class AppWindow {
   private broadcast(): void {
     if (this.win.isDestroyed()) return;
     this.inboxHub.reconcile();
-    this.inboxChanged();
+    const scope = JSON.stringify([loadConfig().activeWorkspaceId, loadConfig().services.map((s) => [s.id, s.name, s.accountId, s.catalogId, this.services.has(s.id)]), loadConfig().workspaces]);
+    if (scope !== this.lastInboxScope) { this.lastInboxScope = scope; this.inboxChanged(); }
     const state = this.state();
     // Scripts and stylesheets only to Settings, which edits them — see `withoutServiceCode`.
     const lean = withoutServiceCode(state);
@@ -1030,6 +1067,8 @@ export class AppWindow {
 
   /** What the title bar and the headers show — sent to each only when it changed. */
   private refreshPaneChrome(state: ShellState): void {
+    // A native menu update earlier in broadcast can dispatch a pending window close.
+    if (this.win.isDestroyed()) return;
     const bars = paneBars({
       drawn: (this.inboxSurface.isOpen || this.aiLayout().covered) ? [] : this.layout.drawn(),
       paneCount: this.layout.panes.length,
@@ -1197,7 +1236,11 @@ export class AppWindow {
     if (!this.restoring) { this.inboxSurface.close(); if (this.aiLayout().covered) { this.aiController.cancel(); this.aiSurface.close(); } }
 
     // Shortcuts are bound inside ensure(), once per view.
-    this.services.ensure(svc);
+    // An already-loading page can finish after being brought forward.
+    this.loadQueue.cancel(serviceId, false);
+    clearTimeout(this.loadRetries.get(serviceId)); this.loadRetries.delete(serviceId);
+    const runtime = this.services.ensure(svc);
+    if (runtime.stale) this.queueRefresh(serviceId);
 
     if (newPane && !this.layout.isFull) this.layout.add(serviceId, beside);
     else this.layout.show(serviceId);
@@ -1298,6 +1341,8 @@ export class AppWindow {
    * rather than hiding matters: a hidden-but-attached view still composites and still eats clicks.
    */
   private relayout(): void {
+    this.services.updatePanes(this.layout.visibleServiceIds());
+    this.updateConversationDemand();
     // A drag holds a frozen copy of the pane rectangles, and this is the one thing that invalidates
     // them. Ending it is the honest answer: the alternative is a highlight over a pane that has
     // moved, and a drop that lands somewhere the user didn't aim. The layer is also attached above
@@ -1533,8 +1578,14 @@ export class AppWindow {
     return assistantLayout(contentArea(this.chrome(), width, height), this.aiSurface?.isOpen ?? false, loadConfig().preferences.appearance.aiPanelWidth);
   }
   private paneWidth(width: number): number { return width - this.aiLayout().reserved; }
+  panelState(wc: WebContents): Record<string, unknown> | null {
+    return this.aiSurface.contents === wc ? this.aiSurface.state : this.inboxSurface.contents === wc ? this.inboxSurface.state : null;
+  }
   ownsAi(wc: WebContents): boolean { return this.aiSurface.contents === wc; }
-  requestAi(action: unknown, payload: unknown) { return this.aiController.request(action, payload); }
+  requestAi(action: unknown, payload: unknown) {
+    this.aiSurface.pending++;
+    return this.aiController.request(action, payload).finally(() => { this.aiSurface.pending--; });
+  }
   private aiChanged(): void {
     if (this.aiChangeTimer || this.win.isDestroyed()) return;
     this.aiChangeTimer = setTimeout(() => {
@@ -1554,7 +1605,10 @@ export class AppWindow {
     this.aiSurface.close(); this.relayout(); this.focusActivePane(); return true;
   }
   ownsInbox(wc: WebContents): boolean { return this.inboxSurface.contents === wc; }
-  requestInbox(action: unknown, payload: unknown) { return inboxRequest(this.inboxHub, action, payload); }
+  requestInbox(action: unknown, payload: unknown) {
+    this.inboxSurface.pending++;
+    return inboxRequest(this.inboxHub, action, payload).finally(() => { this.inboxSurface.pending--; });
+  }
   private inboxChanged(): void {
     const wc = this.inboxSurface.contents;
     if (wc) safeSend(wc, 'inbox:changed');
@@ -1824,56 +1878,51 @@ export class AppWindow {
   hibernateIdle(): void {
     // First, and whatever the hibernation setting: the sweep is the only clock timed quiet has.
     this.expireQuietPeriods();
-    const config = loadConfig();
-    const timeout = config.preferences.behaviour.hibernateAfterMinutes;
-    if (timeout <= 0) return;
-
-    const visible = this.layout.visibleServiceIds();
-    const due = servicesToHibernate(
-      config.services.map((svc) => ({
-        serviceId: svc.id,
-        visible: visible.has(svc.id),
-        sleeping: !this.services.has(svc.id),
-        // Running in the background is the point of keeping it running; sleeping it would undo that.
+    if (this.hibernating) return;
+    this.applyThrottling();
+    const candidates = () => {
+      const config = loadConfig();
+      const visible = this.layout.visibleServiceIds();
+      return servicesToHibernate(config.services.map((svc) => ({
+        serviceId: svc.id, visible: visible.has(svc.id), sleeping: !this.services.has(svc.id),
         hibernate: svc.hibernate && !keepsRunning(svc, config.preferences.behaviour),
-        busy: this.busyReason(svc.id) !== null,
+        busy: this.protectedFromAutomation(svc.id),
         lastActiveAt: this.services.get(svc.id)?.lastActiveAt ?? Date.now(),
-      })),
-      timeout,
-      Date.now(),
-    );
-
+      })), config.preferences.behaviour.hibernateAfterMinutes, Date.now(), config.preferences.behaviour.maxCachedServices);
+    };
+    const due = candidates();
     if (!due.length) return;
-    for (const serviceId of due) this.sleep(serviceId);
-    console.log(`[hibernate] slept ${due.length} idle service(s)`);
-    this.relayout();
+    this.hibernating = true;
+    void (async () => {
+      for (const id of due) {
+        if (this.win.isDestroyed()) break;
+        const runtime = this.services.get(id);
+        if (await this.services.hibernate(id, () => !this.win.isDestroyed() && candidates().includes(id))) {
+          if (!this.win.isDestroyed() && runtime) this.win.contentView.removeChildView(runtime.view);
+          this.meetings.forget(id); this.endpoints.forget(id);
+          console.log(`[hibernate] slept ${id}`);
+        }
+      }
+      if (!this.win.isDestroyed()) this.sync();
+    })().catch((err) => console.error('[hibernate]', err)).finally(() => { this.hibernating = false; });
   }
 
-  /** After a long suspend, loaded views hold stale content and often a dead socket. */
+  /** Preserve short sleeps; after long sleeps refresh safe foreground/essential pages serially. */
   refreshAfterWake(suspendedForMs: number): void {
-    // Before anything else, and unconditionally: the sweep that runs 30 seconds from now measures
-    // idle time against the wall clock, which has just jumped by however long the lid was shut.
-    // Every off-screen service would read as hours idle and be unloaded in one go.
     this.services.creditSuspendedTime(suspendedForMs);
-
+    if (suspendedForMs < LONG_SUSPEND_MS) return;
+    this.loadQueue.clear();
+    const config = loadConfig();
     const visible = this.layout.visibleServiceIds();
-    const stale = servicesToRefresh(
-      [...this.services.all()].map(([serviceId, runtime]) => ({
-        serviceId,
-        sleeping: false,
-        visible: visible.has(serviceId),
-        lastActiveAt: runtime.lastActiveAt,
-      })),
-      suspendedForMs,
-    );
-    for (const serviceId of stale) {
-      const wc = this.services.get(serviceId)?.view.webContents;
-      if (wc && !wc.isDestroyed()) wc.reload();
+    const services = [...config.services].sort((a, b) => Number(visible.has(b.id)) - Number(visible.has(a.id)));
+    for (const svc of services) {
+      const runtime = this.services.get(svc.id);
+      if (!runtime) continue;
+      runtime.stale = true;
+      if (visible.has(svc.id) || keepsRunning(svc, config.preferences.behaviour)) this.queueRefresh(svc.id);
     }
-    if (stale.length) console.log(`[power] reloaded ${stale.length} view(s) after wake`);
-
-    // Same threshold as the view reload, for the same reason — the sockets died with the network.
-    if (suspendedForMs >= LONG_SUSPEND_MS) this.push.reconnectAll();
+    this.startBackgroundServices();
+    this.push.reconnectAll();
   }
 
   // --- preference effects: see preference-effects.ts ----------------------------------------
@@ -1950,8 +1999,10 @@ export class AppWindow {
     if (this.aiChangeTimer) clearTimeout(this.aiChangeTimer);
     this.aiController.dispose();
     this.inboxHub.dispose();
-    if (this.backgroundTimer) clearTimeout(this.backgroundTimer);
-    this.backgroundTimer = null;
+    this.loadQueue.dispose();
+    for (const timer of this.loadRetries.values()) clearTimeout(timer);
+    this.loadRetries.clear();
+    onControlClientsChanged(null);
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = null;
 
@@ -1983,6 +2034,7 @@ export class AppWindow {
       this.services.destroy(serviceId);
     }
 
+    this.services.dispose();
     // `destroy`, not `close`: both surfaces cache their view for reuse and only detach on close, so
     // one that the user has opened and closed is a detached renderer the window won't collect.
     this.findBar.destroy();
@@ -2117,11 +2169,12 @@ export class AppWindow {
    * Runs on every relayout, so the 30s sweep picks up a service that started playing off screen.
    */
   private applyThrottling(): void {
-    const drawn = this.windowOnScreen() && !this.inboxSurface.isOpen && !this.aiLayout().covered ? this.layout.drawnServiceIds() : new Set<string>();
+    const drawn = this.windowOnScreen() && !this.inboxSurface?.isOpen && !this.aiLayout().covered ? this.layout.drawnServiceIds() : new Set<string>();
     for (const [serviceId, runtime] of this.services.all()) {
       const wc = runtime.view.webContents;
-      if (wc.isDestroyed()) continue;
-      const throttle = !drawn.has(serviceId) && this.busyReason(serviceId) === null;
+      if (!wc || wc.isDestroyed()) continue;
+      runtime.view.setVisible(drawn.has(serviceId));
+      const throttle = this.meetings ? this.busyReason(serviceId) === null : true;
       if (wc.getBackgroundThrottling() !== throttle) wc.setBackgroundThrottling(throttle);
     }
   }

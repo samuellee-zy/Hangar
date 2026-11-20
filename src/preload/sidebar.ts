@@ -1,3 +1,4 @@
+import type { ResourceMetrics } from '@shared/resources';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AiBridge } from '@shared/ai';
 import type { InboxBridge } from '@shared/inbox';
@@ -19,7 +20,7 @@ const inbox: InboxBridge = {
   snapshot: (query) => ipcRenderer.invoke('inbox:request', 'snapshot', query),
   refresh: (query) => ipcRenderer.invoke('inbox:request', 'refresh', query),
   more: (id) => ipcRenderer.invoke('inbox:request', 'more', id),
-  read: (ref) => ipcRenderer.invoke('inbox:request', 'read', ref),
+  read: (ref, cursor) => cursor ? ipcRenderer.invoke('inbox:request', 'readPage', { ref, cursor }) : ipcRenderer.invoke('inbox:request', 'read', ref),
   open: (ref) => ipcRenderer.invoke('inbox:request', 'open', ref),
   connect: (input) => ipcRenderer.invoke('inbox:request', 'connect', input),
   disconnect: (id) => ipcRenderer.invoke('inbox:request', 'disconnect', id),
@@ -53,7 +54,9 @@ contextBridge.exposeInMainWorld('hangar', {
     ipcRenderer.on('shell:state', handler);
     return () => ipcRenderer.off('shell:state', handler);
   },
-  getMetrics: (): Promise<{ processes: number; residentMb: number }> =>
+  getPanelState: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('panel:get-state'),
+  savePanelState: (key: string, value: unknown): void => ipcRenderer.send('panel:save-state', key, value),
+  getMetrics: (): Promise<ResourceMetrics> =>
     ipcRenderer.invoke('app:metrics'),
   getOverlayOpen: (): Promise<OverlayOpen | null> => ipcRenderer.invoke('overlay:get-mode'),
   /** Where Settings was asked to open to, once — and later requests while it is already open. */

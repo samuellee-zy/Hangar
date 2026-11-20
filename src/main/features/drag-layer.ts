@@ -1,3 +1,4 @@
+import { IdleRelease } from '@main/features/idle-release';
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
@@ -32,6 +33,7 @@ import type { DropHighlight, Rect } from '@shared/types';
 export class DragLayer {
   private view: WebContentsView | null = null;
   private attached = false;
+  private readonly idle = new IdleRelease(() => this.destroy());
   /** The tile in flight. Null when no drag is in progress, which is the authoritative check. */
   private serviceId: string | null = null;
   /**
@@ -71,7 +73,9 @@ export class DragLayer {
    * relative to — the renderer only ever knows its own client rectangle.
    */
   begin(serviceId: string, content: Rect): void {
+    this.idle.cancel();
     const view = this.ensure();
+    view.setVisible(true);
     this.serviceId = serviceId;
     if (!this.attached) {
       this.win.contentView.addChildView(view);
@@ -112,7 +116,9 @@ export class DragLayer {
     } catch {
       // The window is already destroyed, which detached it for us.
     }
+    this.view.setVisible(false);
     this.attached = false;
+    this.idle.arm();
   }
 
   /**
@@ -121,6 +127,7 @@ export class DragLayer {
    */
   destroy(): void {
     this.end();
+    this.idle.cancel();
     if (!this.view) return;
     if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
     this.view = null;

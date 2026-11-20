@@ -18,18 +18,24 @@ export interface InboxItem {
   unread: boolean | null;
   mention: boolean;
   category: InboxCategory;
+  /** Only verified, fully addressable one-to-one conversations enter Chats. */
+  conversationKind?: 'direct' | 'group' | 'channel' | 'unknown';
 }
 export interface ThreadMessage {
   id: string;
   author: string;
   at: number | null;
   text: string;
+  direction?: 'incoming' | 'outgoing' | 'unknown';
+  attachmentCount?: number;
 }
 export interface InboxThread {
   ref: SourceRef;
   title: string;
   messages: ThreadMessage[];
   partial: boolean;
+  olderCursor?: string | null;
+  historyDetail?: string;
 }
 export interface InboxSource {
   id: string;
@@ -44,6 +50,8 @@ export interface InboxSource {
   canSearch: boolean;
   canRead: boolean;
   hasMore: boolean;
+  canChat?: boolean;
+  connectConfigured?: boolean;
 }
 export interface InboxSnapshot {
   sources: InboxSource[];
@@ -51,10 +59,10 @@ export interface InboxSnapshot {
   workspaceId: string | null;
   workspaceName: string;
 }
-export interface InboxQuery { allWorkspaces: boolean }
+export interface InboxQuery { allWorkspaces: boolean; messagingOnly?: boolean }
 export interface InboxConnect {
   serviceId: string;
-  clientId: string;
+  clientId?: string;
   /** Google Desktop clients may require their issued secret; Slack public clients never do. */
   clientSecret?: string;
 }
@@ -63,7 +71,7 @@ export interface InboxBridge {
   snapshot(query: InboxQuery): Promise<InboxReply<InboxSnapshot>>;
   refresh(query: InboxQuery): Promise<InboxReply<null>>;
   more(connectionId: string): Promise<InboxReply<null>>;
-  read(ref: SourceRef): Promise<InboxReply<InboxThread>>;
+  read(ref: SourceRef, cursor?: string): Promise<InboxReply<InboxThread>>;
   open(ref: SourceRef): Promise<InboxReply<null>>;
   connect(input: InboxConnect): Promise<InboxReply<null>>;
   disconnect(connectionId: string): Promise<InboxReply<null>>;

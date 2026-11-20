@@ -51,7 +51,7 @@ test('AI: native panel reserves space, denies unrelated IPC, respects compact la
   await expect.poll(() => h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.services.get('one').view.webContents.getBackgroundThrottling())).toBe(true);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Close assistant' }).click();
-  await expect.poll(() => h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.services.get('one').view.webContents.getBackgroundThrottling())).toBe(false);
+  await expect.poll(() => h.app.evaluate(() => (globalThis as unknown as Shell).__hangarShell.services.get('one').view.webContents.getBackgroundThrottling())).toBe(true);
   await dispatch({ type: 'open-ai' });
   await page.getByLabel('Your question').focus();
   await h.app.evaluate(() => {

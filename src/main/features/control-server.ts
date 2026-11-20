@@ -56,6 +56,9 @@ interface Deps {
 let server: net.Server | null = null;
 const clients = new Map<net.Socket, Client>();
 let lastSignature = '';
+let clientsChanged: (() => void) | null = null;
+export const hasControlClients = (): boolean => [...clients.values()].some((c) => !c.socket.destroyed);
+export const onControlClientsChanged = (listener: (() => void) | null): void => { clientsChanged = listener; };
 
 export const controlSocketPath = (): string => path.join(app.getPath('userData'), 'control.sock');
 
@@ -88,8 +91,9 @@ export function startControlServer(deps: Deps): void {
       allow: createRateLimiter({ max: COMMANDS_PER_WINDOW, windowMs: COMMAND_WINDOW_MS }),
     };
     clients.set(socket, client);
+    clientsChanged?.();
     socket.setEncoding('utf8');
-    socket.on('close', () => clients.delete(socket));
+    socket.on('close', () => { clients.delete(socket); clientsChanged?.(); });
     // A client that goes away mid-write is its own business; without a listener it's a crash.
     socket.on('error', () => clients.delete(socket));
     socket.on('drain', () => {

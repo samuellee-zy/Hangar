@@ -54,7 +54,7 @@ export function ttlForPartition(partition: string): number {
  * plus a storage flush for everyone every fifth minute.
  */
 let tick = 0;
-export async function persistAll({ all = true }: { all?: boolean } = {}): Promise<void> {
+async function persistPass(all: boolean): Promise<void> {
   // Per service, not `services.map(partitionFor)`. `partitionFor` throws on a service whose
   // account is missing, and one throw here took out the whole loop — permanently, because it runs
   // under `void` on an interval with nothing to report the rejection. Cookie promotion and storage
@@ -85,6 +85,22 @@ export async function persistAll({ all = true }: { all?: boolean } = {}): Promis
     if (promote && ttlDays > 0) await promoteSessionCookies(ses, { label: partition, ttlDays });
     if (promote || flushEveryone) await flushStorage(ses);
   }
+}
+
+// Periodic ticks coalesce; a quit/suspend still gets a full pass after any partial pass.
+let persisting: Promise<void> | null = null;
+let fullRequested = false;
+export function persistAll({ all = true }: { all?: boolean } = {}): Promise<void> {
+  fullRequested ||= all;
+  if (persisting) return persisting;
+  persisting = (async () => {
+    do {
+      const full = fullRequested;
+      fullRequested = false;
+      await persistPass(full);
+    } while (fullRequested);
+  })().finally(() => { persisting = null; });
+  return persisting;
 }
 
 /**

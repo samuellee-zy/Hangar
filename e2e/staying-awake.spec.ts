@@ -79,7 +79,7 @@ test('A SERVICE IN A CALL OFF SCREEN IS KEPT — by "Sleep background services" 
   await endCall();
   await expect.poll(inCall).toBe(false);
   await sweep();
-  expect(await loaded('one')).toBe(false);
+  await expect.poll(() => loaded('one')).toBe(false);
 });
 
 test('A SERVICE PLAYING SOUND OFF SCREEN IS KEPT BY "Sleep background services"', async () => {
@@ -178,7 +178,7 @@ test('QUITTING WITH A SERVICE IN A CALL ASKS, WHATEVER "Confirm before quitting"
   expect(await exited, 'quit, cleanly, without a second question').toBe(0);
 });
 
-test('KEEP EVERY SERVICE RUNNING LOADS THE REST AT ONCE — one at a time, half a second apart', async () => {
+test('KEEP EVERY SERVICE RUNNING queues the rest — one at a time, a second after each load', async () => {
   h = await launch((origin) => {
     const config = seedConfig(origin) as ReturnType<typeof seedConfig> & {
       services: Array<Record<string, unknown>>;
@@ -210,6 +210,6 @@ test('KEEP EVERY SERVICE RUNNING LOADS THE REST AT ONCE — one at a time, half 
   expect(services).toHaveLength(3);
   for (let i = 1; i < services.length; i++) {
     // Timers only ever run late, so a gap well under the stagger means there wasn't one.
-    expect(services[i]! - services[i - 1]!, 'loaded one after another, not all at once').toBeGreaterThanOrEqual(400);
+    expect(services[i]! - services[i - 1]!, 'loaded one after another, not all at once').toBeGreaterThanOrEqual(900);
   }
 });

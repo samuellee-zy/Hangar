@@ -87,7 +87,9 @@ beforeEach(() => {
       stateSubscribers.add(fn);
       return () => stateSubscribers.delete(fn);
     }),
-    getMetrics: vi.fn(async () => ({ processes: 1, residentMb: 100 })),
+    getPanelState: vi.fn(async () => ({})),
+    savePanelState: vi.fn(),
+    getMetrics: vi.fn(async () => ({ processes: 1, residentMb: 100, cpuPercent: 0, wakeupsPerSecond: 0, sampledAt: 0, details: [] })),
     getOverlayOpen: vi.fn(async () => null),
     getSettingsTarget: vi.fn(async () => {
       const target = settingsTarget;

@@ -1,3 +1,4 @@
+import { IdleRelease } from '@main/features/idle-release';
 import path from 'node:path';
 import { WebContentsView, type BaseWindow } from 'electron';
 import { loadRoute } from '@main/platform/renderer-url';
@@ -15,6 +16,7 @@ import type { OverlayMode } from '@shared/types';
 export class Overlay {
   private view: WebContentsView | null = null;
   private attached = false;
+  private readonly idle = new IdleRelease(() => this.destroy());
   private mode: OverlayMode | null = null;
   /** Bumped on every open so the renderer can remount even when the mode is unchanged. */
   private nonce = 0;
@@ -69,7 +71,9 @@ export class Overlay {
   }
 
   open(mode: OverlayMode): void {
+    this.idle.cancel();
     const view = this.ensure();
+    view.setVisible(true);
     if (!this.attached) {
       this.win.contentView.addChildView(view); // last child == topmost
       this.layout();
@@ -91,6 +95,7 @@ export class Overlay {
     this.win.contentView.removeChildView(this.view);
     this.attached = false;
     this.mode = null;
+    this.idle.arm();
   }
 
   /**
@@ -102,6 +107,7 @@ export class Overlay {
    * The window is already gone by the time dispose runs, so `removeChildView` is best-effort.
    */
   destroy(): void {
+    this.idle.cancel();
     if (!this.view) return;
     if (this.attached) {
       try {

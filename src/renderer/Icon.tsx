@@ -10,6 +10,7 @@
  */
 
 export type IconName =
+  | 'chat'
   | 'inbox'
   | 'spark'
   | 'gear'
@@ -29,6 +30,7 @@ export type IconName =
   | 'restore';
 
 const PATHS: Record<IconName, string> = {
+  chat: 'M3 2.5h10a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7l-4 2v-2a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1Z M5 6h6 M5 8.5h4',
   spark: 'M8 1.5 9.8 6.2 14.5 8l-4.7 1.8L8 14.5 6.2 9.8 1.5 8l4.7-1.8Z',
   inbox: 'M2 3h12v10H2Z M2 9h3l1 2h4l1-2h3',
   gear:

@@ -1,3 +1,4 @@
+import { Resources } from './settings/Resources';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Appearance } from './settings/Appearance';
 import { Behaviour } from './settings/Behaviour';
@@ -112,6 +113,7 @@ const GROUPS: Group[] = [
       </>
     ),
   },
+  { id: 'resources', label: 'Resource use', render: () => <Resources /> },
   { id: 'about', label: 'About', render: (s) => <About state={s} /> },
 ];
 

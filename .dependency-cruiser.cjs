@@ -14,6 +14,12 @@
 module.exports = {
   forbidden: [
     {
+      name: 'portable-connectors-have-no-platform-dependencies',
+      severity: 'error',
+      from: { path: '^src/connectors/' },
+      to: { pathNot: '^src/connectors/' },
+    },
+    {
       name: 'core-is-electron-free',
       severity: 'error',
       comment:

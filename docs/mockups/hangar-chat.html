@@ -1,0 +1,211 @@
+<div id="hangar-chat-concept" aria-label="Hangar unified direct messages concept">
+  <header class="hc-chrome">
+    <div class="hc-traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+    <span class="hc-brand">Hangar</span>
+    <span class="hc-rail-app" data-app="whatsapp">Wa</span>
+    <span class="hc-rail-app" data-app="messenger">Ms</span>
+    <span class="hc-rail-app" data-app="slack">Sl</span>
+    <span class="hc-rail-current"><i data-lucide="messages-square" aria-hidden="true"></i> Chats</span>
+    <span class="hc-concept">Concept · example messages</span>
+  </header>
+  <div class="hc-layout">
+    <aside class="hc-sidebar" aria-label="Direct conversations">
+      <div class="hc-list-head"><h2>Chats</h2><span class="hc-caption">Workspace</span></div>
+      <label class="hc-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" aria-label="Find a conversation" placeholder="Find a conversation"></label>
+      <div class="hc-filters">
+        <button type="button" class="hc-filter cursor-interaction" data-mode="all" aria-pressed="true">All DMs</button>
+        <button type="button" class="hc-filter cursor-interaction" data-mode="unread" aria-pressed="false">Unread</button>
+        <select aria-label="Filter by app" class="cursor-interaction"><option value="all">All apps</option><option value="whatsapp">WhatsApp</option><option value="messenger">Messenger</option><option value="slack">Slack</option></select>
+      </div>
+      <div class="hc-roster"></div>
+      <div class="hc-list-foot hc-caption" aria-live="polite"></div>
+    </aside>
+    <section class="hc-chat" aria-label="Selected conversation">
+      <header class="hc-chat-head"></header>
+      <div class="hc-history"></div>
+      <div class="hc-timeline" role="region" aria-label="Message timeline"></div>
+      <footer class="hc-chat-foot"></footer>
+    </section>
+  </div>
+</div>
+<style>
+#hangar-chat-concept {
+  --hc-base: light-dark(#f7f7f9,#1b1b20); --hc-panel: light-dark(#ffffff,#222228);
+  --hc-text: light-dark(#26262e,#f1f0f5); --hc-sub: light-dark(#61616f,#b2b1be);
+  --hc-line: light-dark(#dedee6,#35353e); --hc-hover: light-dark(#ededf2,#2c2c34);
+  --hc-received: light-dark(#eaeaf0,#303038); --hc-active: light-dark(#e8e8f0,#34343f);
+  --hc-wa: #25d366; --hc-ms: #0084ff; --hc-sl: #4a154b;
+  --hc-gap: 13px; --hc-row-pad: 14px;
+  color:var(--hc-text); background:var(--hc-base); border:1px solid var(--hc-line); border-radius:12px;
+  overflow:hidden; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+#hangar-chat-concept * {box-sizing:border-box;}
+#hangar-chat-concept button,#hangar-chat-concept input,#hangar-chat-concept select {font:inherit;color:inherit;}
+#hangar-chat-concept button {border:0;}
+#hangar-chat-concept button:disabled {opacity:.65;cursor:default;}
+#hangar-chat-concept [hidden] {display:none !important;}
+#hangar-chat-concept [data-app="whatsapp"] {--hc-app:var(--hc-wa);--hc-bubble:light-dark(#dcf4e5,#244034);--hc-app-text:#15251a;}
+#hangar-chat-concept [data-app="messenger"] {--hc-app:var(--hc-ms);--hc-bubble:light-dark(#e0ebff,#263c60);--hc-app-text:#fff;}
+#hangar-chat-concept [data-app="slack"] {--hc-app:var(--hc-sl);--hc-bubble:light-dark(#f0e4f3,#46304b);--hc-app-text:#fff;}
+#hangar-chat-concept .hc-chrome {display:flex;align-items:center;gap:10px;padding:10px 16px;min-height:56px;border-bottom:1px solid var(--hc-line);padding-right:92px;flex-wrap:wrap;}
+#hangar-chat-concept .hc-traffic {display:flex;gap:6px;margin-right:8px;}
+#hangar-chat-concept .hc-traffic span {width:10px;height:10px;border-radius:50%;background:var(--hc-line);}
+#hangar-chat-concept .hc-brand {font-weight:500;margin-right:8px;}
+#hangar-chat-concept .hc-rail-app {width:30px;height:30px;border-radius:8px;background:var(--hc-app);color:var(--hc-app-text);display:grid;place-items:center;font-size:11px;font-weight:500;}
+#hangar-chat-concept .hc-rail-current {display:flex;align-items:center;gap:6px;background:var(--hc-active);padding:6px 10px;border-radius:8px;}
+#hangar-chat-concept .hc-concept {margin-left:auto;font-size:12px;color:var(--hc-sub);}
+#hangar-chat-concept .hc-layout {display:grid;grid-template-columns:300px minmax(0,1fr);min-height:590px;}
+#hangar-chat-concept .hc-sidebar {border-right:1px solid var(--hc-line);min-width:0;display:flex;flex-direction:column;}
+#hangar-chat-concept .hc-list-head {display:flex;align-items:center;justify-content:space-between;padding:22px 18px 16px;}
+#hangar-chat-concept h2 {font-size:23px;line-height:1.25;font-weight:500;margin:0;}
+#hangar-chat-concept .hc-caption {font-size:12px;color:var(--hc-sub);}
+#hangar-chat-concept .hc-search {display:flex;align-items:center;gap:8px;background:var(--hc-hover);border-radius:8px;margin:0 14px;padding:8px 10px;color:var(--hc-sub);}
+#hangar-chat-concept .hc-search input {background:transparent;border:0;width:100%;min-width:0;}
+#hangar-chat-concept .hc-search input::placeholder {color:var(--hc-sub);}
+#hangar-chat-concept .hc-filters {display:flex;align-items:center;gap:4px;padding:12px 14px 14px;flex-wrap:wrap;}
+#hangar-chat-concept .hc-filter {border-radius:6px;padding:5px 8px;background:transparent;font-size:12px;}
+#hangar-chat-concept .hc-filter[aria-pressed="true"] {background:var(--hc-active);font-weight:500;}
+#hangar-chat-concept select {background:var(--hc-base);border:0;font-size:12px;margin-left:auto;max-width:106px;}
+#hangar-chat-concept .hc-roster {padding:0 7px;}
+#hangar-chat-concept .hc-row {width:100%;display:flex;align-items:center;gap:11px;padding:var(--hc-row-pad) 10px;text-align:left;background:transparent;border-radius:9px;border-left:3px solid transparent;margin-bottom:3px;}
+#hangar-chat-concept .hc-row:hover {background:var(--hc-hover);}
+#hangar-chat-concept .hc-row[aria-pressed="true"] {background:var(--hc-active);border-left-color:var(--hc-app);}
+#hangar-chat-concept .hc-row[data-app="slack"][aria-pressed="true"] {border-left-color:light-dark(#4a154b,#d1a7d8);}
+#hangar-chat-concept .hc-avatar {position:relative;width:39px;height:39px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--hc-received);font-weight:500;}
+#hangar-chat-concept .hc-network-mark {position:absolute;bottom:-3px;right:-3px;width:19px;height:19px;border-radius:6px;background:var(--hc-app);color:var(--hc-app-text);font-size:10px;display:grid;place-items:center;border:2px solid var(--hc-base);}
+#hangar-chat-concept .hc-row-info {flex:1;min-width:0;}
+#hangar-chat-concept .hc-row-top {display:flex;justify-content:space-between;align-items:center;gap:6px;}
+#hangar-chat-concept .hc-person {font-weight:500;}
+#hangar-chat-concept .hc-time {color:var(--hc-sub);font-size:11px;white-space:nowrap;}
+#hangar-chat-concept .hc-snippet {white-space:nowrap;text-overflow:ellipsis;overflow:hidden;color:var(--hc-sub);font-size:12px;margin:3px 0;}
+#hangar-chat-concept .hc-row-bottom {display:flex;justify-content:space-between;gap:6px;}
+#hangar-chat-concept .hc-unread {width:8px;height:8px;border-radius:50%;background:var(--hc-text);align-self:center;flex:none;}
+#hangar-chat-concept .hc-list-foot {padding:18px;margin-top:auto;}
+#hangar-chat-concept .hc-chat {min-width:0;display:flex;flex-direction:column;background:var(--hc-panel);}
+#hangar-chat-concept .hc-chat-head {display:flex;align-items:center;gap:12px;padding:20px 24px;border-bottom:1px solid var(--hc-line);flex-wrap:wrap;}
+#hangar-chat-concept .hc-chat-name {font-size:16px;font-weight:500;}
+#hangar-chat-concept .hc-chat-identity {font-size:12px;color:var(--hc-sub);margin-top:2px;}
+#hangar-chat-concept .hc-source-tag {display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hc-app);margin-right:5px;}
+#hangar-chat-concept .hc-chat-head[data-app="slack"] .hc-source-tag {background:light-dark(#4a154b,#d1a7d8);}
+#hangar-chat-concept .hc-detail-button {margin-left:auto;background:var(--hc-base);border:1px solid var(--hc-line);padding:6px 9px;border-radius:7px;font-size:12px;}
+#hangar-chat-concept .hc-detail {flex-basis:100%;padding:10px 0 0;color:var(--hc-sub);font-size:12px;}
+#hangar-chat-concept .hc-history {display:flex;justify-content:center;padding:16px 20px 6px;}
+#hangar-chat-concept .hc-older {background:transparent;color:var(--hc-sub);font-size:12px;padding:5px 8px;}
+#hangar-chat-concept .hc-timeline {padding:12px 26px 25px;display:flex;flex-direction:column;gap:var(--hc-gap);flex:1;min-width:0;}
+#hangar-chat-concept .hc-date {font-size:11px;color:var(--hc-sub);align-self:center;margin:0 0 4px;}
+#hangar-chat-concept .hc-message {max-width:84%;align-self:flex-start;min-width:0;}
+#hangar-chat-concept .hc-message.hc-outgoing {align-self:flex-end;}
+#hangar-chat-concept .hc-bubble {background:var(--hc-received);padding:10px 14px;border-radius:14px 14px 14px 4px;overflow-wrap:anywhere;}
+#hangar-chat-concept .hc-outgoing .hc-bubble {background:var(--hc-bubble);border-radius:14px 14px 4px 14px;}
+#hangar-chat-concept.hc-neutral .hc-outgoing .hc-bubble {background:var(--hc-received);}
+#hangar-chat-concept .hc-message-meta {font-size:11px;color:var(--hc-sub);margin:4px 2px 0;}
+#hangar-chat-concept .hc-outgoing .hc-message-meta {text-align:right;}
+#hangar-chat-concept .hc-chat-foot {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--hc-line);padding:17px 24px;}
+#hangar-chat-concept .hc-reply {display:flex;align-items:center;gap:6px;background:var(--hc-active);border-radius:8px;padding:8px 12px;font-size:12px;}
+#hangar-chat-concept .hc-empty {padding:25px 12px;color:var(--hc-sub);}
+#hangar-chat-concept .hc-back {display:none;background:var(--hc-base);padding:7px 10px;border-radius:7px;}
+@media(max-width:760px) {
+  #hangar-chat-concept .hc-layout {grid-template-columns:265px minmax(0,1fr);}
+  #hangar-chat-concept .hc-chat-head {padding:18px;}
+  #hangar-chat-concept .hc-timeline {padding:12px 18px 24px;}
+  #hangar-chat-concept .hc-message {max-width:94%;}
+  #hangar-chat-concept .hc-concept {flex-basis:100%;margin-left:0;}
+}
+@media(max-width:600px) {
+  #hangar-chat-concept .hc-layout {display:block;min-height:590px;}
+  #hangar-chat-concept .hc-sidebar {border-right:0;min-height:590px;}
+  #hangar-chat-concept .hc-chat {display:none;min-height:590px;}
+  #hangar-chat-concept.hc-mobile-chat .hc-sidebar {display:none;}
+  #hangar-chat-concept.hc-mobile-chat .hc-chat {display:flex;}
+  #hangar-chat-concept .hc-back {display:inline-flex;}
+  #hangar-chat-concept .hc-brand {display:none;}
+  #hangar-chat-concept .hc-chrome {padding:10px 12px;gap:7px;}
+  #hangar-chat-concept .hc-concept {margin-top:2px;}
+  #hangar-chat-concept .hc-chat-head {gap:9px;}
+  #hangar-chat-concept .hc-detail-button {margin-left:0;}
+}
+@media(pointer:coarse) {
+  #hangar-chat-concept button,#hangar-chat-concept select {min-height:44px;}
+  #hangar-chat-concept input {font-size:16px;}
+}
+</style>
+<script>
+(() => {
+  const root = document.getElementById('hangar-chat-concept');
+  const apps = { whatsapp: {name:'WhatsApp',mark:'W'}, messenger: {name:'Messenger',mark:'M'}, slack: {name:'Slack',mark:'S'} };
+  const chats = [
+    {id:'maya-wa',name:'Maya Chen',initials:'MC',app:'whatsapp',account:'Personal',time:'10:42',unread:true,preview:'Let’s meet by the entrance.',messages:[
+      ['in','Are we still on for coffee this afternoon?','10:36'],['out','Yes! I can get there around 3.','10:38'],['in','Perfect. The place by the station?','10:39'],['out','That works for me. See you there ☕','10:40'],['in','Let’s meet by the entrance.','10:42']]},
+    {id:'alex-ms',name:'Alex Rivera',initials:'AR',app:'messenger',account:'Personal',time:'10:31',unread:true,preview:'Saturday works for me!',messages:[
+      ['in','Have you had a chance to look at the dates?','10:25'],['out','I’m free this Saturday or next Sunday.','10:27'],['in','Saturday works for me!','10:31']]},
+    {id:'taylor-sl',name:'Taylor Morgan',initials:'TM',app:'slack',account:'Work',time:'10:18',unread:true,preview:'The updated flow is ready to review.',messages:[
+      ['in','I’ve updated the onboarding flow with yesterday’s feedback.','10:11'],['out','Thanks. Did we include the reconnect state?','10:13'],['in','Yes, and there’s now a clear history-loading state too.','10:15'],['in','The updated flow is ready to review.','10:18']]},
+    {id:'samir-wa',name:'Samir Patel',initials:'SP',app:'whatsapp',account:'Personal',time:'09:54',unread:false,preview:'You: Thanks, see you tomorrow.',messages:[
+      ['in','The booking is confirmed for tomorrow at 7.','09:52'],['out','Thanks, see you tomorrow.','09:54']]},
+    {id:'alex-sl',name:'Alex Rivera',initials:'AR',app:'slack',account:'Work',time:'09:20',unread:false,preview:'You: I’ll check it after lunch.',messages:[
+      ['in','Could you take a look at the release notes today?','09:17'],['out','I’ll check it after lunch.','09:20']]},
+    {id:'zoe-ms',name:'Zoe Park',initials:'ZP',app:'messenger',account:'Personal',time:'Yesterday',unread:false,preview:'That’s the one I was thinking of.',messages:[
+      ['out','Was it the book you mentioned last week?','18:22'],['in','That’s the one I was thinking of.','18:24']]}
+  ];
+  let state = {selected:'maya-wa',app:'all',mode:'all',query:'',mobileChat:false};
+  let older = false, details = false;
+  const design = {density:'Comfortable',tint:true};
+  const q = (s) => root.querySelector(s);
+  function restore(saved) {
+    const v = saved?.privateContent;
+    if (!v || typeof v !== 'object') return;
+    if (chats.some(c => c.id === v.selected)) state.selected = v.selected;
+    if (v.app === 'all' || apps[v.app]) state.app = v.app;
+    if (v.mode === 'all' || v.mode === 'unread') state.mode = v.mode;
+    if (typeof v.query === 'string') state.query = v.query.slice(0,100);
+    state.mobileChat = v.mobileChat === true;
+  }
+  function remember() {
+    if (window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{design:'DM conversation list with a readable timeline',appFilter:state.app},privateContent:{...state}}).catch(() => {});
+  }
+  function avatar(c) { return `<span class="hc-avatar">${c.initials}<span class="hc-network-mark" aria-hidden="true">${apps[c.app].mark}</span></span>`; }
+  function renderList() {
+    const visible = chats.filter(c => (state.app === 'all' || c.app === state.app) && (state.mode === 'all' || c.unread) && `${c.name} ${c.preview} ${c.account}`.toLowerCase().includes(state.query.toLowerCase()));
+    q('.hc-roster').innerHTML = visible.map(c => `<button type="button" class="hc-row cursor-interaction" data-app="${c.app}" data-chat="${c.id}" aria-pressed="${c.id === state.selected}">${avatar(c)}<span class="hc-row-info"><span class="hc-row-top"><span class="hc-person">${c.name}</span><span class="hc-time">${c.time}</span></span><span class="hc-snippet" style="display:block">${c.preview}</span><span class="hc-row-bottom"><span class="hc-caption">${apps[c.app].name} · ${c.account}</span>${c.unread ? '<span class="hc-unread" aria-label="Unread"></span>' : ''}</span></span></button>`).join('') || '<div class="hc-empty">No matching conversations.</div>';
+    q('.hc-list-foot').textContent = `${visible.length} direct conversations · Example data`;
+    root.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.mode === state.mode)));
+    q('select').value = state.app;
+    q('input').value = state.query;
+  }
+  function renderChat() {
+    const c = chats.find(x => x.id === state.selected), app = apps[c.app];
+    q('.hc-chat-head').dataset.app = c.app;
+    q('.hc-chat-head').innerHTML = `<button type="button" class="hc-back cursor-interaction" aria-label="Back to conversations"><i data-lucide="chevron-left" aria-hidden="true"></i></button>${avatar(c)}<div><div class="hc-chat-name">${c.name}</div><div class="hc-chat-identity"><span class="hc-source-tag"></span>${app.name} · ${c.account} · Direct message</div></div><button type="button" class="hc-detail-button cursor-interaction" aria-expanded="${details}">Details</button>${details ? `<div class="hc-detail">${c.name} on ${app.name} · ${c.account} account<br>Text history · Read-only connection · Read receipts unknown</div>` : ''}`;
+    q('.hc-history').innerHTML = older ? '<span class="hc-caption">Start of available history</span>' : '<button type="button" class="hc-older cursor-interaction">↑ Load older messages</button>';
+    const messages = older ? [['in','Thanks for the update earlier.','09:02'],['out','Of course!','09:04'],...c.messages] : c.messages;
+    q('.hc-timeline').dataset.app = c.app;
+    q('.hc-timeline').innerHTML = `<div class="hc-date">${c.id === 'zoe-ms' ? 'Yesterday' : 'Today'}</div>` + messages.map(m => `<div class="hc-message ${m[0] === 'out' ? 'hc-outgoing' : ''}"><div class="hc-bubble">${m[1]}</div><div class="hc-message-meta">${m[0] === 'out' ? 'You' : c.name.split(' ')[0]} · ${m[2]}</div></div>`).join('');
+    q('.hc-chat-foot').innerHTML = `<span class="hc-caption">Read messages here<br>Replies stay in ${app.name}</span><button type="button" class="hc-reply" disabled aria-label="Reply in ${app.name}, unavailable in this concept">Reply in ${app.name}<i data-lucide="arrow-up-right" aria-hidden="true"></i></button>`;
+    root.classList.toggle('hc-mobile-chat',state.mobileChat);
+    if (globalThis.lucide) lucide.createIcons({attrs:{width:16,height:16}});
+  }
+  root.addEventListener('click',e => {
+    const row = e.target.closest('[data-chat]');
+    const mode = e.target.closest('[data-mode]');
+    if (row) {state.selected = row.dataset.chat;state.mobileChat = true;older = false;details = false;renderList();renderChat();remember();}
+    else if (mode) {state.mode = mode.dataset.mode;renderList();remember();}
+    else if (e.target.closest('.hc-back')) {state.mobileChat = false;renderChat();remember();}
+    else if (e.target.closest('.hc-older')) {older = true;renderChat();}
+    else if (e.target.closest('.hc-detail-button')) {details = !details;renderChat();}
+  });
+  q('select').addEventListener('change',e => {state.app = e.target.value;renderList();remember();});
+  q('input').addEventListener('input',e => {state.query = e.target.value;renderList();remember();});
+  restore(window.openai?.widgetState);
+  renderList();renderChat();
+  window.addEventListener('openai:set_globals',e => {if (e.detail?.globals?.widgetState) {restore(e.detail.globals.widgetState);renderList();renderChat();}});
+  if (globalThis.Tweak) {
+    const tweak = new Tweak({container:root,onChange:() => {
+      root.style.setProperty('--hc-row-pad',design.density === 'Compact' ? '9px' : '14px');
+      root.style.setProperty('--hc-gap',design.density === 'Compact' ? '8px' : '13px');
+      root.classList.toggle('hc-neutral',!design.tint);
+    }});
+    tweak.addSelect(design,'density',{label:'Conversation spacing',options:['Comfortable','Compact']});
+    tweak.addToggle(design,'tint',{label:'App colour on outgoing messages'});
+  }
+})();
+</script>

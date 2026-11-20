@@ -1,3 +1,4 @@
+import { PanelState } from './PanelState';
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DragLayer } from './DragLayer';
@@ -37,7 +38,7 @@ createRoot(document.getElementById('root')!).render(
       {/* No fallback: a chunk loads from disk in a few milliseconds, and a spinner for that would
           only be a flash. */}
       <Suspense fallback={null}>
-      {route === 'ai' ? <Assistant /> : route === 'inbox' ? <Inbox /> : route === 'overlay' ? (
+      {route === 'ai' ? <PanelState><Assistant /></PanelState> : route === 'inbox' ? <PanelState><Inbox /></PanelState> : route === 'overlay' ? (
         <OverlayRoot />
       ) : route === 'settings' ? (
         <Settings />

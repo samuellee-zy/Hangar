@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { ResourceMetrics } from '@shared/resources';
 import type { AiBridge } from '@shared/ai';
 import type { InboxBridge } from '@shared/inbox';
 /**
@@ -28,7 +29,9 @@ declare global {
       getState: () => Promise<ShellState | null>;
       send: (command: Command) => void;
       onState: (fn: (state: ShellState) => void) => () => void;
-      getMetrics: () => Promise<{ processes: number; residentMb: number }>;
+      getPanelState: () => Promise<Record<string, unknown>>;
+      savePanelState: (key: string, value: unknown) => void;
+      getMetrics: () => Promise<ResourceMetrics>;
       getOverlayOpen: () => Promise<OverlayOpen | null>;
       getSettingsTarget: () => Promise<SettingsTarget | null>;
       onSettingsNavigate: (fn: (target: SettingsTarget) => void) => () => void;
