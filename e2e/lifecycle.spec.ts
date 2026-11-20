@@ -189,6 +189,24 @@ test('CLOSING A SPLIT WINDOW AND REOPENING IT WORKS — teardown threw on the sp
     .toBe(true);
 });
 
+test('closing the window during a state broadcast does not crash, and the Dock can reopen it', async () => {
+  h = await launch();
+  await h.rail();
+  await h.app.evaluate(() => {
+    const shell = (globalThis as unknown as { __hangarShell: {
+      win: Electron.BaseWindow; sync(): void; refreshMenuIfChanged(): void;
+    } }).__hangarShell;
+    // Native menu updates can dispatch a pending close before broadcast resumes. Force that
+    // ordering so the regression does not depend on the timing of the CI window server.
+    shell.refreshMenuIfChanged = () => shell.win.close();
+    shell.sync();
+  });
+  await expect.poll(() => h.app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)).toBe(0);
+  await h.app.evaluate(({ app }) => app.emit('activate'));
+  const rail = await h.rail();
+  await expect(rail.getByRole('button', { name: /^One/ })).toBeVisible();
+});
+
 test('A SERVICE SET TO KEEP RUNNING IS LOADED AT LAUNCH WITHOUT A PANE — so it can notify', async () => {
   // Only the services in the saved panes loaded at launch; every other tile had no page, so no
   // notifications and no unread count until you clicked it. Two is in no pane here.

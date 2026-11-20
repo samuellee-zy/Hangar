@@ -118,14 +118,13 @@ export function Inbox() {
         <div className="inbox-list-status" role="status">{filtered.length} direct conversation{filtered.length === 1 ? '' : 's'}{sources.some((s) => s.state === 'refreshing') ? ' · Updating…' : ''}{unread ? ' · Unknown read states excluded' : ''}</div>
         {pending && <button className="inbox-new" onClick={() => { current.current = pending; setSnapshot(pending); setPending(null); }}>New activity · Update list</button>}
         {filtered.map((item) => { const source = sourceMap.get(item.ref.connectionId); return <button key={item.id} data-app={appKey(source)} className={`inbox-row ${item.id === selected?.id ? 'selected' : ''}`} aria-pressed={item.id === selected?.id}
-          aria-label={`${item.title} ${item.preview || 'Open to load messages'} · ${source?.app} · ${source?.identity ?? source?.label} · ${item.unread === true ? 'Unread' : item.unread === null ? 'Read state unknown' : 'Read'}`}
           onClick={() => { selection.current = item; setSelected(item); }}
           onKeyDown={(event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const rows = [...event.currentTarget.closest('.inbox-list')!.querySelectorAll<HTMLButtonElement>('.inbox-row')]; rows[rows.indexOf(event.currentTarget) + (event.key === 'ArrowDown' ? 1 : -1)]?.focus(); } }}>
           <span className="chat-avatar" aria-hidden="true">{initials(item.title)}</span>
-          <span className="chat-row-content"><span className="inbox-row-heading"><strong>{item.title}</strong>{item.unread === true && <span className="inbox-dot" aria-label="Unread" />}</span>
-          <span className="inbox-row-preview">{item.preview || 'Open to load messages'}</span>
-          <span className="inbox-row-meta"><span className="chat-source">{source?.app}</span><span>{source?.identity ?? source?.label}</span></span>
-          <span className="inbox-row-meta"><time>{date(item.at)}</time>{item.unread === null && <span>Read state unknown</span>}</span></span>
+          <span className="chat-row-content"><span className="inbox-row-heading"><strong>{item.title}</strong>{item.unread === true && <span className="inbox-dot" aria-label="Unread" />}</span>{' '}
+          <span className="inbox-row-preview">{item.preview || 'Open to load messages'}</span>{' '}
+          <span className="inbox-row-meta"><span className="chat-source">{source?.app}</span>{' '}<span>{source?.identity ?? source?.label}</span></span>{' '}
+          <span className="inbox-row-meta"><time>{date(item.at)}</time>{' '}{item.unread === null && <span>Read state unknown</span>}</span></span>
         </button>; })}
         {snapshot && !filtered.length && <div className="inbox-empty"><Icon name="chat" size={32} /><h2>{query || unread || sourceId !== 'all' ? 'No matching DMs' : 'Your DMs, together'}</h2><p>{sources.some((s) => s.canChat) ? 'Refresh or adjust your filters. Only verified one-to-one conversations appear here.' : 'Connect Slack message access to read your DMs here. WhatsApp and Messenger message connections are still in development; their app panes remain available.'}</p><button onClick={() => setShowSources(true)}>Manage connections</button></div>}
         {sources.filter((s) => s.canChat && s.hasMore).map((s) => <button className="inbox-more" key={s.id} disabled={s.state === 'refreshing'} onClick={() => more(s.id)}>Load more from {s.app} · {s.identity ?? s.label}</button>)}

@@ -1067,6 +1067,8 @@ export class AppWindow {
 
   /** What the title bar and the headers show — sent to each only when it changed. */
   private refreshPaneChrome(state: ShellState): void {
+    // A native menu update earlier in broadcast can dispatch a pending window close.
+    if (this.win.isDestroyed()) return;
     const bars = paneBars({
       drawn: (this.inboxSurface.isOpen || this.aiLayout().covered) ? [] : this.layout.drawn(),
       paneCount: this.layout.panes.length,
