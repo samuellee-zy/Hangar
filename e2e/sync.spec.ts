@@ -194,13 +194,10 @@ test('KEEP REPO adopts the repo, and KEEP LOCAL pushes this machine', async () =
 
   const configPath = await divergeWhileClosed(clone);
 
-  // Fire and return immediately. Awaiting inside `evaluate` while `onApplied` tears down and
-  // rebuilds every pane keeps the call open long enough to trip Playwright's own timeout — poll
-  // the file instead, which is what actually has to change.
-  await h.app.evaluate(() => {
-    (globalThis as never as { __hangarShell?: { dispatch: (c: unknown) => boolean } })
-      .__hangarShell!.dispatch({ type: 'resolve-sync', winner: 'remote' });
-  });
+  // Use the normal renderer IPC path. Rebuilding the service views during a main-process
+  // inspector call can collect Playwright's pending evaluation promise. The rail survives the
+  // rebuild; poll the saved file to verify that the command actually applied the remote config.
+  await (await h.rail()).evaluate(() => window.hangar.send({ type: 'resolve-sync', winner: 'remote' }));
 
   // Keep repo → this machine adopts the repo's name, not the other way round.
   await expect
